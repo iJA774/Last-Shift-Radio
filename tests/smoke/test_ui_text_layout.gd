@@ -1,0 +1,269 @@
+extends SceneTree
+## 1920×1080 下的文本布局回归检查。
+##
+## 该检查同时施加 125% 字号与代表性的长中文内容。它只验证文字控件的
+## 可见边界和可滚动承载关系，不修改剧情、电话或广播权威状态。
+
+const PHONE_CLOSEUP_SCENE: PackedScene = preload("res://scenes/studio/phone_closeup.tscn")
+const COMPUTER_CLOSEUP_SCENE: PackedScene = preload("res://scenes/studio/computer_closeup.tscn")
+const DOOR_WINDOW_CLOSEUP_SCENE: PackedScene = preload("res://scenes/studio/door_window_closeup.tscn")
+const STUDIO_OVERVIEW_SCENE: PackedScene = preload("res://scenes/studio/studio_overview.tscn")
+const GLOBAL_STATUS_SCENE: PackedScene = preload("res://scenes/ui/global_status.tscn")
+const MAIN_SCENE: PackedScene = preload("res://scenes/app/main.tscn")
+const CONTENT_NOTICE_SCENE: PackedScene = preload("res://scenes/app/content_notice.tscn")
+const ENDING_SCREEN_SCENE: PackedScene = preload("res://scenes/app/ending_screen.tscn")
+const PHONE_SYSTEM_SCRIPT: GDScript = preload("res://scripts/systems/phone_system.gd")
+
+const LARGE_FONT_SCALE: float = 1.25
+const LONG_CALLER_TEXT: String = "来显：玛莎·克莱恩正在确认北桥附近的情况，雨声很大，信号反复中断。\n号码：555-0199-EXT-北桥东侧临时公话\n线路编号：call_story_martha_klein_north_bridge_signal_interrupted"
+const LONG_DIALOGUE_TEXT: String = "沃伦先是笑了一声，又说雨把酒吧门口的台阶冲得发亮。他想点一首旧歌，顺口提起北桥那边有消防车和拖车，没人说得清是油罐车起火、桥面塌陷，还是两件事同时发生。请把这条来电当作未经证实的听闻。"
+const LONG_OPTION_TEXT: String = "先照常答应点歌，并提醒听众北桥附近路况尚未得到官方确认。"
+const LONG_ERROR_TEXT: String = "剧情数据校验失败：示例中的长错误说明用于确认页面能在不裁切、不越出安全区的前提下完整显示文件路径、稳定事件 ID、字段名和建议的后续处理方式。请返回主菜单后修复数据，再重新开始值班。"
+
+var _failures: int = 0
+var _font_restore_records: Array[Dictionary] = []
+
+
+func _init() -> void:
+	call_deferred("_run")
+
+
+func _run() -> void:
+	root.size = Vector2i(1920, 1080)
+	await _test_phone_long_text()
+	await _test_global_status_long_caller()
+	await _test_static_studio_views()
+	await _test_application_pages()
+	_finish()
+
+
+func _test_phone_long_text() -> void:
+	var phone: Control = PHONE_CLOSEUP_SCENE.instantiate() as Control
+	_assert_true(phone != null, "电话近景必须能实例化。")
+	if phone == null:
+		return
+	root.add_child(phone)
+	await _wait_frames(4)
+	var caller_label: Label = phone.get_node_or_null(NodePath("HeaderPanel/HeaderContent/CallerScroll/CallerLabel")) as Label
+	var caller_scroll: ScrollContainer = phone.get_node_or_null(NodePath("HeaderPanel/HeaderContent/CallerScroll")) as ScrollContainer
+	var dialogue_label: Label = phone.get_node_or_null(NodePath("DialoguePanel/DialogueContent/DialogueScroll/DialogueScrollContent/DialogueHintLabel")) as Label
+	var dialogue_scroll: ScrollContainer = phone.get_node_or_null(NodePath("DialoguePanel/DialogueContent/DialogueScroll")) as ScrollContainer
+	var dialogue_options: HFlowContainer = phone.get_node_or_null(NodePath("DialoguePanel/DialogueContent/DialogueScroll/DialogueScrollContent/DialogueOptions")) as HFlowContainer
+	_assert_true(caller_label != null and caller_scroll != null, "电话页来显必须位于可滚动容器内。")
+	_assert_true(dialogue_label != null and dialogue_scroll != null and dialogue_options != null, "电话页长台词和选项必须位于可滚动容器内。")
+	if caller_label != null:
+		caller_label.text = LONG_CALLER_TEXT
+	if dialogue_label != null:
+		dialogue_label.text = LONG_DIALOGUE_TEXT
+	if dialogue_options != null:
+		for option_index: int in 2:
+			var option: Button = Button.new()
+			option.name = "LayoutProbeOption%d" % option_index
+			option.custom_minimum_size = Vector2(640.0, 86.0)
+			option.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			option.text = "%d. %s" % [option_index + 1, LONG_OPTION_TEXT]
+			dialogue_options.add_child(option)
+	_apply_font_scale(phone, LARGE_FONT_SCALE)
+	await _wait_frames(5)
+	_assert_scroll_exposes_overflow(caller_scroll, "电话来显")
+	_assert_scroll_exposes_overflow(dialogue_scroll, "电话长台词与选项")
+	_assert_layout(phone, "电话近景（长文本、125% 字号）")
+	_restore_font_scale()
+	phone.queue_free()
+	await process_frame
+
+
+func _test_global_status_long_caller() -> void:
+	var status: Control = GLOBAL_STATUS_SCENE.instantiate() as Control
+	var phone_system: RefCounted = PHONE_SYSTEM_SCRIPT.new()
+	_assert_true(status != null, "全局状态条必须能实例化。")
+	if status == null:
+		return
+	root.add_child(status)
+	await _wait_frames(3)
+	var game_clock: Node = root.get_node_or_null(NodePath("GameClock")) as Node
+	_assert_true(game_clock != null, "文本布局测试需要 GameClock 自动加载节点。")
+	if game_clock != null:
+		var bind_result: Variant = status.call(&"bind_runtime", phone_system, game_clock)
+		_assert_true(bind_result is Dictionary and bool((bind_result as Dictionary).get("ok", false)), "全局状态条必须能绑定只读运行时。")
+	var event_data: Dictionary = {
+		"id": "layout_probe_call",
+		"caller_display_name": "来自北桥东侧临时公话的长名称来电，用于确认状态条在放大字体下不会压出文字框",
+		"caller_number": "555-0199-EXT-北桥东侧临时公话",
+	}
+	_assert_true(bool(phone_system.call(&"begin_incoming_call", event_data, 0, 60)), "文本布局测试必须能创建响铃快照。")
+	_apply_font_scale(status, LARGE_FONT_SCALE)
+	await _wait_frames(5)
+	_assert_layout(status, "全局状态条（长来显、125% 字号）")
+	_restore_font_scale()
+	status.queue_free()
+	await process_frame
+
+
+func _test_static_studio_views() -> void:
+	for scene: PackedScene in [STUDIO_OVERVIEW_SCENE, COMPUTER_CLOSEUP_SCENE, DOOR_WINDOW_CLOSEUP_SCENE]:
+		var view: Control = scene.instantiate() as Control
+		_assert_true(view != null, "固定视图必须能实例化。")
+		if view == null:
+			continue
+		root.add_child(view)
+		_apply_font_scale(view, LARGE_FONT_SCALE)
+		await _wait_frames(4)
+		_assert_layout(view, "%s（125%% 字号）" % view.name)
+		_restore_font_scale()
+		view.queue_free()
+		await process_frame
+
+
+func _test_application_pages() -> void:
+	var main: Control = MAIN_SCENE.instantiate() as Control
+	_assert_true(main != null, "应用主场景必须能实例化。")
+	if main != null:
+		root.add_child(main)
+		await _wait_frames(4)
+		var shell_error_panel: PanelContainer = main.get_node_or_null(NodePath("ShellErrorPanel")) as PanelContainer
+		var shell_error_label: Label = main.get_node_or_null(NodePath("ShellErrorPanel/ErrorLabel")) as Label
+		_assert_true(shell_error_panel != null and shell_error_label != null, "主场景必须提供可读的系统错误区域。")
+		if shell_error_panel != null and shell_error_label != null:
+			shell_error_label.text = "系统错误：%s" % LONG_ERROR_TEXT
+			shell_error_panel.visible = true
+		_apply_font_scale(main, LARGE_FONT_SCALE)
+		await _wait_frames(4)
+		_assert_layout(main, "主菜单与系统错误条（125% 字号）")
+		_restore_font_scale()
+		main.queue_free()
+		await process_frame
+
+	var notice: Control = CONTENT_NOTICE_SCENE.instantiate() as Control
+	_assert_true(notice != null, "内容提示页必须能实例化。")
+	if notice != null:
+		root.add_child(notice)
+		await _wait_frames(3)
+		notice.call(&"show_error", LONG_ERROR_TEXT)
+		_apply_font_scale(notice, LARGE_FONT_SCALE)
+		await _wait_frames(4)
+		_assert_layout(notice, "内容提示（长错误、125% 字号）")
+		_restore_font_scale()
+		notice.queue_free()
+		await process_frame
+
+	var ending: Control = ENDING_SCREEN_SCENE.instantiate() as Control
+	_assert_true(ending != null, "结束页必须能实例化。")
+	if ending != null:
+		root.add_child(ending)
+		_apply_font_scale(ending, LARGE_FONT_SCALE)
+		await _wait_frames(4)
+		_assert_layout(ending, "结束页（125% 字号）")
+		_restore_font_scale()
+		ending.queue_free()
+		await process_frame
+
+
+func _assert_layout(layout_root: Control, context: String) -> void:
+	var failures: PackedStringArray = []
+	_collect_layout_failures(layout_root, context, failures)
+	for failure: String in failures:
+		_fail(failure)
+
+
+func _collect_layout_failures(node: Node, context: String, failures: PackedStringArray) -> void:
+	if node is Control:
+		var control: Control = node as Control
+		if control.is_visible_in_tree() and control.size.x > 0.0 and control.size.y > 0.0:
+			if not _is_inside_scroll_container(control):
+				var rect: Rect2 = control.get_global_rect()
+				var viewport_size: Vector2 = Vector2(root.size)
+				if rect.position.x < -1.0 or rect.position.y < -1.0 or rect.end.x > viewport_size.x + 1.0 or rect.end.y > viewport_size.y + 1.0:
+					failures.append("%s 中控件越出 1920×1080 安全视口：%s，rect=%s。" % [context, control.get_path(), rect])
+			if control is Label or control is Button:
+				_assert_text_control_minimum(control, context, failures)
+	for child: Node in node.get_children():
+		_collect_layout_failures(child, context, failures)
+
+
+func _assert_text_control_minimum(control: Control, context: String, failures: PackedStringArray) -> void:
+	if _is_inside_scroll_container(control):
+		return
+	var minimum_size: Vector2 = control.get_combined_minimum_size()
+	if minimum_size.x > control.size.x + 1.0 or minimum_size.y > control.size.y + 1.0:
+		failures.append("%s 中文字控件可能裁切或越框：%s，minimum=%s，size=%s。" % [
+			context,
+			control.get_path(),
+			minimum_size,
+			control.size,
+		])
+
+
+func _assert_scroll_exposes_overflow(scroll: ScrollContainer, context: String) -> void:
+	if scroll == null:
+		_fail("%s 缺少 ScrollContainer。" % context)
+		return
+	var vertical_bar: VScrollBar = scroll.get_v_scroll_bar()
+	_assert_true(vertical_bar != null and vertical_bar.max_value > 0.0, "%s 的超长内容必须可垂直滚动，不能被裁切。" % context)
+
+
+func _is_inside_scroll_container(control: Control) -> bool:
+	var current: Node = control.get_parent()
+	while current != null:
+		if current is ScrollContainer:
+			return true
+		current = current.get_parent()
+	return false
+
+
+func _apply_font_scale(node: Node, scale_factor: float) -> void:
+	_font_restore_records.clear()
+	_apply_font_scale_recursive(node, scale_factor)
+
+
+func _apply_font_scale_recursive(node: Node, scale_factor: float) -> void:
+	if node is Label or node is Button or node is RichTextLabel:
+		var control: Control = node as Control
+		var previous_size: int = control.get_theme_font_size(&"font_size")
+		_font_restore_records.append({
+			"control": control,
+			"had_override": control.has_theme_font_size_override(&"font_size"),
+			"previous_size": previous_size,
+		})
+		control.add_theme_font_size_override(
+			&"font_size",
+			maxi(previous_size + 1, roundi(float(previous_size) * scale_factor))
+		)
+	for child: Node in node.get_children():
+		_apply_font_scale_recursive(child, scale_factor)
+
+
+func _restore_font_scale() -> void:
+	for record: Dictionary in _font_restore_records:
+		var control: Control = record["control"] as Control
+		if not is_instance_valid(control):
+			continue
+		if bool(record["had_override"]):
+			control.add_theme_font_size_override(&"font_size", int(record["previous_size"]))
+		else:
+			control.remove_theme_font_size_override(&"font_size")
+	_font_restore_records.clear()
+
+
+func _wait_frames(frame_count: int) -> void:
+	for _index: int in frame_count:
+		await process_frame
+
+
+func _assert_true(condition: bool, message: String) -> void:
+	if not condition:
+		_fail(message)
+
+
+func _fail(message: String) -> void:
+	_failures += 1
+	push_error("[测试][UITextLayout] %s" % message)
+
+
+func _finish() -> void:
+	if _failures > 0:
+		push_error("[测试][UITextLayout] 失败：共 %d 项。" % _failures)
+		quit(1)
+		return
+	print("[测试][UITextLayout] 通过：1920×1080 默认与 125%% 字号下的长中文文本均未越框，超长电话内容可滚动阅读。")
+	quit(0)

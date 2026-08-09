@@ -191,6 +191,7 @@ theme_override_constants/shadow_offset_x = 2
 theme_override_constants/shadow_offset_y = 2
 theme_override_font_sizes/font_size = 28
 text = "A 号直播室／工作室总览"
+autowrap_mode = 2
 
 [node name="InteractionHint" type="Label" parent="."]
 layout_mode = 0
@@ -204,6 +205,7 @@ theme_override_constants/shadow_offset_x = 1
 theme_override_constants/shadow_offset_y = 1
 theme_override_font_sizes/font_size = 18
 text = "移动鼠标，查看可操作设备。"
+autowrap_mode = 2
 
 [node name="PhoneHotspot" type="Button" parent="."]
 unique_name_in_owner = true
@@ -255,11 +257,12 @@ unique_name_in_owner = true
 visible = false
 layout_mode = 0
 offset_left = 38.0
-offset_top = 676.0
+offset_top = 658.0
 offset_right = 292.0
 offset_bottom = 724.0
 mouse_filter = 2
 theme_override_styles/panel = SubResource("StyleHotspotHint")
+clip_contents = true
 
 [node name="PhoneHintLabel" type="Label" parent="PhoneHint"]
 unique_name_in_owner = true
@@ -269,17 +272,19 @@ theme_override_font_sizes/font_size = 18
 horizontal_alignment = 1
 vertical_alignment = 1
 text = "查看电话"
+autowrap_mode = 2
 
 [node name="ComputerHint" type="PanelContainer" parent="."]
 unique_name_in_owner = true
 visible = false
 layout_mode = 0
 offset_left = 780.0
-offset_top = 448.0
+offset_top = 432.0
 offset_right = 1182.0
 offset_bottom = 498.0
 mouse_filter = 2
 theme_override_styles/panel = SubResource("StyleHotspotHint")
+clip_contents = true
 
 [node name="ComputerHintLabel" type="Label" parent="ComputerHint"]
 unique_name_in_owner = true
@@ -289,17 +294,19 @@ theme_override_font_sizes/font_size = 18
 horizontal_alignment = 1
 vertical_alignment = 1
 text = "使用电脑终端"
+autowrap_mode = 2
 
 [node name="DoorHint" type="PanelContainer" parent="."]
 unique_name_in_owner = true
 visible = false
 layout_mode = 0
 offset_left = 1510.0
-offset_top = 220.0
+offset_top = 204.0
 offset_right = 1820.0
 offset_bottom = 270.0
 mouse_filter = 2
 theme_override_styles/panel = SubResource("StyleHotspotHint")
+clip_contents = true
 
 [node name="DoorHintLabel" type="Label" parent="DoorHint"]
 unique_name_in_owner = true
@@ -309,6 +316,7 @@ theme_override_font_sizes/font_size = 18
 horizontal_alignment = 1
 vertical_alignment = 1
 text = "查看门与观察窗"
+autowrap_mode = 2
 
 [connection signal="pressed" from="PhoneHotspot" to="." method="_on_phone_hotspot_pressed"]
 [connection signal="pressed" from="ComputerHotspot" to="." method="_on_computer_hotspot_pressed"]

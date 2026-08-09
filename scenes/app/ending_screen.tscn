@@ -68,6 +68,7 @@ theme_override_colors/font_color = Color(0.91, 0.97, 0.96, 1)
 theme_override_font_sizes/font_size = 34
 text = "本次值班已结束"
 horizontal_alignment = 1
+autowrap_mode = 2
 
 [node name="Summary" type="Label" parent="Content/EndingPanel/Margin/Layout"]
 layout_mode = 2
@@ -75,6 +76,7 @@ theme_override_colors/font_color = Color(0.6, 0.72, 0.74, 1)
 theme_override_font_sizes/font_size = 19
 text = "夜已过去。"
 horizontal_alignment = 1
+autowrap_mode = 2
 
 [node name="Rule" type="HSeparator" parent="Content/EndingPanel/Margin/Layout"]
 layout_mode = 2
@@ -84,12 +86,14 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 56)
 layout_mode = 2
 text = "重新开始"
+autowrap_mode = 2
 
 [node name="LoadGameButton" type="Button" parent="Content/EndingPanel/Margin/Layout"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 56)
 layout_mode = 2
 text = "读取存档"
+autowrap_mode = 2
 
 [node name="LoadDisabledReason" type="Label" parent="Content/EndingPanel/Margin/Layout"]
 unique_name_in_owner = true
@@ -98,9 +102,11 @@ theme_override_colors/font_color = Color(0.61, 0.66, 0.67, 1)
 theme_override_font_sizes/font_size = 16
 text = "存档系统尚未建立"
 horizontal_alignment = 1
+autowrap_mode = 2
 
 [node name="ReturnToMenuButton" type="Button" parent="Content/EndingPanel/Margin/Layout"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 56)
 layout_mode = 2
 text = "返回主菜单"
+autowrap_mode = 2

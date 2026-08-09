@@ -3,7 +3,21 @@ extends Control
 ## 四个固定工作室视图的唯一导航控制器。
 ##
 ## 子视图只发出意图；本类将合法电话意图转交 PhoneSystem，并确保任意时刻
-## 只有一个视图可见且接受鼠标输入。剧情、时间和记录不在这里保存副本。
+## 只有一个视图可见且接受鼠标输入。它还把权威电话、广播和当前视图合并为
+## 派生的工作状态；剧情、时间和记录不在这里保存副本。
+
+signal work_state_changed(previous_state: int, current_state: int, reason_ids: PackedStringArray)
+
+enum WorkState {
+	IDLE,
+	ACTIVE,
+}
+
+const WORK_REASON_PHONE_RINGING: String = "phone_ringing"
+const WORK_REASON_PHONE_CONNECTED: String = "phone_connected"
+const WORK_REASON_DIALOGUE_CHOICE: String = "dialogue_choice"
+const WORK_REASON_BROADCAST_PENDING: String = "broadcast_pending"
+const WORK_REASON_COMPUTER_OPEN: String = "computer_open"
 
 const VIEW_STUDIO: String = "studio"
 const VIEW_PHONE: String = "phone"
@@ -28,6 +42,9 @@ var _views_by_id: Dictionary[String, Control] = {}
 var _current_view_id: String = VIEW_STUDIO
 var _is_ending: bool = false
 var _are_view_signals_connected: bool = false
+var _are_work_state_signals_connected: bool = false
+var _work_state: WorkState = WorkState.IDLE
+var _work_state_reason_ids: PackedStringArray = PackedStringArray()
 var _is_motion_enabled: bool = true
 var _is_view_transitioning: bool = false
 var _view_transition: Tween = null
@@ -60,8 +77,16 @@ func bind_runtime(story_engine: RefCounted, phone_system: RefCounted, game_clock
 		return _make_error("StoryEngine 实例不能为空。")
 	if phone_system == null:
 		return _make_error("PhoneSystem 实例不能为空。")
-	if not is_instance_valid(game_clock) or not game_clock.has_method(&"get_current_game_tick"):
-		return _make_error("GameClock 缺少 get_current_game_tick() 整数时钟接口。")
+	if not is_instance_valid(game_clock):
+		return _make_error("GameClock 实例不可用。")
+	var required_clock_methods: PackedStringArray = [
+		"get_current_game_tick",
+		"set_time_rate_mode",
+		"get_time_rate_mode",
+	]
+	for method_name: String in required_clock_methods:
+		if not game_clock.has_method(method_name):
+			return _make_error("GameClock 缺少 %s() 接口。" % method_name)
 	var required_phone_methods: PackedStringArray = [
 		"answer_call",
 		"enter_dialogue_choice",
@@ -74,6 +99,16 @@ func bind_runtime(story_engine: RefCounted, phone_system: RefCounted, game_clock
 	for method_name: String in required_phone_methods:
 		if not phone_system.has_method(method_name):
 			return _make_error("PhoneSystem 缺少 %s() 接口。" % method_name)
+	var required_story_methods: PackedStringArray = [
+		"begin_active_call_dialogue",
+		"select_dialogue_option",
+		"send_player_broadcast",
+		"get_active_dialogue_snapshot",
+		"get_available_broadcasts",
+	]
+	for method_name: String in required_story_methods:
+		if not story_engine.has_method(method_name):
+			return _make_error("StoryEngine 缺少 %s() 接口。" % method_name)
 
 	_story_engine = story_engine
 	_phone_system = phone_system
@@ -81,14 +116,24 @@ func bind_runtime(story_engine: RefCounted, phone_system: RefCounted, game_clock
 	_is_ending = false
 	if not _bind_child_runtime(_phone_closeup, &"bind_phone_system", [_phone_system], "绑定电话近景"):
 		return {"ok": false, "message": "无法绑定电话近景。"}
+	if not _bind_child_runtime(_phone_closeup, &"bind_story_engine", [_story_engine], "绑定电话剧情"):
+		return {"ok": false, "message": "无法绑定电话剧情。"}
 	if not _bind_child_runtime(_computer_closeup, &"bind_phone_system", [_phone_system], "绑定电脑近景"):
 		return {"ok": false, "message": "无法绑定电脑近景。"}
+	if not _bind_child_runtime(_computer_closeup, &"bind_story_engine", [_story_engine], "绑定电脑剧情"):
+		return {"ok": false, "message": "无法绑定电脑剧情。"}
 	if not _bind_child_runtime(_global_status, &"bind_runtime", [_phone_system, _game_clock], "绑定全局状态条"):
 		return {"ok": false, "message": "无法绑定全局状态条。"}
 	var signal_result: Dictionary = _connect_view_signals()
 	if not bool(signal_result.get("ok", false)):
 		return signal_result
+	var work_state_signal_result: Dictionary = _connect_work_state_signals()
+	if not bool(work_state_signal_result.get("ok", false)):
+		return work_state_signal_result
 	_show_view_internal(VIEW_STUDIO, true)
+	var work_state_result: Dictionary = _sync_work_state_and_time_rate()
+	if not bool(work_state_result.get("ok", false)):
+		return work_state_result
 	return {"ok": true}
 
 
@@ -99,6 +144,9 @@ func show_view(view_id: String) -> Dictionary:
 	if _is_ending and view_id != VIEW_COMPUTER:
 		return {"ok": false, "message": "02:00 强制收束中，只能停留在电脑播出记录。"}
 	_show_view_internal(view_id, false)
+	var work_state_result: Dictionary = _sync_work_state_and_time_rate()
+	if not bool(work_state_result.get("ok", false)):
+		return work_state_result
 	return {"ok": true, "view_id": view_id}
 
 
@@ -154,6 +202,9 @@ func show_ending(record: Dictionary) -> Dictionary:
 	_system_message.text = "02:00 强制收束：线路与待触发事件已由 StoryEngine 终止。"
 	_system_message_panel.visible = true
 	_show_view_internal(VIEW_COMPUTER, true)
+	var work_state_result: Dictionary = _sync_work_state_and_time_rate()
+	if not bool(work_state_result.get("ok", false)):
+		return work_state_result
 	return {"ok": true}
 
 
@@ -164,6 +215,25 @@ func show_system_error(message: String) -> void:
 
 func get_current_view_id() -> String:
 	return _current_view_id
+
+
+func get_work_state() -> WorkState:
+	return _work_state
+
+
+func get_work_state_name() -> String:
+	return WorkState.keys()[_work_state]
+
+
+func get_work_state_snapshot() -> Dictionary:
+	var snapshot: Dictionary = {
+		"state": _work_state,
+		"state_name": get_work_state_name(),
+		"reason_ids": _work_state_reason_ids.duplicate(),
+		"uses_realtime_rate": _work_state == WorkState.ACTIVE,
+	}
+	snapshot.make_read_only()
+	return snapshot
 
 
 func is_ending() -> bool:
@@ -183,9 +253,12 @@ func is_view_transitioning() -> bool:
 func release_runtime() -> Dictionary:
 	_cancel_view_transition()
 	_disconnect_view_signals()
+	_disconnect_work_state_signals()
 	_story_engine = null
 	_phone_system = null
 	_game_clock = null
+	_work_state = WorkState.IDLE
+	_work_state_reason_ids = PackedStringArray()
 	return {"ok": true}
 
 
@@ -197,9 +270,11 @@ func _connect_view_signals() -> Dictionary:
 		{"source": _phone_closeup, "signal": &"return_requested", "callback": Callable(self, "_on_closeup_return_requested")},
 		{"source": _phone_closeup, "signal": &"answer_requested", "callback": Callable(self, "_on_answer_requested")},
 		{"source": _phone_closeup, "signal": &"dialogue_choice_requested", "callback": Callable(self, "_on_dialogue_choice_requested")},
+		{"source": _phone_closeup, "signal": &"dialogue_option_requested", "callback": Callable(self, "_on_dialogue_option_requested")},
 		{"source": _phone_closeup, "signal": &"hang_up_requested", "callback": Callable(self, "_on_hang_up_requested")},
 		{"source": _phone_closeup, "signal": &"finish_call_requested", "callback": Callable(self, "_on_finish_call_requested")},
 		{"source": _computer_closeup, "signal": &"return_requested", "callback": Callable(self, "_on_closeup_return_requested")},
+		{"source": _computer_closeup, "signal": &"broadcast_requested", "callback": Callable(self, "_on_broadcast_requested")},
 		{"source": _door_window_closeup, "signal": &"return_requested", "callback": Callable(self, "_on_closeup_return_requested")},
 		{"source": _global_status, "signal": &"phone_view_requested", "callback": Callable(self, "_on_phone_view_requested")},
 	]
@@ -226,9 +301,11 @@ func _disconnect_view_signals() -> void:
 		{"source": _phone_closeup, "signal": &"return_requested", "callback": Callable(self, "_on_closeup_return_requested")},
 		{"source": _phone_closeup, "signal": &"answer_requested", "callback": Callable(self, "_on_answer_requested")},
 		{"source": _phone_closeup, "signal": &"dialogue_choice_requested", "callback": Callable(self, "_on_dialogue_choice_requested")},
+		{"source": _phone_closeup, "signal": &"dialogue_option_requested", "callback": Callable(self, "_on_dialogue_option_requested")},
 		{"source": _phone_closeup, "signal": &"hang_up_requested", "callback": Callable(self, "_on_hang_up_requested")},
 		{"source": _phone_closeup, "signal": &"finish_call_requested", "callback": Callable(self, "_on_finish_call_requested")},
 		{"source": _computer_closeup, "signal": &"return_requested", "callback": Callable(self, "_on_closeup_return_requested")},
+		{"source": _computer_closeup, "signal": &"broadcast_requested", "callback": Callable(self, "_on_broadcast_requested")},
 		{"source": _door_window_closeup, "signal": &"return_requested", "callback": Callable(self, "_on_closeup_return_requested")},
 		{"source": _global_status, "signal": &"phone_view_requested", "callback": Callable(self, "_on_phone_view_requested")},
 	]
@@ -239,6 +316,136 @@ func _disconnect_view_signals() -> void:
 		if source != null and source.is_connected(signal_name, callback):
 			source.disconnect(signal_name, callback)
 	_are_view_signals_connected = false
+
+
+## 工作状态是电话、待播稿件和当前视图的派生结果，不取代这些系统各自的
+## 权威状态。任何来源改变时都在同一处重算，并让 GameClock 与可见状态同步。
+func _connect_work_state_signals() -> Dictionary:
+	if _are_work_state_signals_connected:
+		return {"ok": true}
+	if _phone_system == null or not _phone_system.has_signal(&"state_changed"):
+		return _make_error("PhoneSystem 缺少 state_changed 信号，无法同步工作状态。")
+	if _story_engine == null or not _story_engine.has_signal(&"broadcast_state_changed"):
+		return _make_error("StoryEngine 缺少 broadcast_state_changed 信号，无法同步工作状态。")
+	var phone_callback: Callable = Callable(self, "_on_phone_state_changed")
+	if not _phone_system.is_connected(&"state_changed", phone_callback):
+		var connect_result: Error = _phone_system.connect(&"state_changed", phone_callback)
+		if connect_result != OK:
+			return _make_error("无法连接 PhoneSystem.state_changed，错误码=%d。" % connect_result)
+	var broadcast_callback: Callable = Callable(self, "_on_broadcast_state_changed")
+	if not _story_engine.is_connected(&"broadcast_state_changed", broadcast_callback):
+		var broadcast_connect_result: Error = _story_engine.connect(&"broadcast_state_changed", broadcast_callback)
+		if broadcast_connect_result != OK:
+			if _phone_system.is_connected(&"state_changed", phone_callback):
+				_phone_system.disconnect(&"state_changed", phone_callback)
+			return _make_error("无法连接 StoryEngine.broadcast_state_changed，错误码=%d。" % broadcast_connect_result)
+	_are_work_state_signals_connected = true
+	return {"ok": true}
+
+
+func _disconnect_work_state_signals() -> void:
+	if not _are_work_state_signals_connected:
+		return
+	if _phone_system != null:
+		var phone_callback: Callable = Callable(self, "_on_phone_state_changed")
+		if _phone_system.is_connected(&"state_changed", phone_callback):
+			_phone_system.disconnect(&"state_changed", phone_callback)
+	if _story_engine != null:
+		var broadcast_callback: Callable = Callable(self, "_on_broadcast_state_changed")
+		if _story_engine.is_connected(&"broadcast_state_changed", broadcast_callback):
+			_story_engine.disconnect(&"broadcast_state_changed", broadcast_callback)
+	_are_work_state_signals_connected = false
+
+
+func _on_phone_state_changed(_previous_state: int, _current_state: int, _event_id: String) -> void:
+	_sync_work_state_or_show_error()
+
+
+func _on_broadcast_state_changed() -> void:
+	_sync_work_state_or_show_error()
+
+
+func _sync_work_state_or_show_error() -> void:
+	var result: Dictionary = _sync_work_state_and_time_rate()
+	if not bool(result.get("ok", false)):
+		show_system_error(String(result.get("message", "无法同步工作状态与时间倍率。")))
+
+
+func _sync_work_state_and_time_rate() -> Dictionary:
+	if _game_clock == null or not is_instance_valid(_game_clock):
+		return _make_error("GameClock 不可用，无法同步工作状态与时间倍率。")
+	if _phone_system == null:
+		return _make_error("PhoneSystem 不可用，无法同步工作状态。")
+	if _story_engine == null:
+		return _make_error("StoryEngine 不可用，无法同步待播广播状态。")
+	var state_result: Variant = _phone_system.call(&"get_state_name")
+	if typeof(state_result) != TYPE_STRING:
+		return _make_error("PhoneSystem 未返回有效状态，无法同步工作状态。")
+	var phone_state_name: String = String(state_result)
+	var next_reason_ids: PackedStringArray = PackedStringArray()
+	match phone_state_name:
+		"RINGING":
+			next_reason_ids.append(WORK_REASON_PHONE_RINGING)
+		"CONNECTED":
+			next_reason_ids.append(WORK_REASON_PHONE_CONNECTED)
+		"DIALOGUE_CHOICE":
+			next_reason_ids.append(WORK_REASON_DIALOGUE_CHOICE)
+		"IDLE", "ENDED", "MISSED":
+			pass
+		_:
+			return _make_error("PhoneSystem 返回未知状态：%s。" % phone_state_name)
+	if _current_view_id == VIEW_COMPUTER:
+		next_reason_ids.append(WORK_REASON_COMPUTER_OPEN)
+	var pending_result: Dictionary = _has_pending_player_broadcast()
+	if not bool(pending_result.get("ok", false)):
+		return pending_result
+	if bool(pending_result["has_pending_broadcast"]):
+		next_reason_ids.append(WORK_REASON_BROADCAST_PENDING)
+
+	var next_work_state: WorkState = WorkState.ACTIVE if not next_reason_ids.is_empty() else WorkState.IDLE
+	var target_rate: GameClockService.TimeRate = GameClockService.TimeRate.SLOW if next_work_state == WorkState.ACTIVE else GameClockService.TimeRate.FAST
+	var rate_result: Variant = _game_clock.call(&"set_time_rate_mode", target_rate)
+	if not _is_ok_result(rate_result):
+		return _make_error("GameClock 拒绝同步时间倍率：%s" % str(rate_result))
+
+	var previous_work_state: WorkState = _work_state
+	_work_state = next_work_state
+	_work_state_reason_ids = next_reason_ids
+	if not _global_status.has_method(&"show_work_state"):
+		return _make_error("全局状态条缺少 show_work_state()，无法显示实际时间流速。")
+	var display_result: Variant = _global_status.call(&"show_work_state", get_work_state_snapshot())
+	if not _is_ok_result(display_result):
+		return _make_error("全局状态条拒绝显示工作状态：%s" % str(display_result))
+	if previous_work_state != _work_state:
+		print("[%s][工作状态] %s -> %s，原因=%s。" % [
+			String(_game_clock.call(&"get_display_time")),
+			WorkState.keys()[previous_work_state],
+			get_work_state_name(),
+			str(_work_state_reason_ids),
+		])
+		work_state_changed.emit(previous_work_state, _work_state, _work_state_reason_ids.duplicate())
+	return {
+		"ok": true,
+		"work_state": _work_state,
+		"work_state_name": get_work_state_name(),
+		"reason_ids": _work_state_reason_ids.duplicate(),
+		"time_rate": target_rate,
+	}
+
+
+func _has_pending_player_broadcast() -> Dictionary:
+	var drafts_value: Variant = _story_engine.call(&"get_available_broadcasts")
+	if not drafts_value is Array:
+		return _make_error("StoryEngine.get_available_broadcasts() 必须返回 Array。")
+	for raw_draft: Variant in drafts_value as Array:
+		if not raw_draft is Dictionary:
+			return _make_error("StoryEngine 返回了非 Dictionary 的广播稿。")
+		var draft: Dictionary = raw_draft as Dictionary
+		if not draft.has("is_available_to_send") or typeof(draft["is_available_to_send"]) != TYPE_BOOL:
+			return _make_error("广播稿缺少布尔字段 is_available_to_send。")
+		if bool(draft["is_available_to_send"]):
+			return {"ok": true, "has_pending_broadcast": true}
+	return {"ok": true, "has_pending_broadcast": false}
 
 
 func _bind_child_runtime(view: Object, method_name: StringName, arguments: Array, context: String) -> bool:
@@ -279,8 +486,14 @@ func _on_answer_requested() -> void:
 
 
 func _on_dialogue_choice_requested() -> void:
+	if _is_ending:
+		show_system_error("对话选择失败：02:00 强制收束已执行。")
+		return
 	if _phone_system == null:
 		show_system_error("电话操作失败：PhoneSystem 不可用。")
+		return
+	if _story_engine == null:
+		show_system_error("电话操作失败：StoryEngine 不可用。")
 		return
 	var state_result: Variant = _phone_system.call(&"get_state_name")
 	if typeof(state_result) != TYPE_STRING:
@@ -288,11 +501,85 @@ func _on_dialogue_choice_requested() -> void:
 		return
 	var state_name: String = String(state_result)
 	if state_name == "CONNECTED":
-		_call_phone_action(&"enter_dialogue_choice", "进入对话选择", false)
+		if _is_active_dialogue_terminal():
+			show_system_error("本通电话的预制对话已经结束，请直接结束通话。")
+			return
+		if not _call_phone_action(&"enter_dialogue_choice", "进入对话选择", false):
+			return
+		var dialogue_result: Variant = _story_engine.call(&"begin_active_call_dialogue")
+		if _is_ok_result(dialogue_result):
+			_system_message.text = "预制对话已由 StoryEngine 开始。"
+			_system_message_panel.visible = true
+			return
+		var restore_result: Variant = _phone_system.call(&"exit_dialogue_choice")
+		var failure_reason: String = _describe_operation_failure(dialogue_result, "StoryEngine 未能开始预制对话。")
+		if typeof(restore_result) != TYPE_BOOL or not bool(restore_result):
+			failure_reason += "；同时无法将电话恢复为已接通状态。"
+		show_system_error("进入对话选择失败：%s" % failure_reason)
 	elif state_name == "DIALOGUE_CHOICE":
-		_call_phone_action(&"exit_dialogue_choice", "提交对话选择", false)
+		show_system_error("当前正在等待预制回应，请点击上方的对话选项。")
 	else:
 		show_system_error("对话选择失败：当前电话状态 %s 不允许此操作。" % state_name)
+
+
+func _on_dialogue_option_requested(option_id: String) -> void:
+	if _is_ending:
+		show_system_error("提交对话回应失败：02:00 强制收束已执行。")
+		return
+	if option_id.strip_edges().is_empty():
+		show_system_error("提交对话回应失败：选项 ID 不能为空。")
+		return
+	if _story_engine == null or _phone_system == null:
+		show_system_error("提交对话回应失败：StoryEngine 或 PhoneSystem 不可用。")
+		return
+	var selection_result: Variant = _story_engine.call(&"select_dialogue_option", option_id)
+	if not _is_ok_result(selection_result):
+		show_system_error("提交对话回应失败：%s" % _describe_operation_failure(selection_result, "StoryEngine 拒绝了该选项。"))
+		return
+	var selection: Dictionary = selection_result as Dictionary
+	if not bool(selection.get("reached_terminal", false)):
+		return
+	var exit_result: Variant = _phone_system.call(&"exit_dialogue_choice")
+	if typeof(exit_result) != TYPE_BOOL or not bool(exit_result):
+		var reason: String = "PhoneSystem 拒绝将终止台词后的线路恢复为已接通。"
+		if _phone_system.has_method(&"get_last_error"):
+			reason = String(_phone_system.call(&"get_last_error"))
+		show_system_error("提交对话回应失败：%s" % reason)
+		return
+	_system_message.text = "本轮预制对话结束，可结束通话。"
+	_system_message_panel.visible = true
+
+
+func _is_active_dialogue_terminal() -> bool:
+	if _story_engine == null:
+		return false
+	var snapshot_value: Variant = _story_engine.call(&"get_active_dialogue_snapshot")
+	if not snapshot_value is Dictionary:
+		return false
+	var snapshot: Dictionary = snapshot_value as Dictionary
+	return not snapshot.is_empty() and bool(snapshot.get("is_terminal", false))
+
+
+func _on_broadcast_requested(broadcast_id: String) -> void:
+	var broadcast_result: Dictionary = {}
+	if _is_ending:
+		broadcast_result = {"ok": false, "message": "02:00 强制收束已发生，不能发送玩家广播。"}
+	elif broadcast_id.strip_edges().is_empty():
+		broadcast_result = {"ok": false, "message": "广播稿 ID 不能为空。"}
+	elif _story_engine == null:
+		broadcast_result = {"ok": false, "message": "StoryEngine 不可用，不能发送玩家广播。"}
+	else:
+		var result_value: Variant = _story_engine.call(&"send_player_broadcast", broadcast_id)
+		if result_value is Dictionary:
+			broadcast_result = result_value as Dictionary
+		else:
+			broadcast_result = {"ok": false, "message": "StoryEngine.send_player_broadcast() 未返回 Dictionary。"}
+	var feedback_result: Variant = _computer_closeup.call(&"show_broadcast_feedback", broadcast_result)
+	if not _is_ok_result(feedback_result):
+		show_system_error("无法显示广播反馈：%s" % _describe_operation_failure(feedback_result, "电脑播出工作台不可用。"))
+		return
+	if not bool(broadcast_result.get("ok", false)):
+		show_system_error("发送广播失败：%s" % String(broadcast_result.get("message", "未知原因。")))
 
 
 func _on_hang_up_requested() -> void:
@@ -303,29 +590,39 @@ func _on_finish_call_requested() -> void:
 	_call_phone_action(&"finish_call", "结束通话", true)
 
 
-func _call_phone_action(method_name: StringName, action_name: String, needs_game_tick: bool) -> void:
+func _call_phone_action(method_name: StringName, action_name: String, needs_game_tick: bool) -> bool:
 	if _is_ending:
 		show_system_error("%s失败：02:00 强制收束已执行。" % action_name)
-		return
+		return false
 	if _phone_system == null:
 		show_system_error("%s失败：PhoneSystem 不可用。" % action_name)
-		return
+		return false
 	var arguments: Array = []
 	if needs_game_tick:
 		var tick_result: Dictionary = _get_current_game_tick()
 		if not bool(tick_result.get("ok", false)):
 			show_system_error("%s失败：%s" % [action_name, String(tick_result.get("message", "时钟不可用。"))])
-			return
+			return false
 		arguments.append(int(tick_result["game_tick"]))
 	var result: Variant = _phone_system.callv(method_name, arguments)
 	if typeof(result) == TYPE_BOOL and bool(result):
 		_system_message.text = "%s意图已提交给 PhoneSystem。" % action_name
 		_system_message_panel.visible = true
-		return
+		return true
 	var reason: String = "PhoneSystem 拒绝了该操作。"
 	if _phone_system.has_method(&"get_last_error"):
 		reason = String(_phone_system.call(&"get_last_error"))
 	show_system_error("%s失败：%s" % [action_name, reason])
+	return false
+
+
+func _describe_operation_failure(result: Variant, fallback_message: String) -> String:
+	if result is Dictionary:
+		var payload: Dictionary = result as Dictionary
+		var message: String = String(payload.get("message", ""))
+		if not message.strip_edges().is_empty():
+			return message
+	return fallback_message
 
 
 func _get_current_game_tick() -> Dictionary:

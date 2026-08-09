@@ -73,9 +73,11 @@ func _run() -> void:
 		_finish()
 		return
 	_assert_equal(first_screen.get_current_view_id(), "studio", "新局 GameScreen 必须可操作并从工作室总览开始。")
-	_assert_equal(String(first_phone.call(&"get_state_name")), "RINGING", "已校验的首条来电必须由 StoryEngine 真实触发。")
+	_assert_equal(String(first_phone.call(&"get_state_name")), "IDLE", "01:00 开场前一分钟不应提前触发来电。")
+	_assert_true(bool(game_clock.call(&"advance_ticks_for_verification", 60)), "第一局必须能推进到 01:01 的首通来电窗口。")
+	_assert_equal(String(first_phone.call(&"get_state_name")), "RINGING", "已校验的沃伦来电必须由 StoryEngine 真实触发。")
 	_assert_true(bool(first_phone.call(&"answer_call", int(game_clock.call(&"get_current_game_tick")))), "第一局必须能真实接听来电。")
-	_assert_true(bool(first_phone.call(&"finish_call", int(game_clock.call(&"get_current_game_tick")) + 1)), "第一局必须能真实结束来电。")
+	_assert_true(bool(first_phone.call(&"finish_call", int(game_clock.call(&"get_current_game_tick")))), "第一局必须能真实结束来电。")
 	var first_records: Variant = first_phone.call(&"get_call_records")
 	_assert_true(first_records is Array and (first_records as Array).size() == 1, "第一局必须由 PhoneSystem 产生真实电话记录。")
 
@@ -87,8 +89,11 @@ func _run() -> void:
 	var broadcast_record: Variant = first_engine.call(&"get_unauthorized_broadcast_record")
 	_assert_true(broadcast_record is Dictionary and not (broadcast_record as Dictionary).is_empty(), "02:00 后 StoryEngine 必须拥有权威未授权播出记录。")
 	var call_log_view: Control = first_screen.get_node_or_null(NodePath("ViewHost/ComputerCloseup/TerminalSurface/CallLogView")) as Control
-	var broadcast_label: Label = call_log_view.get("_broadcast_label") as Label if call_log_view != null else null
-	_assert_true(broadcast_label != null and broadcast_label.text.contains("fact_unauthorized_broadcast"), "延时进入结束页前，电脑必须显示权威未授权播出记录。")
+	var displayed_broadcast: Variant = call_log_view.get("_unauthorized_broadcast") if call_log_view != null else null
+	_assert_true(
+		displayed_broadcast is Dictionary and String((displayed_broadcast as Dictionary).get("fact_id", "")) == "fact_unauthorized_broadcast",
+		"延时进入结束页前，电脑必须显示权威未授权播出记录。"
+	)
 	await create_timer(0.16).timeout
 	assert_application_ending(app)
 

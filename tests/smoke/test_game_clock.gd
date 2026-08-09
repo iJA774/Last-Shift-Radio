@@ -8,6 +8,7 @@ var _signal_order: Array[String] = []
 var _has_failed: bool = false
 var _shift_duration_ticks: int = 0
 var _shift_started_count: int = 0
+var _rate_ending_signal_count: int = 0
 
 
 func _init() -> void:
@@ -29,6 +30,7 @@ func _init() -> void:
 	_assert_equal(test_clock.get_display_time(), "01:00", "启动显示时间应为 01:00。")
 	_assert_equal(_shift_duration_ticks, 3_600, "夜班应从 01:00 精确持续至 02:00（3,600 tick）。")
 	_assert_equal(_shift_started_count, 1, "start_shift 必须只发送一次正式启动信号。")
+	_test_real_time_rate_contract()
 	var running_prepare: Dictionary = test_clock.prepare_new_shift()
 	_assert_true(not bool(running_prepare.get("ok", false)), "运行中的时钟必须拒绝 prepare_new_shift。")
 	_assert_equal(String(running_prepare.get("error_code", "")), "clock_running", "运行中预备失败必须给出稳定错误码。")
@@ -65,13 +67,100 @@ func _init() -> void:
 		quit(1)
 		return
 
-	print("[测试][GameClock] 通过：整数 tick、分钟边界与 02:00 强制收束均符合契约。")
+	print("[测试][GameClock] 通过：整数 tick、动态倍率、分钟边界与 02:00 强制收束均符合契约。")
 	quit(0)
+
+
+func _test_real_time_rate_contract() -> void:
+	var rate_clock = GAME_CLOCK_SCRIPT.new()
+	root.add_child(rate_clock)
+	rate_clock.start_shift()
+	_assert_equal(
+		rate_clock.get_time_rate_mode(),
+		GameClockService.TimeRate.FAST,
+		"夜班默认必须使用常态 FAST 倍率。"
+	)
+	_assert_equal(
+		rate_clock.get_real_usec_per_game_minute(),
+		GameClockService.FAST_REAL_USEC_PER_GAME_MINUTE,
+		"常态倍率必须为 2 现实秒对应 1 游戏分钟。"
+	)
+	_assert_true(
+		rate_clock.advance_real_usec_for_verification(GameClockService.FAST_REAL_USEC_PER_GAME_MINUTE),
+		"常态倍率必须接受确定性真实时间推进。"
+	)
+	_assert_equal(rate_clock.get_current_game_tick(), 60, "2 现实秒在常态倍率下必须精确推进 1 游戏分钟。")
+	var slow_result: Dictionary = rate_clock.set_time_rate_mode_for_verification(GameClockService.TimeRate.SLOW)
+	_assert_true(bool(slow_result.get("ok", false)), "时钟必须允许切换到 SLOW 倍率。")
+	_assert_equal(
+		rate_clock.get_real_usec_per_game_minute(),
+		GameClockService.SLOW_REAL_USEC_PER_GAME_MINUTE,
+		"SLOW 倍率必须为 60 现实秒对应 1 游戏分钟。"
+	)
+	_assert_true(
+		rate_clock.advance_real_usec_for_verification(GameClockService.SLOW_REAL_USEC_PER_GAME_MINUTE),
+		"SLOW 倍率必须接受确定性真实时间推进。"
+	)
+	_assert_equal(rate_clock.get_current_game_tick(), 120, "60 现实秒在 SLOW 倍率下必须只推进 1 游戏分钟。")
+	_cleanup_clock(rate_clock)
+
+	var boundary_clock = GAME_CLOCK_SCRIPT.new()
+	root.add_child(boundary_clock)
+	boundary_clock.start_shift()
+	_assert_true(
+		boundary_clock.advance_real_usec_for_verification(33_333),
+		"倍率切换边界前必须能注入不足一个 tick 的常态真实时间。"
+	)
+	_assert_equal(boundary_clock.get_current_game_tick(), 0, "33,333 微秒常态时间不足一个完整 tick。")
+	var boundary_rate_result: Dictionary = boundary_clock.set_time_rate_mode_for_verification(GameClockService.TimeRate.SLOW)
+	_assert_true(bool(boundary_rate_result.get("ok", false)), "边界处必须允许切换到 SLOW 倍率。")
+	_assert_true(boundary_clock.advance_real_usec_for_verification(9), "切换后的部分真实时间必须可累计。")
+	_assert_equal(boundary_clock.get_current_game_tick(), 0, "切换后 9 微秒仍不足以补齐原有分数 tick。")
+	_assert_true(boundary_clock.advance_real_usec_for_verification(1), "切换后必须能补齐原有分数 tick。")
+	_assert_equal(
+		boundary_clock.get_current_game_tick(),
+		1,
+		"倍率切换必须保留分数游戏进度，不能丢失或重复 tick。"
+	)
+	_cleanup_clock(boundary_clock)
+
+	var ending_clock = GAME_CLOCK_SCRIPT.new()
+	root.add_child(ending_clock)
+	_rate_ending_signal_count = 0
+	ending_clock.ending_time_reached.connect(_on_rate_ending_time_reached)
+	ending_clock.start_shift()
+	_assert_true(
+		bool(ending_clock.set_time_rate_mode_for_verification(GameClockService.TimeRate.SLOW).get("ok", false)),
+		"02:00 边界测试必须能进入 SLOW 倍率。"
+	)
+	_assert_true(
+		ending_clock.advance_real_usec_for_verification(
+			GameClockService.SLOW_REAL_USEC_PER_GAME_MINUTE * (GameClockService.SHIFT_DURATION_MINUTES - 1)
+		),
+		"SLOW 倍率下必须能确定性推进至 01:59。"
+	)
+	_assert_equal(ending_clock.get_current_game_tick(), 3_540, "01:59 前的慢速推进 tick 必须精确。")
+	_assert_true(
+		bool(ending_clock.set_time_rate_mode_for_verification(GameClockService.TimeRate.FAST).get("ok", false)),
+		"02:00 前必须能从 SLOW 切回 FAST 倍率。"
+	)
+	_assert_true(
+		ending_clock.advance_real_usec_for_verification(GameClockService.FAST_REAL_USEC_PER_GAME_MINUTE),
+		"切回 FAST 后必须能完成最后一个游戏分钟。"
+	)
+	_assert_equal(ending_clock.get_current_game_tick(), GameClockService.SHIFT_DURATION_TICKS, "动态倍率下 02:00 tick 必须精确。")
+	_assert_equal(_rate_ending_signal_count, 1, "动态倍率下 ending_time_reached 仍必须只发送一次。")
+	_assert_true(not ending_clock.is_running(), "动态倍率下到达 02:00 后时钟仍必须停止。")
+	_cleanup_clock(ending_clock)
 
 
 func _on_ending_time_reached(_end_tick: int) -> void:
 	_ending_signal_count += 1
 	_signal_order.append("ending")
+
+
+func _on_rate_ending_time_reached(_end_tick: int) -> void:
+	_rate_ending_signal_count += 1
 
 
 func _on_game_time_advanced(_previous_tick: int, current_tick: int) -> void:
@@ -85,6 +174,12 @@ func _on_game_minute_changed(_previous_elapsed_minute: int, _current_elapsed_min
 
 func _on_shift_started(_start_tick: int) -> void:
 	_shift_started_count += 1
+
+
+func _cleanup_clock(clock: Node) -> void:
+	if is_instance_valid(clock) and clock.get_parent() != null:
+		clock.get_parent().remove_child(clock)
+		clock.free()
 
 
 func _assert_true(condition: bool, message: String) -> void:

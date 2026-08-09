@@ -12,7 +12,7 @@ const GAME_SCREEN_SCENE: PackedScene = preload("res://scenes/studio/game_screen.
 const MAIN_MENU_SCENE: PackedScene = preload("res://scenes/app/main_menu.tscn")
 const CONTENT_NOTICE_SCENE: PackedScene = preload("res://scenes/app/content_notice.tscn")
 const ENDING_SCREEN_SCENE: PackedScene = preload("res://scenes/app/ending_screen.tscn")
-const FOUNDATION_EVENTS_PATH: String = "res://data/story/foundation_events.json"
+const TEST_NIGHT_STORY_PATH: String = "res://data/story/test_night_story.json"
 const DEFAULT_ENDING_TRANSITION_DELAY_SECONDS: float = 0.85
 
 enum AppState {
@@ -23,7 +23,7 @@ enum AppState {
 	ENDING,
 }
 
-@export_file("*.json") var content_source_path: String = FOUNDATION_EVENTS_PATH
+@export_file("*.json") var content_source_path: String = TEST_NIGHT_STORY_PATH
 @export_range(0.05, 3.0, 0.05) var ending_transition_delay_seconds: float = DEFAULT_ENDING_TRANSITION_DELAY_SECONDS
 
 var _app_state: AppState = AppState.BOOT
@@ -142,19 +142,18 @@ func _start_new_shift() -> void:
 		_show_content_notice("准备新夜班时钟失败：%s" % _describe_result(prepare_result))
 		return
 
-	var events_result: Dictionary = _load_validated_events()
-	if not bool(events_result.get("ok", false)):
+	var story_content_result: Dictionary = _load_validated_test_story()
+	if not bool(story_content_result.get("ok", false)):
 		_is_creating_shift = false
-		_show_content_notice(String(events_result.get("message", "基础系统事件数据加载失败。")))
+		_show_content_notice(String(story_content_result.get("message", "测试剧情数据加载失败。")))
 		return
 
-	_content_validation_result = events_result
+	_content_validation_result = story_content_result
 	_phone_system = PHONE_SYSTEM_SCRIPT.new()
 	_story_engine = STORY_ENGINE_SCRIPT.new()
 	if not _check_runtime_result(_story_engine.call(&"set_phone_system", _phone_system), "连接 PhoneSystem"):
 		return
-	var events: Array = events_result["events"] as Array
-	if not _check_runtime_result(_story_engine.call(&"schedule_events", events), "登记已校验来电事件"):
+	if not _check_runtime_result(_story_engine.call(&"configure_test_night_story", story_content_result), "配置已校验测试剧情"):
 		return
 
 	_game_screen = GAME_SCREEN_SCENE.instantiate() as GameScreen
@@ -174,27 +173,28 @@ func _start_new_shift() -> void:
 	_is_shift_started = true
 	_game_clock.call(&"start_shift")
 	_is_creating_shift = false
-	print("[应用][shift_started] 已加载并校验 %d 条基础系统来电事件，当前状态=SHIFT。" % events.size())
+	var event_count: int = (story_content_result["events"] as Array).size()
+	print("[应用][shift_started] 已加载并校验 %d 条测试剧情来电事件，当前状态=SHIFT。" % event_count)
 
 
-func _load_validated_events() -> Dictionary:
+func _load_validated_test_story() -> Dictionary:
 	var loader = CONTENT_LOADER_SCRIPT.new()
 	var load_result: Variant = loader.load_json(content_source_path)
 	if not _is_ok_result(load_result):
-		return _startup_error("读取基础系统事件数据失败：%s" % _describe_result(load_result))
+		return _startup_error("读取测试剧情数据失败：%s" % _describe_result(load_result))
 	var loaded: Dictionary = load_result as Dictionary
 	if not loaded.has("data"):
-		return _startup_error("读取基础系统事件数据失败：ContentLoader 成功结果缺少 data 字段。")
+		return _startup_error("读取测试剧情数据失败：ContentLoader 成功结果缺少 data 字段。")
 
 	var validator = CONTENT_VALIDATOR_SCRIPT.new()
-	var validation_result: Variant = validator.validate_incoming_call_events(loaded["data"], content_source_path)
+	var validation_result: Variant = validator.validate_test_night_story(loaded["data"], content_source_path)
 	if not _is_ok_result(validation_result):
-		return _startup_error("基础系统事件数据校验失败：%s" % _describe_result(validation_result))
+		return _startup_error("测试剧情数据校验失败：%s" % _describe_result(validation_result))
 	var validated: Dictionary = validation_result as Dictionary
 	var events_value: Variant = validated.get("events")
 	if not events_value is Array:
-		return _startup_error("基础系统事件数据校验失败：成功结果缺少 events 数组。")
-	return {"ok": true, "events": (events_value as Array).duplicate(true)}
+		return _startup_error("测试剧情数据校验失败：成功结果缺少 events 数组。")
+	return validated.duplicate(true)
 
 
 func _connect_ending_signal() -> bool:

@@ -1,6 +1,6 @@
 extends SceneTree
 
-## 应用壳集成验证：Main 只能编排运行时、基础系统事件数据和 02:00 收束。
+## 应用壳集成验证：Main 只能编排运行时、完整测试剧情数据和 02:00 收束。
 
 const MAIN_SCENE: PackedScene = preload("res://scenes/app/main.tscn")
 
@@ -35,7 +35,7 @@ func _run() -> void:
 		startup_error_label = invalid_notice.get_node("Content/NoticePanel/Margin/Layout/ErrorPanel/ErrorLabel") as Label
 	_assert_true(
 		startup_error_label != null
-			and startup_error_label.text.contains("基础系统事件数据")
+			and startup_error_label.text.contains("测试剧情数据")
 			and startup_error_label.text.contains("JSON 解析失败"),
 		"损坏 JSON 必须在 GameScreen 显示可定位的中文错误。"
 	)
@@ -58,42 +58,36 @@ func _run() -> void:
 	_assert_true(phone_system != null, "Main 必须创建 PhoneSystem。")
 	_assert_true(story_engine != null, "Main 必须创建 StoryEngine。")
 	_assert_true(game_screen != null, "Main 必须注入预制的 GameScreen。")
-	_assert_true(bool(app.get("_is_shift_started")), "有效基础系统事件数据通过校验后必须启动夜班。")
+	_assert_true(bool(app.get("_is_shift_started")), "有效测试剧情数据通过校验后必须启动夜班。")
 	var validation_result: Variant = app.get("_content_validation_result")
 	_assert_true(
 		validation_result is Dictionary and bool((validation_result as Dictionary).get("ok", false)),
-		"Main 必须保留成功的基础系统事件数据校验结果。"
+		"Main 必须保留成功的测试剧情数据校验结果。"
 	)
 	if validation_result is Dictionary:
 		var events: Variant = (validation_result as Dictionary).get("events")
-		_assert_true(events is Array and (events as Array).size() == 2, "基础系统事件数据必须完整交给 StoryEngine。")
+		_assert_true(events is Array and (events as Array).size() == 11, "测试剧情的 11 通来电必须完整交给 StoryEngine。")
 	_assert_main_has_no_demo_event_builder()
 	if phone_system == null or story_engine == null or game_screen == null:
 		_finish()
 		return
 
-	_assert_equal(String(phone_system.call(&"get_state_name")), "RINGING", "首条 JSON 系统事件必须通过 StoryEngine 进入响铃。")
+	_assert_equal(String(phone_system.call(&"get_state_name")), "IDLE", "01:00 开场不应提前响铃。")
+	_assert_true(bool(game_clock.call(&"advance_ticks_for_verification", 60)), "时钟必须能推进到 01:01 首通来电。")
+	_assert_equal(String(phone_system.call(&"get_state_name")), "RINGING", "首条 JSON 剧情事件必须通过 StoryEngine 进入响铃。")
 	var phone_closeup: Control = game_screen.get_node("ViewHost/PhoneCloseup") as Control
 	_assert_true(phone_closeup != null, "GameScreen 必须持有电话近景场景。")
 	if phone_closeup != null:
 		phone_closeup.emit_signal(&"answer_requested")
 		_assert_equal(String(phone_system.call(&"get_state_name")), "CONNECTED", "电话近景接听意图必须由 GameScreen 转交 PhoneSystem。")
-		_assert_true(
-			bool(game_clock.call(&"advance_ticks_for_verification", 60)),
-			"第一通电话接通时，时钟必须能推进到第二条基础系统事件窗口。"
-		)
-		phone_closeup.emit_signal(&"dialogue_choice_requested")
-		_assert_equal(String(phone_system.call(&"get_state_name")), "DIALOGUE_CHOICE", "电话近景选择意图必须进入等待选择状态。")
-		phone_closeup.emit_signal(&"dialogue_choice_requested")
-		_assert_equal(String(phone_system.call(&"get_state_name")), "CONNECTED", "提交选择后必须回到已接通状态。")
 		phone_closeup.emit_signal(&"finish_call_requested")
-		_assert_equal(String(phone_system.call(&"get_state_name")), "RINGING", "主线系统事件占线入队后必须在前一通结束时真实响铃。")
+		_assert_equal(String(phone_system.call(&"get_state_name")), "IDLE", "第一通电话结束后若无同窗事件，线路必须恢复空闲。")
 
 	var records_result: Variant = phone_system.call(&"get_call_records")
 	_assert_true(records_result is Array and (records_result as Array).size() == 1, "电话状态机必须只为已结束的第一通电话生成记录。")
 	if records_result is Array and not (records_result as Array).is_empty():
 		var first_record: Dictionary = (records_result as Array)[0] as Dictionary
-		_assert_equal(String(first_record.get("event_id", "")), "call_system_smoke_normal", "记录必须来自 JSON 稳定事件 ID。")
+		_assert_equal(String(first_record.get("event_id", "")), "call_01_warren", "记录必须来自 JSON 稳定事件 ID。")
 		_assert_equal(String(first_record.get("outcome", "")), "answered", "正常结束的记录结果必须为 answered。")
 
 	var remaining_ticks: Variant = game_clock.call(&"get_remaining_game_ticks")
@@ -116,11 +110,9 @@ func _run() -> void:
 		_assert_equal(int(record.get("time_tick", -1)), 3_600, "播出记录必须精确标记 02:00 tick。")
 		_assert_equal(String(record.get("source", "")), "Studio A", "播出记录来源必须为 Studio A。")
 	var call_log_view: Control = game_screen.get_node("ViewHost/ComputerCloseup/TerminalSurface/CallLogView") as Control
-	var broadcast_label: Label = null
-	if call_log_view != null:
-		broadcast_label = call_log_view.get("_broadcast_label") as Label
+	var displayed_broadcast: Variant = call_log_view.get("_unauthorized_broadcast") if call_log_view != null else null
 	_assert_true(
-		broadcast_label != null and broadcast_label.text.contains("fact_unauthorized_broadcast"),
+		displayed_broadcast is Dictionary and String((displayed_broadcast as Dictionary).get("fact_id", "")) == "fact_unauthorized_broadcast",
 		"电脑页必须展示 StoryEngine 交给 GameScreen 的未授权播出记录。"
 	)
 	_finish()
@@ -142,7 +134,7 @@ func _finish() -> void:
 		print("[测试][MainIntegration] 失败。")
 		quit(1)
 		return
-	print("[测试][MainIntegration] 通过：瘦应用壳、JSON 系统事件启动、电话意图与 02:00 收束已连通。")
+	print("[测试][MainIntegration] 通过：瘦应用壳、JSON 测试剧情启动、电话意图与 02:00 收束已连通。")
 	quit(0)
 
 

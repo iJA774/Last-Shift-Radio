@@ -1,9 +1,10 @@
 class_name ComputerCloseup
 extends Control
-## 电脑近景只包装来电记录显示组件。
-## 来电记录和收束播出记录的权威来源仍分别是 PhoneSystem 与 StoryEngine。
+## 电脑近景只包装信息、来电记录与播出工作台显示组件。
+## 来电记录和播出状态的权威来源仍分别是 PhoneSystem 与 StoryEngine。
 
 signal return_requested()
+signal broadcast_requested(broadcast_id: String)
 
 var _is_return_enabled: bool = true
 var _is_motion_enabled: bool = true
@@ -23,6 +24,24 @@ func bind_phone_system(phone_system: RefCounted) -> Dictionary:
 		return _make_error("电脑来电记录组件缺少 bind_phone_system() 接口。")
 	var result: Variant = _call_log_view.call(&"bind_phone_system", phone_system)
 	return _validate_component_result(result, "绑定电话系统")
+
+
+## 电脑只读取 StoryEngine 给出的稿件/记录，并向 GameScreen 上报 broadcast_id 意图。
+func bind_story_engine(story_engine: RefCounted) -> Dictionary:
+	if story_engine == null:
+		return _make_error("StoryEngine 实例不能为空。")
+	if _call_log_view == null or not _call_log_view.has_method(&"bind_story_engine"):
+		return _make_error("电脑记录组件缺少 bind_story_engine() 接口。")
+	var result: Variant = _call_log_view.call(&"bind_story_engine", story_engine)
+	return _validate_component_result(result, "绑定剧情引擎")
+
+
+## GameScreen 转交 StoryEngine 的发送结果；电脑不自行调用发送接口或拼装记录。
+func show_broadcast_feedback(result: Dictionary) -> Dictionary:
+	if _call_log_view == null or not _call_log_view.has_method(&"show_broadcast_feedback"):
+		return _make_error("电脑记录组件缺少 show_broadcast_feedback() 接口。")
+	var component_result: Variant = _call_log_view.call(&"show_broadcast_feedback", result)
+	return _validate_component_result(component_result, "显示播出反馈")
 
 
 func show_unauthorized_broadcast(record: Dictionary) -> Dictionary:
@@ -53,6 +72,7 @@ func set_motion_enabled(is_enabled: bool) -> Dictionary:
 
 
 func _ready() -> void:
+	_connect_call_log_signals()
 	_refresh_return_button()
 	_configure_ambient_fx()
 	_refresh_screen_motion()
@@ -72,6 +92,25 @@ func _refresh_return_button(disabled_reason: String = "") -> void:
 func _on_back_button_pressed() -> void:
 	if _is_return_enabled and not _return_button.disabled:
 		return_requested.emit()
+
+
+func _connect_call_log_signals() -> void:
+	if _call_log_view == null or not _call_log_view.has_signal(&"broadcast_requested"):
+		push_error("[电脑][broadcast_signal_missing] 电脑记录组件缺少 broadcast_requested 信号。")
+		return
+	var callback: Callable = Callable(self, "_on_call_log_broadcast_requested")
+	if _call_log_view.is_connected(&"broadcast_requested", callback):
+		return
+	var result: Error = _call_log_view.connect(&"broadcast_requested", callback)
+	if result != OK:
+		push_error("[电脑][broadcast_signal_connect_failed] 无法连接 broadcast_requested，错误码=%d。" % result)
+
+
+func _on_call_log_broadcast_requested(broadcast_id: String) -> void:
+	if broadcast_id.strip_edges().is_empty():
+		push_error("[电脑][invalid_broadcast_id] 记录组件发出了空广播 ID。")
+		return
+	broadcast_requested.emit(broadcast_id)
 
 
 func _configure_ambient_fx() -> void:

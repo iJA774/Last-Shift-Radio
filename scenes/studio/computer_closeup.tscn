@@ -78,6 +78,7 @@ offset_top = 180.0
 offset_right = 1482.0
 offset_bottom = 794.0
 theme_override_styles/panel = SubResource("StyleTerminalSurface")
+clip_contents = true
 
 [node name="ScreenGlow" type="ColorRect" parent="."]
 unique_name_in_owner = true
@@ -114,10 +115,11 @@ layout_mode = 0
 offset_left = 1588.0
 offset_top = 120.0
 offset_right = 1872.0
-offset_bottom = 190.0
+offset_bottom = 220.0
 theme_override_colors/font_color = Color(0.95, 0.93, 0.81, 1)
 theme_override_font_sizes/font_size = 20
 text = "返回工作室总览"
 tooltip_text = "返回工作室总览。"
+autowrap_mode = 2
 
 [connection signal="pressed" from="BackButton" to="." method="_on_back_button_pressed"]

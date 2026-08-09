@@ -21,6 +21,9 @@ var _events_by_id: Dictionary = {}
 var _pending_event_ids: Array[String] = []
 var _queued_items: Array[Dictionary] = []
 var _event_status_by_id: Dictionary = {}
+## 条件来电只有在窗口内至少一次满足所有条件后才成为真实电话。
+## 从未取得资格的事件必须安静失效，不能伪造成玩家漏接。
+var _condition_eligible_event_ids: Dictionary = {}
 var _schedule_sequence: int = 0
 var _queue_sequence: int = 0
 var _last_processed_minute: int = 0
@@ -134,8 +137,8 @@ func validate_event(event_data: Dictionary) -> Dictionary:
 
 ## 推进到指定游戏内分钟，并返回本次可立即派发的事件（至多一条）。
 ##
-## 条件检查器接收 condition_id 并返回 bool。未满足条件的事件会留在窗口内，
-## 到期后仍按其 on_expire 策略处理，绝不静默跳过。
+## 条件检查器接收 condition_id 并返回 bool。条件来电必须在窗口内至少一次
+## 取得资格；从未满足条件而越窗的条目不是电话事件，不生成漏接记录。
 func advance_to_minute(current_minute: int, is_busy: bool, condition_checker: Callable = Callable()) -> Dictionary:
 	if _is_ending_forced:
 		return _make_error("", "ending_forced", "02:00 强制收束已发生，不再推进普通事件。")
@@ -147,10 +150,21 @@ func advance_to_minute(current_minute: int, is_busy: bool, condition_checker: Ca
 		return _make_error("", "ending_time_reached", "已到 02:00；必须由 StoryEngine 执行 ending_forced，而非继续调度普通事件。")
 
 	_last_processed_minute = current_minute
+	# 先在当前窗口内写入资格，再处理超窗；避免“从未解锁”走入 mark_missed。
+	for event_id: String in _pending_event_ids:
+		var eligibility_event: Dictionary = _events_by_id[event_id]
+		if current_minute < int(eligibility_event["window_start_minute"]) or current_minute > int(eligibility_event["window_end_minute"]):
+			continue
+		if (eligibility_event["condition_ids"] as Array).is_empty() or _conditions_are_met(eligibility_event, condition_checker):
+			_condition_eligible_event_ids[event_id] = true
+
 	var expired_events: Array[Dictionary] = []
 	for event_id: String in _pending_event_ids.duplicate():
 		var event_data: Dictionary = _events_by_id[event_id]
 		if current_minute > int(event_data["window_end_minute"]):
+			if not (event_data["condition_ids"] as Array).is_empty() and not _condition_eligible_event_ids.has(event_id):
+				_suppress_unqualified_conditional_event(event_id)
+				continue
 			expired_events.append(_expire_event(event_id, event_data))
 
 	var due_events: Array[Dictionary] = []
@@ -158,7 +172,7 @@ func advance_to_minute(current_minute: int, is_busy: bool, condition_checker: Ca
 		var event_data: Dictionary = _events_by_id[event_id]
 		if current_minute < int(event_data["window_start_minute"]):
 			continue
-		if not _conditions_are_met(event_data, condition_checker):
+		if not _condition_eligible_event_ids.has(event_id):
 			continue
 		due_events.append(event_data)
 	due_events.sort_custom(_sort_by_priority_then_schedule)
@@ -171,6 +185,7 @@ func advance_to_minute(current_minute: int, is_busy: bool, condition_checker: Ca
 			continue
 		if not effectively_busy:
 			_pending_event_ids.erase(event_id)
+			_condition_eligible_event_ids.erase(event_id)
 			_event_status_by_id[event_id] = "triggered"
 			var ready_event: Dictionary = _public_event_copy(event_data)
 			ready_events.append(ready_event)
@@ -212,6 +227,7 @@ func force_ending() -> Dictionary:
 		var event_data: Dictionary = queue_item["event"]
 		_event_status_by_id[String(event_data["id"])] = "cleared_for_ending"
 	_pending_event_ids.clear()
+	_condition_eligible_event_ids.clear()
 	_queued_items.clear()
 	_is_ending_forced = true
 	print("[事件][ending_forced] 02:00 强制收束，已清空待处理 %d 项、队列 %d 项。" % [cleared_pending_count, cleared_queue_count])
@@ -259,6 +275,7 @@ func _conditions_are_met(event_data: Dictionary, condition_checker: Callable) ->
 
 func _enqueue_event(event_id: String, event_data: Dictionary) -> void:
 	_pending_event_ids.erase(event_id)
+	_condition_eligible_event_ids.erase(event_id)
 	_event_status_by_id[event_id] = "queued"
 	var queue_item: Dictionary = {
 		"event": event_data.duplicate(true),
@@ -278,11 +295,19 @@ func _enqueue_event(event_id: String, event_data: Dictionary) -> void:
 
 func _expire_event(event_id: String, event_data: Dictionary) -> Dictionary:
 	_pending_event_ids.erase(event_id)
+	_condition_eligible_event_ids.erase(event_id)
 	_event_status_by_id[event_id] = "expired"
 	var expired_event: Dictionary = _public_event_copy(event_data)
 	event_expired.emit(expired_event)
 	print("[事件][%s] 时间窗已过期，执行 mark_missed。" % event_id)
 	return expired_event
+
+
+func _suppress_unqualified_conditional_event(event_id: String) -> void:
+	_pending_event_ids.erase(event_id)
+	_condition_eligible_event_ids.erase(event_id)
+	_event_status_by_id[event_id] = "suppressed_condition_unmet"
+	print("[事件][%s] 条件在窗口内从未满足，事件安静失效，不生成漏接记录。" % event_id)
 
 
 func _sort_by_priority_then_schedule(first: Dictionary, second: Dictionary) -> bool:

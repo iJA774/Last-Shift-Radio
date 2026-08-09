@@ -236,10 +236,13 @@ func _test_computer_closeup() -> void:
 	var bind_result: Variant = closeup.call(&"bind_phone_system", phone_system)
 	_assert_true(bind_result is Dictionary and bool((bind_result as Dictionary).get("ok", false)), "电脑近景必须将 PhoneSystem 绑定交给来电记录组件。")
 	var broadcast_result: Variant = closeup.call(&"show_unauthorized_broadcast", {
+		"broadcast_id": "broadcast_unauthorized_north_bridge_open",
 		"fact_id": "fact_unauthorized_broadcast",
+		"sent_at_tick": 3600,
 		"time_tick": 3600,
 		"source": "Studio A",
 		"body": "北桥已经恢复通行。请保持车速，不要停车。",
+		"is_unauthorized": true,
 	})
 	_assert_true(broadcast_result is Dictionary and bool((broadcast_result as Dictionary).get("ok", false)), "电脑近景必须显示 StoryEngine 提供的未授权播出记录。")
 	_connect_signal(closeup, &"return_requested", "_on_return_requested", "电脑近景返回")

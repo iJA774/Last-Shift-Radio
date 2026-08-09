@@ -35,6 +35,8 @@ func _capture_dynamic_ui() -> void:
 		return
 	if not _prepare_output_directory():
 		return
+	if not _prepare_authoritative_warren_dialogue(main):
+		return
 
 	Input.warp_mouse(Vector2(1910.0, 1070.0))
 	await _wait_frames(3)
@@ -75,6 +77,11 @@ func _capture_dynamic_ui() -> void:
 	await create_timer(0.18).timeout
 	if not _save_viewport("phone_settled.png"):
 		return
+	if not _save_viewport("phone_story_dialogue.png"):
+		return
+	if not _complete_authoritative_warren_dialogue_and_broadcast(main):
+		return
+	await _wait_frames(3)
 
 	if not _show_view(game_screen, "studio"):
 		return
@@ -87,6 +94,8 @@ func _capture_dynamic_ui() -> void:
 		return
 	await create_timer(0.30).timeout
 	if not _save_viewport("computer_glow_a.png"):
+		return
+	if not _save_viewport("computer_broadcast_workspace.png"):
 		return
 	await create_timer(1.70).timeout
 	if not _save_viewport("computer_glow_b.png"):
@@ -199,6 +208,61 @@ func _show_view(game_screen: Control, view_id: String) -> bool:
 		return true
 	_fail("无法切换到视图 %s：%s。" % [view_id, str(result)])
 	return false
+
+
+## 视觉验收通过 StoryEngine / PhoneSystem 的公开接口建立真实剧情状态，
+## 不直接给电话或电脑 UI 注入伪造文本。
+func _prepare_authoritative_warren_dialogue(main: Control) -> bool:
+	var story_engine: RefCounted = main.get("_story_engine") as RefCounted
+	var phone_system: RefCounted = main.get("_phone_system") as RefCounted
+	var game_clock: Node = root.get_node_or_null(NodePath("GameClock")) as Node
+	if story_engine == null or phone_system == null or game_clock == null:
+		_fail("无法取得已启动夜班的 StoryEngine、PhoneSystem 或 GameClock。")
+		return false
+	# 只能经 GameClock 推进，避免 StoryEngine 提前到 01:01 后又被仍停在 01:00
+	# 的时钟信号回退。GameClock 会把同一整数 tick 广播给 StoryEngine。
+	if not bool(game_clock.call(&"advance_ticks_for_verification", 60)):
+		_fail("无法通过 GameClock 推进到沃伦来电。")
+		return false
+	var current_tick_value: Variant = game_clock.call(&"get_current_game_tick")
+	if typeof(current_tick_value) != TYPE_INT:
+		_fail("GameClock 未返回沃伦来电时的整数 tick。")
+		return false
+	if not bool(phone_system.call(&"answer_call", int(current_tick_value))):
+		_fail("无法通过 PhoneSystem 接听沃伦来电。")
+		return false
+	if not bool(phone_system.call(&"enter_dialogue_choice")):
+		_fail("无法通过 PhoneSystem 进入沃伦对话选择。")
+		return false
+	var dialogue_result: Variant = story_engine.call(&"begin_active_call_dialogue")
+	if not _is_ok_result(dialogue_result):
+		_fail("无法通过 StoryEngine 开始沃伦预制对话：%s。" % str(dialogue_result))
+		return false
+	return true
+
+
+func _complete_authoritative_warren_dialogue_and_broadcast(main: Control) -> bool:
+	var story_engine: RefCounted = main.get("_story_engine") as RefCounted
+	var phone_system: RefCounted = main.get("_phone_system") as RefCounted
+	if story_engine == null or phone_system == null:
+		_fail("无法取得完成沃伦对话所需的运行时。")
+		return false
+	var first_choice: Variant = story_engine.call(&"select_dialogue_option", "opt_warren_song")
+	if not _is_ok_result(first_choice):
+		_fail("无法通过 StoryEngine 提交沃伦第一轮回应：%s。" % str(first_choice))
+		return false
+	var final_choice: Variant = story_engine.call(&"select_dialogue_option", "opt_warren_follow_report")
+	if not _is_ok_result(final_choice) or not bool((final_choice as Dictionary).get("reached_terminal", false)):
+		_fail("沃伦终止台词未能由 StoryEngine 正确生成：%s。" % str(final_choice))
+		return false
+	if not bool(phone_system.call(&"exit_dialogue_choice")):
+		_fail("无法通过 PhoneSystem 退出终止对话状态。")
+		return false
+	var broadcast_result: Variant = story_engine.call(&"send_player_broadcast", "broadcast_bridge_tanker_fire")
+	if not _is_ok_result(broadcast_result):
+		_fail("无法通过 StoryEngine 发送已解锁的预制广播稿：%s。" % str(broadcast_result))
+		return false
+	return true
 
 
 func _save_viewport(file_name: String) -> bool:

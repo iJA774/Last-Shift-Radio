@@ -3,7 +3,8 @@ extends PanelContainer
 ## 所有固定视图共用的状态条。
 ##
 ## 它只读取整数游戏 tick 和 PhoneSystem 的只读状态；点击来电提示只请求
-## GameScreen 导航，绝不在这里接听或修改线路状态。
+## GameScreen 导航，绝不在这里接听或修改线路状态。工作状态由 GameScreen
+## 传入派生快照，本控件只显示与实际倍率一致的中文说明。
 
 signal phone_view_requested
 
@@ -16,6 +17,7 @@ var _ringing_pulse_tween: Tween = null
 var _button_feedback_tween: Tween = null
 
 @onready var _time_label: Label = $Content/TimeLabel
+@onready var _work_state_label: Label = $Content/WorkStateLabel
 @onready var _ringing_indicator: HBoxContainer = $Content/RingingIndicator
 @onready var _ringing_text: Label = $Content/RingingIndicator/RingingText
 @onready var _phone_button: Button = $Content/RingingIndicator/PhoneButton
@@ -29,6 +31,7 @@ func _ready() -> void:
 	_phone_button.button_down.connect(_on_phone_button_down)
 	_phone_button.button_up.connect(_on_phone_button_up)
 	_refresh_clock()
+	_show_idle_work_state()
 	_refresh_phone_indicator()
 
 
@@ -63,6 +66,28 @@ func bind_runtime(phone_system: RefCounted, game_clock: Node) -> Dictionary:
 
 func is_ringing() -> bool:
 	return _is_ringing
+
+
+func show_work_state(snapshot: Dictionary) -> Dictionary:
+	var required_fields: PackedStringArray = ["state_name", "reason_ids", "uses_realtime_rate"]
+	for field_name: String in required_fields:
+		if not snapshot.has(field_name):
+			return _make_error("工作状态快照缺少字段：%s。" % field_name)
+	if typeof(snapshot["state_name"]) != TYPE_STRING \
+		or typeof(snapshot["reason_ids"]) != TYPE_PACKED_STRING_ARRAY \
+		or typeof(snapshot["uses_realtime_rate"]) != TYPE_BOOL:
+		return _make_error("工作状态快照字段类型无效。")
+	var state_name: String = String(snapshot["state_name"])
+	var uses_realtime_rate: bool = bool(snapshot["uses_realtime_rate"])
+	if state_name == "ACTIVE" and uses_realtime_rate:
+		_work_state_label.text = "工作状态：非空闲\n时间流速：现实 1 分钟 = 游戏 1 分钟"
+		var reason_ids: PackedStringArray = snapshot["reason_ids"]
+		_work_state_label.tooltip_text = _describe_active_reasons(reason_ids)
+		return {"ok": true}
+	if state_name == "IDLE" and not uses_realtime_rate:
+		_show_idle_work_state()
+		return {"ok": true}
+	return _make_error("工作状态与时间倍率标志不一致：%s。" % state_name)
 
 
 ## 仅控制提示脉冲和按钮微反馈；来电状态、布局与导航意图保持不变。
@@ -140,6 +165,30 @@ func _refresh_clock() -> void:
 		push_error("[全局状态][invalid_clock_display] GameClock.get_display_time() 必须返回非空字符串。")
 		return
 	_time_label.text = "1999 年 12 月 31 日 / %s" % String(display_result)
+
+
+func _show_idle_work_state() -> void:
+	_work_state_label.text = "工作状态：空闲\n时间流速：现实 2 秒 = 游戏 1 分钟"
+	_work_state_label.tooltip_text = "当前没有来电、待播稿件，也未打开电脑。"
+
+
+func _describe_active_reasons(reason_ids: PackedStringArray) -> String:
+	var labels: PackedStringArray = PackedStringArray()
+	for reason_id: String in reason_ids:
+		match reason_id:
+			"phone_ringing":
+				labels.append("有电话正在响铃")
+			"phone_connected":
+				labels.append("电话已接通")
+			"dialogue_choice":
+				labels.append("正在进行电话对话")
+			"broadcast_pending":
+				labels.append("存在需要处理的待播稿件")
+			"computer_open":
+				labels.append("正在查看电脑")
+			_:
+				labels.append("未知原因：%s" % reason_id)
+	return "非空闲原因：%s。" % "、".join(labels)
 
 
 func _refresh_phone_indicator() -> void:

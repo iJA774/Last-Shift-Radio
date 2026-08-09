@@ -28,10 +28,11 @@ anchor_right = 1.0
 offset_left = 32.0
 offset_top = 24.0
 offset_right = -32.0
-offset_bottom = 84.0
+offset_bottom = 200.0
 grow_horizontal = 2
 theme_override_colors/font_color = Color(1, 0.78, 0.74, 1)
 z_index = 20
+clip_contents = true
 
 [node name="ErrorLabel" type="Label" parent="ShellErrorPanel"]
 layout_mode = 2

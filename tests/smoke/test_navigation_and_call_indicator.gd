@@ -88,7 +88,23 @@ func _run() -> void:
 	_assert_true(not game_screen.is_view_transitioning(), "快速连续导航不能遗留进行中的 Tween。")
 	_assert_all_view_visuals_rest(game_screen)
 
-	_assert_equal(String(phone_system.call(&"get_state_name")), "RINGING", "基础系统事件应在导航测试中保持响铃。")
+	# 测试剧情的首通电话窗口是 01:01；导航测试不能再假设 01:00 绑定运行时后
+	# 自动响铃。先通过确定性验证入口精确推到窗口，再验证响铃跨越四个视图。
+	var game_clock: Node = root.get_node_or_null(NodePath("GameClock")) as Node
+	_assert_true(game_clock != null, "导航测试必须能取得 GameClock。")
+	if game_clock != null:
+		var current_tick_value: Variant = game_clock.call(&"get_current_game_tick")
+		_assert_true(typeof(current_tick_value) == TYPE_INT, "导航测试的 GameClock 必须返回整数 tick。")
+		if typeof(current_tick_value) == TYPE_INT:
+			var first_call_tick: int = GameClockService.GAME_TICKS_PER_MINUTE
+			var ticks_until_first_call: int = first_call_tick - int(current_tick_value)
+			if ticks_until_first_call > 0:
+				_assert_true(
+					bool(game_clock.call(&"advance_ticks_for_verification", ticks_until_first_call)),
+					"导航测试必须能精确推进到 01:01 首通来电窗口。"
+				)
+				await process_frame
+	_assert_equal(String(phone_system.call(&"get_state_name")), "RINGING", "01:01 首条剧情事件应在导航测试中保持响铃。")
 	_assert_true(global_status.is_ringing(), "全局状态条必须从 PhoneSystem 识别响铃。")
 	var ringing_text: Label = global_status.get_node("Content/RingingIndicator/RingingText") as Label
 	var ringing_icon: TextureRect = global_status.get_node("Content/RingingIndicator/RingingIcon") as TextureRect
@@ -137,8 +153,6 @@ func _run() -> void:
 	var door_transition_result: Dictionary = game_screen.show_view("door")
 	_assert_true(bool(door_transition_result.get("ok", false)) and game_screen.is_view_transitioning(), "恢复动态后必须重新使用异步视图过渡。")
 
-	var game_clock: Node = root.get_node_or_null(NodePath("GameClock")) as Node
-	_assert_true(game_clock != null, "导航测试必须能取得 GameClock。")
 	if game_clock != null:
 		var remaining_ticks: Variant = game_clock.call(&"get_remaining_game_ticks")
 		_assert_true(bool(game_clock.call(&"advance_ticks_for_verification", int(remaining_ticks))), "导航测试必须能推进到 02:00。")

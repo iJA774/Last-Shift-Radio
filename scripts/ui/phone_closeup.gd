@@ -6,11 +6,15 @@ extends Control
 signal return_requested()
 signal answer_requested()
 signal dialogue_choice_requested()
+signal dialogue_option_requested(option_id: String)
 signal hang_up_requested()
 signal finish_call_requested()
 
 var _phone_system: RefCounted = null
+var _story_engine: RefCounted = null
+var _dialogue_snapshot: Dictionary = {}
 var _is_phone_connected: bool = false
+var _is_story_connected: bool = false
 var _are_actions_enabled: bool = true
 var _is_return_enabled: bool = true
 var _is_motion_enabled: bool = true
@@ -20,6 +24,7 @@ var _is_indicator_lit: bool = false
 @onready var _phone_state_label: Label = %PhoneStateLabel
 @onready var _caller_label: Label = %CallerLabel
 @onready var _dialogue_hint_label: Label = %DialogueHintLabel
+@onready var _dialogue_options: HFlowContainer = %DialogueOptions
 @onready var _answer_button: Button = %AnswerButton
 @onready var _dialogue_choice_button: Button = %DialogueChoiceButton
 @onready var _hang_up_button: Button = %HangUpButton
@@ -41,6 +46,7 @@ func _ready() -> void:
 
 func _exit_tree() -> void:
 	_disconnect_phone_system()
+	_disconnect_story_engine()
 
 
 ## 绑定前检查公共只读契约，失败时保留旧的有效绑定。
@@ -51,6 +57,20 @@ func bind_phone_system(phone_system: RefCounted) -> Dictionary:
 	_disconnect_phone_system()
 	_phone_system = phone_system
 	_connect_phone_system_if_possible()
+	_refresh()
+	return {"ok": true}
+
+
+## 电话近景只读取当前预制对话快照；选项仍通过 GameScreen 交给 StoryEngine。
+func bind_story_engine(story_engine: RefCounted) -> Dictionary:
+	if story_engine == null:
+		return _make_error("StoryEngine 实例不能为空。")
+	if not story_engine.has_method(&"get_active_dialogue_snapshot") or not story_engine.has_signal(&"dialogue_changed"):
+		return _make_error("StoryEngine 缺少预制对话展示所需接口。")
+	_disconnect_story_engine()
+	_story_engine = story_engine
+	_connect_story_engine_if_possible()
+	_refresh_dialogue_snapshot()
 	_refresh()
 	return {"ok": true}
 
@@ -116,7 +136,32 @@ func _disconnect_phone_system() -> void:
 	_is_phone_connected = false
 
 
+func _connect_story_engine_if_possible() -> void:
+	if _story_engine == null or not is_node_ready() or _is_story_connected:
+		return
+	var callback: Callable = Callable(self, "_on_dialogue_changed")
+	var result: Error = _story_engine.connect(&"dialogue_changed", callback)
+	if result != OK:
+		push_error("[电话][dialogue_connect_failed] 无法连接 StoryEngine.dialogue_changed，错误码=%d。" % result)
+		return
+	_is_story_connected = true
+
+
+func _disconnect_story_engine() -> void:
+	if _story_engine == null or not _is_story_connected:
+		return
+	var callback: Callable = Callable(self, "_on_dialogue_changed")
+	if _story_engine.is_connected(&"dialogue_changed", callback):
+		_story_engine.disconnect(&"dialogue_changed", callback)
+	_is_story_connected = false
+
+
 func _on_phone_state_changed(_previous_state: int, _current_state: int, _event_id: String) -> void:
+	_refresh()
+
+
+func _on_dialogue_changed(snapshot: Dictionary) -> void:
+	_dialogue_snapshot = snapshot.duplicate(true)
 	_refresh()
 
 
@@ -145,6 +190,7 @@ func _refresh() -> void:
 	_phone_state_label.text = "电话状态：%s" % _format_state(state_name)
 	_refresh_caller_snapshot()
 	_refresh_dialogue_hint(state_name)
+	_refresh_dialogue_options(state_name)
 	_set_action_availability(state_name, _are_actions_enabled)
 	_refresh_phone_indicator()
 
@@ -172,6 +218,15 @@ func _refresh_caller_snapshot() -> void:
 
 
 func _refresh_dialogue_hint(state_name: String) -> void:
+	if not _dialogue_snapshot.is_empty():
+		var speaker: String = String(_dialogue_snapshot.get("speaker", "来电者"))
+		var text: String = String(_dialogue_snapshot.get("text", ""))
+		if not text.strip_edges().is_empty():
+			var suffix: String = "\n\n请选择回应。"
+			if bool(_dialogue_snapshot.get("is_terminal", false)):
+				suffix = "\n\n本轮对话结束，可结束通话。"
+			_dialogue_hint_label.text = "%s：\n%s%s" % [speaker, text, suffix]
+			return
 	match state_name:
 		"RINGING":
 			_dialogue_hint_label.text = "线路正在响铃。接听或等待系统处理；不能主动外拨。"
@@ -183,12 +238,49 @@ func _refresh_dialogue_hint(state_name: String) -> void:
 			_dialogue_hint_label.text = "当前没有可操作的接通线路。"
 
 
+func _refresh_dialogue_options(state_name: String) -> void:
+	for child: Node in _dialogue_options.get_children():
+		child.queue_free()
+	if state_name != "DIALOGUE_CHOICE" or _dialogue_snapshot.is_empty() or bool(_dialogue_snapshot.get("is_terminal", false)):
+		return
+	var raw_options: Variant = _dialogue_snapshot.get("options", [])
+	if not raw_options is Array:
+		push_error("[电话][invalid_dialogue_options] StoryEngine 对话快照 options 必须是 Array。")
+		return
+	for raw_option: Variant in raw_options as Array:
+		if not raw_option is Dictionary:
+			push_error("[电话][invalid_dialogue_option] StoryEngine 对话快照包含非对象选项。")
+			continue
+		var option: Dictionary = raw_option as Dictionary
+		if typeof(option.get("id")) != TYPE_STRING or typeof(option.get("text")) != TYPE_STRING:
+			push_error("[电话][invalid_dialogue_option] StoryEngine 对话选项缺少字符串 id 或 text。")
+			continue
+		var option_id: String = String(option["id"])
+		var option_text: String = String(option["text"])
+		if option_id.is_empty() or option_text.strip_edges().is_empty():
+			push_error("[电话][invalid_dialogue_option] StoryEngine 对话选项不能为空。")
+			continue
+		var button: Button = Button.new()
+		button.text = option_text
+		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		button.custom_minimum_size = Vector2(260.0, 70.0)
+		button.disabled = not _are_actions_enabled
+		button.tooltip_text = "不可用：当前界面已由系统锁定。" if button.disabled else "选择此回应。"
+		button.pressed.connect(_on_dialogue_option_button_pressed.bind(option_id))
+		_dialogue_options.add_child(button)
+
+
 func _set_action_availability(state_name: String, allow_actions: bool) -> void:
 	_answer_button.disabled = not allow_actions or state_name != "RINGING"
 	_answer_button.tooltip_text = _action_tooltip(_answer_button.disabled, "仅在电话响铃时可以接听。")
-	_dialogue_choice_button.disabled = not allow_actions or (state_name != "CONNECTED" and state_name != "DIALOGUE_CHOICE")
-	_dialogue_choice_button.text = "提交本轮选择" if state_name == "DIALOGUE_CHOICE" else "进入一轮选择"
-	_dialogue_choice_button.tooltip_text = _action_tooltip(_dialogue_choice_button.disabled, "仅在接通后的对话状态可用。")
+	var has_completed_dialogue: bool = not _dialogue_snapshot.is_empty() and bool(_dialogue_snapshot.get("is_terminal", false))
+	_dialogue_choice_button.disabled = not allow_actions or state_name != "CONNECTED" or has_completed_dialogue
+	if has_completed_dialogue:
+		_dialogue_choice_button.text = "对话已结束\n请结束通话"
+		_dialogue_choice_button.tooltip_text = "不可用：本通电话的预制对话已经结束，请结束通话或主动挂断。"
+	else:
+		_dialogue_choice_button.text = "开始预制对话" if state_name == "CONNECTED" else "对话选项见上方"
+		_dialogue_choice_button.tooltip_text = _action_tooltip(_dialogue_choice_button.disabled, "仅在已接通时可以开始预制对话。")
 	_hang_up_button.disabled = not allow_actions or (state_name != "CONNECTED" and state_name != "DIALOGUE_CHOICE")
 	_hang_up_button.tooltip_text = _action_tooltip(_hang_up_button.disabled, "仅在已接通或对话选择时可主动挂断。")
 	_finish_button.disabled = not allow_actions or state_name != "CONNECTED"
@@ -309,6 +401,23 @@ func _on_answer_button_pressed() -> void:
 func _on_dialogue_choice_button_pressed() -> void:
 	if not _dialogue_choice_button.disabled:
 		dialogue_choice_requested.emit()
+
+
+func _on_dialogue_option_button_pressed(option_id: String) -> void:
+	if _are_actions_enabled and not option_id.strip_edges().is_empty():
+		dialogue_option_requested.emit(option_id)
+
+
+func _refresh_dialogue_snapshot() -> void:
+	if _story_engine == null:
+		_dialogue_snapshot = {}
+		return
+	var result: Variant = _story_engine.call(&"get_active_dialogue_snapshot")
+	if result is Dictionary:
+		_dialogue_snapshot = (result as Dictionary).duplicate(true)
+		return
+	_dialogue_snapshot = {}
+	push_error("[电话][invalid_dialogue_snapshot] StoryEngine.get_active_dialogue_snapshot() 必须返回 Dictionary。")
 
 
 func _on_hang_up_button_pressed() -> void:

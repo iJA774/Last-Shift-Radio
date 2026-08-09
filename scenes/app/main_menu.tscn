@@ -65,6 +65,7 @@ theme_override_colors/font_color = Color(0.45, 0.78, 0.79, 1)
 theme_override_font_sizes/font_size = 18
 text = "WMLH 780 AM / 夜间新闻室"
 horizontal_alignment = 1
+autowrap_mode = 2
 
 [node name="Title" type="Label" parent="Content/MenuPanel/Margin/Layout"]
 layout_mode = 2
@@ -72,6 +73,7 @@ theme_override_colors/font_color = Color(0.92, 0.97, 0.96, 1)
 theme_override_font_sizes/font_size = 42
 text = "末班电台"
 horizontal_alignment = 1
+autowrap_mode = 2
 
 [node name="Subtitle" type="Label" parent="Content/MenuPanel/Margin/Layout"]
 layout_mode = 2
@@ -79,6 +81,7 @@ theme_override_colors/font_color = Color(0.62, 0.71, 0.73, 1)
 theme_override_font_sizes/font_size = 18
 text = "1999 年 · 午夜值守"
 horizontal_alignment = 1
+autowrap_mode = 2
 
 [node name="Rule" type="HSeparator" parent="Content/MenuPanel/Margin/Layout"]
 layout_mode = 2
@@ -88,12 +91,14 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 54)
 layout_mode = 2
 text = "开始值班"
+autowrap_mode = 2
 
 [node name="LoadGameButton" type="Button" parent="Content/MenuPanel/Margin/Layout"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 54)
 layout_mode = 2
 text = "读取存档"
+autowrap_mode = 2
 
 [node name="LoadDisabledReason" type="Label" parent="Content/MenuPanel/Margin/Layout"]
 unique_name_in_owner = true
@@ -102,12 +107,14 @@ theme_override_colors/font_color = Color(0.61, 0.66, 0.67, 1)
 theme_override_font_sizes/font_size = 16
 text = "存档系统尚未建立"
 horizontal_alignment = 1
+autowrap_mode = 2
 
 [node name="SettingsButton" type="Button" parent="Content/MenuPanel/Margin/Layout"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 54)
 layout_mode = 2
 text = "设置"
+autowrap_mode = 2
 
 [node name="SettingsDisabledReason" type="Label" parent="Content/MenuPanel/Margin/Layout"]
 unique_name_in_owner = true
@@ -116,12 +123,14 @@ theme_override_colors/font_color = Color(0.61, 0.66, 0.67, 1)
 theme_override_font_sizes/font_size = 16
 text = "设置系统尚未建立"
 horizontal_alignment = 1
+autowrap_mode = 2
 
 [node name="ExitButton" type="Button" parent="Content/MenuPanel/Margin/Layout"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 54)
 layout_mode = 2
 text = "退出"
+autowrap_mode = 2
 
 [node name="Footer" type="Label" parent="Content/MenuPanel/Margin/Layout"]
 layout_mode = 2

@@ -51,7 +51,7 @@ layout_mode = 1
 offset_left = 24.0
 offset_top = 18.0
 offset_right = -24.0
-offset_bottom = 90.0
+offset_bottom = 104.0
 
 [node name="SystemMessagePanel" type="PanelContainer" parent="."]
 layout_mode = 1
@@ -60,12 +60,13 @@ anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = 24.0
-offset_top = -82.0
+offset_top = -146.0
 offset_right = -24.0
 offset_bottom = -22.0
 grow_horizontal = 2
 grow_vertical = 0
 mouse_filter = 2
+clip_contents = true
 
 [node name="SystemMessage" type="Label" parent="SystemMessagePanel"]
 layout_mode = 2
