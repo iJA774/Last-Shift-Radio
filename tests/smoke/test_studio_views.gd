@@ -218,8 +218,8 @@ func _test_computer_closeup() -> void:
 	_assert_true(closeup.has_signal(&"return_requested"), "电脑近景必须公开 return_requested()。")
 	_assert_true(closeup.has_method(&"bind_phone_system"), "电脑近景必须公开 bind_phone_system()。")
 	_assert_true(closeup.has_method(&"show_unauthorized_broadcast"), "电脑近景必须公开 show_unauthorized_broadcast()。")
-	var call_log: Control = closeup.get_node_or_null(NodePath("TerminalSurface/CallLogView")) as Control
-	_assert_true(call_log != null, "电脑近景必须包装独立的来电记录组件。")
+	var information_view: Control = closeup.get_node_or_null(NodePath("TerminalSurface/InformationView")) as Control
+	_assert_true(information_view != null, "电脑近景必须包装独立的信息终端组件。")
 	var screen_glow: ColorRect = closeup.get_node_or_null(NodePath("ScreenGlow")) as ColorRect
 	var screen_cursor: Label = closeup.get_node_or_null(NodePath("ScreenCursor")) as Label
 	_assert_true(screen_glow != null and screen_glow.visible, "电脑近景必须有 CRT 屏幕光感层。")

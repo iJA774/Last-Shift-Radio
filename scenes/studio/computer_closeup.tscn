@@ -2,7 +2,7 @@
 
 [ext_resource type="Script" path="res://scripts/ui/computer_closeup.gd" id="1_script"]
 [ext_resource type="Texture2D" path="res://art/concept/style_baseline_v1/computer_closeup.png" id="2_background"]
-[ext_resource type="Script" path="res://scripts/ui/computer_call_log_view.gd" id="3_call_log"]
+[ext_resource type="Script" path="res://scripts/ui/computer_information_view.gd" id="3_call_log"]
 [ext_resource type="PackedScene" path="res://scenes/ui/fx/ambient_fx.tscn" id="4_ambient_fx"]
 [ext_resource type="Theme" path="res://resources/app_ui_theme.tres" id="5_theme"]
 
@@ -68,7 +68,7 @@ theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
 theme_override_constants/shadow_offset_x = 1
 theme_override_constants/shadow_offset_y = 1
 theme_override_font_sizes/font_size = 21
-text = "WMLH 新闻室终端／只读来电记录"
+text = "WMLH 新闻室终端／信息核实与播出"
 horizontal_alignment = 1
 
 [node name="TerminalSurface" type="PanelContainer" parent="."]
@@ -104,7 +104,7 @@ text = "▌"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="CallLogView" type="PanelContainer" parent="TerminalSurface"]
+[node name="InformationView" type="PanelContainer" parent="TerminalSurface"]
 unique_name_in_owner = true
 layout_mode = 2
 script = ExtResource("3_call_log")

@@ -105,6 +105,9 @@ func bind_runtime(story_engine: RefCounted, phone_system: RefCounted, game_clock
 		"send_player_broadcast",
 		"get_active_dialogue_snapshot",
 		"get_available_broadcasts",
+		"get_computer_entries",
+		"get_computer_unread_count",
+		"mark_computer_entry_read",
 	]
 	for method_name: String in required_story_methods:
 		if not story_engine.has_method(method_name):
@@ -275,6 +278,7 @@ func _connect_view_signals() -> Dictionary:
 		{"source": _phone_closeup, "signal": &"finish_call_requested", "callback": Callable(self, "_on_finish_call_requested")},
 		{"source": _computer_closeup, "signal": &"return_requested", "callback": Callable(self, "_on_closeup_return_requested")},
 		{"source": _computer_closeup, "signal": &"broadcast_requested", "callback": Callable(self, "_on_broadcast_requested")},
+		{"source": _computer_closeup, "signal": &"computer_entry_open_requested", "callback": Callable(self, "_on_computer_entry_open_requested")},
 		{"source": _door_window_closeup, "signal": &"return_requested", "callback": Callable(self, "_on_closeup_return_requested")},
 		{"source": _global_status, "signal": &"phone_view_requested", "callback": Callable(self, "_on_phone_view_requested")},
 	]
@@ -306,6 +310,7 @@ func _disconnect_view_signals() -> void:
 		{"source": _phone_closeup, "signal": &"finish_call_requested", "callback": Callable(self, "_on_finish_call_requested")},
 		{"source": _computer_closeup, "signal": &"return_requested", "callback": Callable(self, "_on_closeup_return_requested")},
 		{"source": _computer_closeup, "signal": &"broadcast_requested", "callback": Callable(self, "_on_broadcast_requested")},
+		{"source": _computer_closeup, "signal": &"computer_entry_open_requested", "callback": Callable(self, "_on_computer_entry_open_requested")},
 		{"source": _door_window_closeup, "signal": &"return_requested", "callback": Callable(self, "_on_closeup_return_requested")},
 		{"source": _global_status, "signal": &"phone_view_requested", "callback": Callable(self, "_on_phone_view_requested")},
 	]
@@ -580,6 +585,29 @@ func _on_broadcast_requested(broadcast_id: String) -> void:
 		return
 	if not bool(broadcast_result.get("ok", false)):
 		show_system_error("发送广播失败：%s" % String(broadcast_result.get("message", "未知原因。")))
+
+
+## 电脑只报告“玩家打开了哪一条”；StoryEngine 才能将其标记已读并推进陈述/事实。
+func _on_computer_entry_open_requested(category: String, entry_id: String) -> void:
+	if _is_ending:
+		show_system_error("打开电脑条目失败：02:00 强制收束已执行。")
+		return
+	if category.strip_edges().is_empty() or entry_id.strip_edges().is_empty():
+		show_system_error("打开电脑条目失败：分类和条目 ID 均不能为空。")
+		return
+	if _story_engine == null:
+		show_system_error("打开电脑条目失败：StoryEngine 不可用。")
+		return
+	var mark_result_value: Variant = _story_engine.call(&"mark_computer_entry_read", category, entry_id)
+	if not _is_ok_result(mark_result_value):
+		show_system_error("打开电脑条目失败：%s" % _describe_operation_failure(mark_result_value, "StoryEngine 拒绝了阅读意图。"))
+		return
+	if _computer_closeup == null or not _computer_closeup.has_method(&"show_entry_content"):
+		show_system_error("打开电脑条目失败：电脑近景缺少 show_entry_content() 接口。")
+		return
+	var display_result: Variant = _computer_closeup.call(&"show_entry_content", category, entry_id)
+	if not _is_ok_result(display_result):
+		show_system_error("已标记阅读，但无法显示电脑条目：%s" % _describe_operation_failure(display_result, "电脑近景不可用。"))
 
 
 func _on_hang_up_requested() -> void:

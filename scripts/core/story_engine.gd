@@ -1,7 +1,9 @@
-## 《末班电台》的最小权威剧情状态。
+## 《末班电台》的权威剧情状态。
 ##
-## 本类只协调时钟、事件调度和电话入口；不为未确认的事实图、对话或存档
-## 预建占位层。时间始终由 GameClock 提供的整数 tick 派生。
+## 本类协调 GameClock、事件调度、PhoneSystem、ComputerSystem 与 BroadcastSystem，
+## 并唯一管理预制对话、来源陈述、轻量事实、广播条件、整数游戏时间和 02:00
+## 强制收束。ComputerSystem 只维护来源解锁/已读，电话记录仍由 PhoneSystem 生成；
+## 当前阶段不包含存档或存档状态导入导出。
 extends RefCounted
 class_name StoryEngine
 
@@ -14,13 +16,18 @@ signal story_error(error_code: String, message: String)
 
 const TICKS_PER_GAME_MINUTE: int = 60
 const ENDING_TICK: int = 60 * TICKS_PER_GAME_MINUTE
+const ENDING_ONLY_FACT_IDS: PackedStringArray = ["fact_unauthorized_broadcast", "fact_anomaly_cause_unknown"]
 const BROADCAST_SYSTEM_SCRIPT: GDScript = preload("res://scripts/systems/broadcast_system.gd")
+const COMPUTER_SYSTEM_SCRIPT: GDScript = preload("res://scripts/systems/computer_system.gd")
 const CONTENT_VALIDATOR_SCRIPT: GDScript = preload("res://scripts/core/content_validator.gd")
 
 signal message_unlocked(message: Dictionary)
 signal broadcast_state_changed()
 signal player_broadcast_sent(record: Dictionary)
 signal dialogue_changed(snapshot: Dictionary)
+signal statement_revealed(statement: Dictionary)
+signal fact_confirmed(fact: Dictionary)
+signal computer_entries_changed(category: String)
 
 var _scheduler: EventScheduler = EventScheduler.new()
 var _condition_state_by_id: Dictionary = {}
@@ -32,10 +39,16 @@ var _is_ending_forced: bool = false
 var _unauthorized_broadcast_record: Dictionary = {}
 ## 使用显式 preload 的 RefCounted 接口，不能依赖编辑器先刷新 class_name 缓存。
 var _broadcast_system: RefCounted = BROADCAST_SYSTEM_SCRIPT.new()
+## ComputerSystem 仅持有来源解锁/已读；陈述和事实状态仍由本类唯一确认。
+var _computer_system: RefCounted = COMPUTER_SYSTEM_SCRIPT.new()
 var _is_test_story_configured: bool = false
 var _story_event_by_id: Dictionary = {}
 var _message_by_id: Dictionary = {}
-var _unlocked_message_ids: Dictionary = {}
+var _broadcast_fact_ids_by_id: Dictionary = {}
+var _statement_by_id: Dictionary = {}
+var _fact_by_id: Dictionary = {}
+var _revealed_statement_ids: Dictionary = {}
+var _confirmed_fact_ids: Dictionary = {}
 var _dialogue_node_by_id: Dictionary = {}
 var _active_dialogue_event_id: String = ""
 var _active_dialogue_node_id: String = ""
@@ -50,6 +63,9 @@ func _init() -> void:
 	_broadcast_system.connect(&"available_broadcasts_changed", Callable(self, "_on_available_broadcasts_changed"))
 	_broadcast_system.connect(&"player_broadcast_sent", Callable(self, "_on_player_broadcast_sent"))
 	_broadcast_system.connect(&"broadcast_error", Callable(self, "_on_broadcast_error"))
+	_computer_system.connect(&"entries_changed", Callable(self, "_on_computer_entries_changed"))
+	_computer_system.connect(&"source_unlocked", Callable(self, "_on_computer_source_unlocked"))
+	_computer_system.connect(&"source_read", Callable(self, "_on_computer_source_read"))
 
 
 ## 注入 GameClock。只依赖稳定信号和 get_current_game_tick()，不硬编码节点路径。
@@ -113,6 +129,9 @@ func set_phone_system(phone_system: RefCounted) -> Dictionary:
 				_disconnect_phone_system()
 				_phone_system = null
 				return _make_error("phone_signal_connect_failed", "无法连接 PhoneSystem 的 state_changed 信号。")
+	var computer_phone_result_value: Variant = _computer_system.call(&"set_phone_system", _phone_system)
+	if not computer_phone_result_value is Dictionary or not bool((computer_phone_result_value as Dictionary).get("ok", false)):
+		return _make_error("computer_phone_bind_failed", "ComputerSystem 未能绑定 PhoneSystem 来电记录。")
 	return {"ok": true}
 
 
@@ -134,12 +153,15 @@ func configure_test_night_story(content: Dictionary) -> Dictionary:
 	if not bool(validation.get("ok", false)):
 		return _make_error("invalid_story_content", "测试剧情运行时校验失败：%s" % String(validation.get("message", "未知错误。")))
 	var checked_content: Dictionary = validation
-	for field_name: String in ["events", "messages", "broadcasts", "dialogue_nodes"]:
+	for field_name: String in ["events", "checklist_entries", "news_entries", "messages", "broadcasts", "dialogue_nodes", "statements", "facts"]:
 		if not checked_content.has(field_name) or typeof(checked_content[field_name]) != TYPE_ARRAY:
 			return _make_error("invalid_story_content", "测试剧情缺少已校验数组字段：%s。" % field_name)
 	var next_event_by_id: Dictionary = {}
 	var next_message_by_id: Dictionary = {}
 	var next_dialogue_node_by_id: Dictionary = {}
+	var next_statement_by_id: Dictionary = {}
+	var next_fact_by_id: Dictionary = {}
+	var next_broadcast_fact_ids_by_id: Dictionary = {}
 	for raw_event: Variant in checked_content["events"] as Array:
 		if not raw_event is Dictionary:
 			return _make_error("invalid_story_content", "测试剧情 events 中包含非对象项目。")
@@ -170,8 +192,42 @@ func configure_test_night_story(content: Dictionary) -> Dictionary:
 		if next_dialogue_node_by_id.has(node_id):
 			return _make_error("invalid_story_content", "测试剧情 dialogue_nodes 中出现重复 ID。")
 		next_dialogue_node_by_id[node_id] = node.duplicate(true)
+	for raw_statement: Variant in checked_content["statements"] as Array:
+		if not raw_statement is Dictionary:
+			return _make_error("invalid_story_content", "测试剧情 statements 中包含非对象项目。")
+		var statement: Dictionary = raw_statement as Dictionary
+		if not statement.has("id"):
+			return _make_error("invalid_story_content", "测试剧情陈述缺少 id。")
+		var statement_id: String = String(statement["id"])
+		if next_statement_by_id.has(statement_id):
+			return _make_error("invalid_story_content", "测试剧情 statements 中出现重复 ID。")
+		next_statement_by_id[statement_id] = statement.duplicate(true)
+	for raw_fact: Variant in checked_content["facts"] as Array:
+		if not raw_fact is Dictionary:
+			return _make_error("invalid_story_content", "测试剧情 facts 中包含非对象项目。")
+		var fact: Dictionary = raw_fact as Dictionary
+		if not fact.has("id"):
+			return _make_error("invalid_story_content", "测试剧情事实缺少 id。")
+		var fact_id: String = String(fact["id"])
+		if next_fact_by_id.has(fact_id):
+			return _make_error("invalid_story_content", "测试剧情 facts 中出现重复 ID。")
+		next_fact_by_id[fact_id] = fact.duplicate(true)
+	for raw_broadcast: Variant in checked_content["broadcasts"] as Array:
+		if not raw_broadcast is Dictionary:
+			return _make_error("invalid_story_content", "测试剧情 broadcasts 中包含非对象项目。")
+		var broadcast: Dictionary = raw_broadcast as Dictionary
+		var broadcast_id: String = String(broadcast["id"])
+		next_broadcast_fact_ids_by_id[broadcast_id] = (broadcast["fact_ids"] as Array).duplicate(true)
 	# 到这里尚未写入任何 StoryEngine 或 BroadcastSystem 内容。所有轻量边界检查
-	# 成功后才登记事件、配置广播稿并一次性提交三个运行时映射。
+	# 成功后才登记事件、配置广播稿并一次性提交运行时映射。
+	var computer_result_value: Variant = _computer_system.call(
+		&"configure_content",
+		checked_content["checklist_entries"],
+		checked_content["news_entries"],
+		checked_content["messages"]
+	)
+	if not computer_result_value is Dictionary or not bool((computer_result_value as Dictionary).get("ok", false)):
+		return _make_error("computer_content_config_failed", "ComputerSystem 未能配置已校验的信息来源。")
 	var schedule_result: Dictionary = schedule_events(checked_content["events"] as Array)
 	if not bool(schedule_result.get("ok", false)):
 		return schedule_result
@@ -184,8 +240,18 @@ func configure_test_night_story(content: Dictionary) -> Dictionary:
 		return broadcast_result
 	_story_event_by_id = next_event_by_id
 	_message_by_id = next_message_by_id
+	_broadcast_fact_ids_by_id = next_broadcast_fact_ids_by_id
 	_dialogue_node_by_id = next_dialogue_node_by_id
+	_statement_by_id = next_statement_by_id
+	_fact_by_id = next_fact_by_id
 	_is_test_story_configured = true
+	for fact_id_variant: Variant in _fact_by_id.keys():
+		var configured_fact: Dictionary = _fact_by_id[fact_id_variant] as Dictionary
+		if bool(configured_fact["initially_confirmed"]):
+			_confirm_fact(String(fact_id_variant))
+	var initial_computer_advance_value: Variant = _computer_system.call(&"advance_to_minute", _current_minute)
+	if not initial_computer_advance_value is Dictionary or not bool((initial_computer_advance_value as Dictionary).get("ok", false)):
+		return _make_error("computer_initial_advance_failed", "ComputerSystem 未能解锁开局电脑信息。")
 	return {"ok": true, "event_count": _story_event_by_id.size()}
 
 
@@ -219,7 +285,10 @@ func advance_to_game_tick(current_tick: int) -> Dictionary:
 		force_ending_at_0200(ENDING_TICK)
 		return {"ok": true, "forced_ending": true}
 
-	_unlock_messages_through_minute(_current_minute)
+	if _is_test_story_configured:
+		var computer_advance_value: Variant = _computer_system.call(&"advance_to_minute", _current_minute)
+		if not computer_advance_value is Dictionary or not bool((computer_advance_value as Dictionary).get("ok", false)):
+			return _make_error("computer_advance_failed", "ComputerSystem 未能推进电脑信息解锁时间。")
 	_advance_phone_to_tick(current_tick)
 	if not _is_phone_busy():
 		_dispatch_next_queued_event()
@@ -262,6 +331,10 @@ func force_ending_at_0200(end_tick: int = ENDING_TICK) -> Dictionary:
 		"is_unauthorized": true,
 	}
 	_unauthorized_broadcast_record.make_read_only()
+	# Studio A 的未授权播出以及其成因未知，都是 02:00 权威事件本身确认的
+	# 结尾事实。艾米的来电只能揭示“她听见了什么”，不能抢先确认电台发生了什么。
+	for fact_id: String in ENDING_ONLY_FACT_IDS:
+		_confirm_fact(fact_id)
 	var phone_force_failed: bool = false
 	if _phone_system != null:
 		var phone_result: Variant = _phone_system.call(&"force_end_at_0200", end_tick)
@@ -327,7 +400,12 @@ func get_player_broadcast_records() -> Array[Dictionary]:
 	var records: Array[Dictionary] = []
 	for raw_record: Variant in result as Array:
 		if raw_record is Dictionary:
-			records.append(raw_record as Dictionary)
+			var record: Dictionary = (raw_record as Dictionary).duplicate(true)
+			var broadcast_id: String = String(record.get("broadcast_id", ""))
+			if _broadcast_fact_ids_by_id.has(broadcast_id):
+				record["fact_ids"] = (_broadcast_fact_ids_by_id[broadcast_id] as Array).duplicate(true)
+			record.make_read_only()
+			records.append(record)
 	return records
 
 
@@ -353,18 +431,97 @@ func send_player_broadcast(broadcast_id: String) -> Dictionary:
 
 
 func get_unlocked_messages() -> Array[Dictionary]:
-	var messages: Array[Dictionary] = []
-	for message_id_variant: Variant in _message_by_id.keys():
-		var message_id: String = String(message_id_variant)
-		if not _unlocked_message_ids.has(message_id):
+	return get_computer_entries("messages")
+
+
+## 电脑 UI 只从 StoryEngine 的薄接口读取来源状态，不能自行维护另一份未读或
+## 已读列表。call_log 始终由 ComputerSystem 从 PhoneSystem 已生成记录派生。
+func get_computer_entries(category: String) -> Array[Dictionary]:
+	var entries_value: Variant = _computer_system.call(&"get_entries", category)
+	if not entries_value is Array:
+		_make_error("invalid_computer_system_result", "ComputerSystem.get_entries() 必须返回 Array。")
+		return []
+	var entries: Array[Dictionary] = []
+	for raw_entry: Variant in entries_value as Array:
+		if not raw_entry is Dictionary:
 			continue
-		var message_copy: Dictionary = (_message_by_id[message_id] as Dictionary).duplicate(true)
-		message_copy.make_read_only()
-		messages.append(message_copy)
-	messages.sort_custom(func(first: Dictionary, second: Dictionary) -> bool:
-		return int(first["unlock_minute"]) < int(second["unlock_minute"])
+		var entry: Dictionary = (raw_entry as Dictionary).duplicate(true)
+		if category == "call_log":
+			_decorate_call_log_entry(entry)
+		entry.make_read_only()
+		entries.append(entry)
+	return entries
+
+
+func get_computer_unread_count(category: String) -> int:
+	var unread_count_value: Variant = _computer_system.call(&"get_unread_count", category)
+	if typeof(unread_count_value) != TYPE_INT:
+		_make_error("invalid_computer_system_result", "ComputerSystem.get_unread_count() 必须返回整数。")
+		return 0
+	return int(unread_count_value)
+
+
+## 阅读来源由 ComputerSystem 原子记录；它的 source_read 信号会同步调用
+## _reveal_statement_ids，因此返回成功时可直接查询新的陈述/事实状态。
+func mark_computer_entry_read(category: String, source_id: String) -> Dictionary:
+	if not _is_test_story_configured:
+		return _make_error("story_not_configured", "测试剧情尚未配置，不能阅读电脑信息。")
+	if _is_ending_forced:
+		return _make_error("ending_forced", "02:00 强制收束已发生，不能再阅读电脑信息。")
+	var result_value: Variant = _computer_system.call(&"mark_entry_read", category, source_id)
+	if not result_value is Dictionary:
+		return _make_error("invalid_computer_system_result", "ComputerSystem.mark_entry_read() 必须返回带 ok 的 Dictionary。")
+	return result_value as Dictionary
+
+
+func is_statement_revealed(statement_id: String) -> bool:
+	return _revealed_statement_ids.has(statement_id)
+
+
+func get_statement_snapshot(statement_id: String) -> Dictionary:
+	if not _statement_by_id.has(statement_id):
+		return {}
+	var snapshot: Dictionary = (_statement_by_id[statement_id] as Dictionary).duplicate(true)
+	snapshot["is_revealed"] = _revealed_statement_ids.has(statement_id)
+	snapshot.make_read_only()
+	return snapshot
+
+
+func get_revealed_statements() -> Array[Dictionary]:
+	var statements: Array[Dictionary] = []
+	for statement_id_variant: Variant in _statement_by_id.keys():
+		var statement_id: String = String(statement_id_variant)
+		if _revealed_statement_ids.has(statement_id):
+			statements.append(get_statement_snapshot(statement_id))
+	statements.sort_custom(func(first: Dictionary, second: Dictionary) -> bool:
+		return String(first["id"]) < String(second["id"])
 	)
-	return messages
+	return statements
+
+
+func is_fact_confirmed(fact_id: String) -> bool:
+	return _confirmed_fact_ids.has(fact_id)
+
+
+func get_fact_snapshot(fact_id: String) -> Dictionary:
+	if not _fact_by_id.has(fact_id):
+		return {}
+	var snapshot: Dictionary = (_fact_by_id[fact_id] as Dictionary).duplicate(true)
+	snapshot["is_confirmed"] = _confirmed_fact_ids.has(fact_id)
+	snapshot.make_read_only()
+	return snapshot
+
+
+func get_confirmed_facts() -> Array[Dictionary]:
+	var facts: Array[Dictionary] = []
+	for fact_id_variant: Variant in _fact_by_id.keys():
+		var fact_id: String = String(fact_id_variant)
+		if _confirmed_fact_ids.has(fact_id):
+			facts.append(get_fact_snapshot(fact_id))
+	facts.sort_custom(func(first: Dictionary, second: Dictionary) -> bool:
+		return String(first["id"]) < String(second["id"])
+	)
+	return facts
 
 
 ## 电话近景在 PhoneSystem 已进入 DialogueChoice 后调用；它不会自行变更电话状态。
@@ -390,6 +547,10 @@ func begin_active_call_dialogue() -> Dictionary:
 		return _make_error("missing_dialogue_node", "当前电话线路的对话入口不存在。")
 	_active_dialogue_event_id = event_id
 	_active_dialogue_node_id = start_node_id
+	var start_reveal_result: Dictionary = _reveal_statement_ids(((_dialogue_node_by_id[start_node_id] as Dictionary)["reveals_statement_ids"] as Array), event_id)
+	if not bool(start_reveal_result.get("ok", false)):
+		_clear_active_dialogue()
+		return start_reveal_result
 	var snapshot: Dictionary = get_active_dialogue_snapshot()
 	dialogue_changed.emit(snapshot)
 	return {"ok": true, "snapshot": snapshot}
@@ -406,7 +567,14 @@ func select_dialogue_option(option_id: String) -> Dictionary:
 	for option: Dictionary in current_node["options"] as Array:
 		if String(option["id"]) != option_id:
 			continue
+		var option_reveal_result: Dictionary = _reveal_statement_ids(option["reveals_statement_ids"] as Array, _active_dialogue_event_id)
+		if not bool(option_reveal_result.get("ok", false)):
+			return option_reveal_result
 		_active_dialogue_node_id = String(option["next_node_id"])
+		var successor_node: Dictionary = _dialogue_node_by_id[_active_dialogue_node_id] as Dictionary
+		var successor_reveal_result: Dictionary = _reveal_statement_ids(successor_node["reveals_statement_ids"] as Array, _active_dialogue_event_id)
+		if not bool(successor_reveal_result.get("ok", false)):
+			return successor_reveal_result
 		var snapshot: Dictionary = get_active_dialogue_snapshot()
 		var reached_terminal: bool = bool(snapshot["is_terminal"])
 		if reached_terminal:
@@ -446,9 +614,12 @@ func get_unauthorized_broadcast_record() -> Dictionary:
 ## 应用壳销毁一局运行时时调用。它只解除跨对象信号和引用，不重置或复活剧情。
 ## 保持幂等，避免旧 RefCounted 因 GameClock 或 PhoneSystem 的回调继续存活。
 func release_runtime() -> Dictionary:
+	var computer_release_value: Variant = _computer_system.call(&"release_runtime")
 	_disconnect_game_clock()
 	_disconnect_phone_system()
 	_phone_system = null
+	if not computer_release_value is Dictionary or not bool((computer_release_value as Dictionary).get("ok", false)):
+		return _make_error("computer_release_failed", "ComputerSystem 未能解除本局 PhoneSystem 运行时连接。")
 	return {"ok": true}
 
 
@@ -534,29 +705,108 @@ func _on_broadcast_error(broadcast_id: String, error_code: String, message: Stri
 	print("[剧情][广播][%s][%s] %s" % [broadcast_id, error_code, message])
 
 
-func _unlock_messages_through_minute(current_minute: int) -> void:
-	if not _is_test_story_configured:
+func _on_computer_entries_changed(category: String) -> void:
+	computer_entries_changed.emit(category)
+
+
+## 解锁只表示“可查看”，绝不能被当作角色已经说过或玩家已经读过。短信仍可
+## 作为广播稿的既有解锁来源，但其 statement_ids 只能在玩家打开短信后揭示。
+func _on_computer_source_unlocked(category: String, entry: Dictionary) -> void:
+	if category != "messages":
 		return
-	for message_id_variant: Variant in _message_by_id.keys():
-		var message_id: String = String(message_id_variant)
-		if _unlocked_message_ids.has(message_id):
+	var source_id: String = String(entry.get("source_id", entry.get("id", "")))
+	if source_id.is_empty():
+		_make_error("invalid_computer_source", "ComputerSystem 解锁的短信缺少稳定 source_id。")
+		return
+	var broadcast_result_value: Variant = _broadcast_system.call(&"unlock_for_source_id", source_id)
+	if not broadcast_result_value is Dictionary or not bool((broadcast_result_value as Dictionary).get("ok", false)):
+		_make_error("broadcast_unlock_failed", "短信 %s 未能解锁关联广播稿。" % source_id)
+		return
+	var public_message: Dictionary = entry.duplicate(true)
+	public_message.make_read_only()
+	message_unlocked.emit(public_message)
+	print("[剧情][%s] 短信已解锁，minute=%d。" % [source_id, _current_minute])
+
+
+func _on_computer_source_read(category: String, source_id: String, statement_ids: Array[String]) -> void:
+	if category == "call_log":
+		# 电话陈述只会在真实接通并进入对话时揭示；阅读电话记录不能补造漏接内容。
+		return
+	var reveal_result: Dictionary = _reveal_statement_ids(statement_ids, source_id)
+	if not bool(reveal_result.get("ok", false)):
+		_make_error("computer_statement_reveal_failed", "阅读来源 %s 时无法揭示其关联陈述。" % source_id)
+
+
+func _reveal_statement_ids(statement_ids: Array, expected_source_id: String) -> Dictionary:
+	for raw_statement_id: Variant in statement_ids:
+		if typeof(raw_statement_id) != TYPE_STRING or not _statement_by_id.has(String(raw_statement_id)):
+			return _make_error("unknown_statement_id", "运行时尝试揭示不存在的陈述。")
+		var statement_id: String = String(raw_statement_id)
+		var statement: Dictionary = _statement_by_id[statement_id] as Dictionary
+		if String(statement["source_id"]) != expected_source_id:
+			return _make_error("statement_source_mismatch", "运行时陈述来源与当前来源不一致。")
+		if _revealed_statement_ids.has(statement_id):
 			continue
-		var message: Dictionary = _message_by_id[message_id] as Dictionary
-		if int(message["unlock_minute"]) > current_minute:
+		_revealed_statement_ids[statement_id] = true
+		var snapshot: Dictionary = get_statement_snapshot(statement_id)
+		statement_revealed.emit(snapshot)
+		print("[剧情][%s] 来源陈述已揭示，source=%s。" % [statement_id, expected_source_id])
+	_evaluate_unconfirmed_facts()
+	return {"ok": true}
+
+
+func _evaluate_unconfirmed_facts() -> void:
+	for fact_id_variant: Variant in _fact_by_id.keys():
+		var fact_id: String = String(fact_id_variant)
+		if _confirmed_fact_ids.has(fact_id):
 			continue
-		_unlocked_message_ids[message_id] = true
-		var broadcast_result_value: Variant = _broadcast_system.call(&"unlock_for_source_id", message_id)
-		if not broadcast_result_value is Dictionary:
-			_make_error("invalid_broadcast_system_result", "BroadcastSystem.unlock_for_source_id() 必须返回带 ok 的 Dictionary。")
+		var fact: Dictionary = _fact_by_id[fact_id] as Dictionary
+		if ENDING_ONLY_FACT_IDS.has(fact_id):
 			continue
-		var broadcast_result: Dictionary = broadcast_result_value as Dictionary
-		if not bool(broadcast_result.get("ok", false)):
-			_make_error("broadcast_unlock_failed", "短信 %s 未能解锁关联广播稿。" % message_id)
+		if bool(fact["initially_confirmed"]):
+			_confirm_fact(fact_id)
 			continue
-		var public_message: Dictionary = message.duplicate(true)
-		public_message.make_read_only()
-		message_unlocked.emit(public_message)
-		print("[剧情][%s] 短信已解锁，minute=%d。" % [message_id, current_minute])
+		var has_all_required_statements: bool = true
+		for statement_id_variant: Variant in fact["required_statement_ids"] as Array:
+			if not _revealed_statement_ids.has(String(statement_id_variant)):
+				has_all_required_statements = false
+				break
+		if has_all_required_statements:
+			_confirm_fact(fact_id)
+
+
+func _confirm_fact(fact_id: String) -> void:
+	if _confirmed_fact_ids.has(fact_id) or not _fact_by_id.has(fact_id):
+		return
+	_confirmed_fact_ids[fact_id] = true
+	var snapshot: Dictionary = get_fact_snapshot(fact_id)
+	fact_confirmed.emit(snapshot)
+	print("[剧情][%s] 事实已确认。" % fact_id)
+
+
+func _decorate_call_log_entry(entry: Dictionary) -> void:
+	var source_id: String = String(entry.get("source_id", entry.get("event_id", "")))
+	var revealed_statement_ids: Array[String] = []
+	for statement_id_variant: Variant in _statement_by_id.keys():
+		var statement_id: String = String(statement_id_variant)
+		var statement: Dictionary = _statement_by_id[statement_id] as Dictionary
+		if String(statement["source_id"]) == source_id and _revealed_statement_ids.has(statement_id):
+			revealed_statement_ids.append(statement_id)
+	revealed_statement_ids.sort()
+	var confirmed_fact_ids: Array[String] = []
+	for fact_id_variant: Variant in _fact_by_id.keys():
+		var fact_id: String = String(fact_id_variant)
+		if not _confirmed_fact_ids.has(fact_id):
+			continue
+		var fact: Dictionary = _fact_by_id[fact_id] as Dictionary
+		for statement_id_variant: Variant in fact["required_statement_ids"] as Array:
+			var statement_id: String = String(statement_id_variant)
+			if _statement_by_id.has(statement_id) and String((_statement_by_id[statement_id] as Dictionary)["source_id"]) == source_id:
+				confirmed_fact_ids.append(fact_id)
+				break
+	confirmed_fact_ids.sort()
+	entry["revealed_statement_ids"] = revealed_statement_ids
+	entry["confirmed_fact_ids"] = confirmed_fact_ids
 
 
 func _unlock_broadcasts_for_completed_dialogue(event_id: String) -> Dictionary:

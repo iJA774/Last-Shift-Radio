@@ -10,6 +10,18 @@ const CONTENT_FORMAT_VERSION: int = 1
 const CONTENT_KIND: String = "incoming_call_events"
 const TEST_NIGHT_CONTENT_KIND: String = "test_night_story"
 const SHIFT_DURATION_MINUTES: int = 60
+const ENDING_ONLY_FACT_IDS: PackedStringArray = ["fact_unauthorized_broadcast", "fact_anomaly_cause_unknown"]
+const NORTH_BRIDGE_TOPIC_ID: String = "north_bridge"
+const REQUIRED_TEST_FACT_IDS: PackedStringArray = [
+	"fact_bridge_accident_before_shift",
+	"fact_bridge_closed",
+	"fact_accounts_conflict",
+	"fact_same_wagon_recurs",
+	"fact_wagon_positions_conflict",
+	"fact_bridge_traffic_after_closure",
+	"fact_unauthorized_broadcast",
+	"fact_anomaly_cause_unknown",
+]
 
 const SUPPORTED_EVENT_KINDS: PackedStringArray = ["incoming_call"]
 const SUPPORTED_PRIORITIES: PackedStringArray = ["main", "normal"]
@@ -39,9 +51,13 @@ const TEST_NIGHT_REQUIRED_FIELDS: PackedStringArray = [
 	"content_kind",
 	"conditions",
 	"events",
+	"checklist_entries",
+	"news_entries",
 	"messages",
 	"broadcasts",
 	"dialogue_nodes",
+	"statements",
+	"facts",
 ]
 
 
@@ -117,7 +133,7 @@ func validate_test_night_story(document: Variant, source_path: String) -> Dictio
 		return _make_error(source_path, "", "content_format_version", "invalid_content_format_version", "content_format_version 必须精确为整数 1。")
 	if typeof(root["content_kind"]) != TYPE_STRING or String(root["content_kind"]) != TEST_NIGHT_CONTENT_KIND:
 		return _make_error(source_path, "", "content_kind", "invalid_content_kind", "content_kind 必须精确为 test_night_story。")
-	for array_field: String in ["conditions", "events", "messages", "broadcasts", "dialogue_nodes"]:
+	for array_field: String in ["conditions", "events", "checklist_entries", "news_entries", "messages", "broadcasts", "dialogue_nodes", "statements", "facts"]:
 		if typeof(root[array_field]) != TYPE_ARRAY:
 			return _make_error(source_path, "", array_field, "invalid_array_field", "%s 必须是数组。" % array_field)
 
@@ -138,11 +154,34 @@ func validate_test_night_story(document: Variant, source_path: String) -> Dictio
 	if not bool(event_result.get("ok", false)):
 		return event_result
 	var event_by_id: Dictionary = event_result["by_id"] as Dictionary
+	var checklist_result: Dictionary = _validate_test_information_entries(root["checklist_entries"] as Array, "checklist_entries", false, source_path)
+	if not bool(checklist_result.get("ok", false)):
+		return checklist_result
+	var news_result: Dictionary = _validate_test_information_entries(root["news_entries"] as Array, "news_entries", true, source_path)
+	if not bool(news_result.get("ok", false)):
+		return news_result
 	var message_result: Dictionary = _validate_test_messages(root["messages"] as Array, source_path)
 	if not bool(message_result.get("ok", false)):
 		return message_result
 	var message_by_id: Dictionary = message_result["by_id"] as Dictionary
-	var broadcast_result: Dictionary = _validate_test_broadcasts(root["broadcasts"] as Array, condition_ids, source_path)
+	var source_ids_result: Dictionary = _combine_test_source_ids(event_by_id, checklist_result["by_id"] as Dictionary, news_result["by_id"] as Dictionary, message_by_id, source_path)
+	if not bool(source_ids_result.get("ok", false)):
+		return source_ids_result
+	var statement_result: Dictionary = _validate_test_statements(root["statements"] as Array, source_ids_result["source_ids"] as Dictionary, source_path)
+	if not bool(statement_result.get("ok", false)):
+		return statement_result
+	var fact_result: Dictionary = _validate_test_facts(root["facts"] as Array, statement_result["by_id"] as Dictionary, source_path)
+	if not bool(fact_result.get("ok", false)):
+		return fact_result
+	var information_reference_result: Dictionary = _validate_test_information_references(
+		[checklist_result["entries"], news_result["entries"], message_result["messages"]],
+		statement_result["by_id"] as Dictionary,
+		fact_result["by_id"] as Dictionary,
+		source_path
+	)
+	if not bool(information_reference_result.get("ok", false)):
+		return information_reference_result
+	var broadcast_result: Dictionary = _validate_test_broadcasts(root["broadcasts"] as Array, condition_ids, fact_result["by_id"] as Dictionary, source_path)
 	if not bool(broadcast_result.get("ok", false)):
 		return broadcast_result
 	var broadcast_by_id: Dictionary = broadcast_result["by_id"] as Dictionary
@@ -158,10 +197,19 @@ func validate_test_night_story(document: Variant, source_path: String) -> Dictio
 	var dialogue_result: Dictionary = _validate_test_dialogue_nodes(
 		root["dialogue_nodes"] as Array,
 		event_by_id,
+		statement_result["by_id"] as Dictionary,
 		source_path
 	)
 	if not bool(dialogue_result.get("ok", false)):
 		return dialogue_result
+	var statement_coverage_result: Dictionary = _validate_statement_reveal_coverage(
+		[checklist_result["entries"], news_result["entries"], message_result["messages"]],
+		dialogue_result["nodes"] as Array[Dictionary],
+		statement_result["by_id"] as Dictionary,
+		source_path
+	)
+	if not bool(statement_coverage_result.get("ok", false)):
+		return statement_coverage_result
 
 	return {
 		"ok": true,
@@ -170,9 +218,13 @@ func validate_test_night_story(document: Variant, source_path: String) -> Dictio
 		"content_kind": TEST_NIGHT_CONTENT_KIND,
 		"conditions": (condition_result["conditions"] as Array[Dictionary]).duplicate(true),
 		"events": events.duplicate(true),
+		"checklist_entries": (checklist_result["entries"] as Array[Dictionary]).duplicate(true),
+		"news_entries": (news_result["entries"] as Array[Dictionary]).duplicate(true),
 		"messages": (message_result["messages"] as Array[Dictionary]).duplicate(true),
 		"broadcasts": (broadcast_result["broadcasts"] as Array[Dictionary]).duplicate(true),
 		"dialogue_nodes": (dialogue_result["nodes"] as Array[Dictionary]).duplicate(true),
+		"statements": (statement_result["statements"] as Array[Dictionary]).duplicate(true),
+		"facts": (fact_result["facts"] as Array[Dictionary]).duplicate(true),
 	}
 
 
@@ -218,6 +270,63 @@ func _validate_test_events(events: Array[Dictionary], condition_ids: Dictionary,
 	return {"ok": true, "by_id": by_id}
 
 
+## 清单、地方新闻和短信都是电脑可阅读的来源。解锁与阅读由 ComputerSystem
+## 管理；本校验器只固化来源文本、稳定 ID 及其可关联的陈述/事实 ID。
+func _validate_test_information_entries(raw_entries: Array, collection_name: String, requires_source: bool, source_path: String) -> Dictionary:
+	if collection_name == "news_entries" and raw_entries.size() < 5:
+		return _make_error(source_path, "", collection_name, "insufficient_news_entries", "测试剧情至少需要 5 条地方新闻。")
+	if collection_name == "checklist_entries" and raw_entries.is_empty():
+		return _make_error(source_path, "", collection_name, "empty_checklist_entries", "测试剧情必须提供值班清单。")
+	var by_id: Dictionary = {}
+	var entries: Array[Dictionary] = []
+	var non_bridge_news_count: int = 0
+	for raw_entry: Variant in raw_entries:
+		if not raw_entry is Dictionary:
+			return _make_error(source_path, "", collection_name, "invalid_information_entry_type", "%s 中的每一项必须是对象。" % collection_name)
+		var entry: Dictionary = raw_entry as Dictionary
+		var provisional_id: String = _read_event_id_or_empty(entry)
+		var required_fields: PackedStringArray = ["id", "title", "body", "unlock_minute", "statement_ids", "fact_ids"]
+		if collection_name == "news_entries":
+			required_fields.append("topic_ids")
+		for field_name: String in required_fields:
+			if not entry.has(field_name):
+				return _make_error(source_path, provisional_id, "%s.%s" % [collection_name, field_name], "missing_field", "%s 条目缺少必填字段：%s。" % [collection_name, field_name])
+		if requires_source and not entry.has("source"):
+			return _make_error(source_path, provisional_id, "%s.source" % collection_name, "missing_field", "地方新闻缺少来源字段：source。")
+		if typeof(entry["id"]) != TYPE_STRING or not _is_stable_id(String(entry["id"])):
+			return _make_error(source_path, provisional_id, "%s.id" % collection_name, "invalid_information_entry_id", "%s 条目 ID 必须是英文 snake_case 标识符。" % collection_name)
+		var entry_id: String = String(entry["id"])
+		if by_id.has(entry_id):
+			return _make_error(source_path, entry_id, "%s.id" % collection_name, "duplicate_information_entry_id", "%s 条目 ID 在同一内容文件中重复。" % collection_name)
+		for text_field: String in ["title", "body"]:
+			if typeof(entry[text_field]) != TYPE_STRING or String(entry[text_field]).strip_edges().is_empty():
+				return _make_error(source_path, entry_id, "%s.%s" % [collection_name, text_field], "invalid_information_entry_text", "%s 必须是非空字符串。" % text_field)
+		if requires_source and (typeof(entry["source"]) != TYPE_STRING or String(entry["source"]).strip_edges().is_empty()):
+			return _make_error(source_path, entry_id, "%s.source" % collection_name, "invalid_information_entry_source", "新闻来源 source 必须是非空字符串。")
+		var minute_result: Dictionary = _read_exact_integer(entry["unlock_minute"])
+		if not bool(minute_result.get("ok", false)) or int(minute_result["value"]) < 0 or int(minute_result["value"]) >= SHIFT_DURATION_MINUTES:
+			return _make_error(source_path, entry_id, "%s.unlock_minute" % collection_name, "invalid_unlock_minute", "电脑条目解锁分钟必须是 0 至 59 的整数。")
+		for id_field: String in ["statement_ids", "fact_ids"]:
+			var id_array_result: Dictionary = _validate_stable_id_array(entry[id_field], source_path, entry_id, "%s.%s" % [collection_name, id_field])
+			if not bool(id_array_result.get("ok", false)):
+				return id_array_result
+		if collection_name == "news_entries":
+			var topic_ids_result: Dictionary = _validate_stable_id_array(entry["topic_ids"], source_path, entry_id, "news_entries.topic_ids")
+			if not bool(topic_ids_result.get("ok", false)):
+				return topic_ids_result
+			if (entry["topic_ids"] as Array).is_empty():
+				return _make_error(source_path, entry_id, "news_entries.topic_ids", "empty_news_topics", "地方新闻至少需要一个明确 topic_id。")
+			if not (entry["topic_ids"] as Array).has(NORTH_BRIDGE_TOPIC_ID):
+				non_bridge_news_count += 1
+		var normalized: Dictionary = entry.duplicate(true)
+		normalized["unlock_minute"] = int(minute_result["value"])
+		by_id[entry_id] = normalized
+		entries.append(normalized)
+	if collection_name == "news_entries" and non_bridge_news_count < 2:
+		return _make_error(source_path, "", "news_entries.topic_ids", "insufficient_non_bridge_news", "测试剧情至少需要 2 条不含 north_bridge topic_id 的地方新闻。")
+	return {"ok": true, "by_id": by_id, "entries": entries}
+
+
 func _validate_test_messages(raw_messages: Array, source_path: String) -> Dictionary:
 	if raw_messages.is_empty():
 		return _make_error(source_path, "", "messages", "empty_messages", "测试剧情必须提供短信内容。")
@@ -228,7 +337,7 @@ func _validate_test_messages(raw_messages: Array, source_path: String) -> Dictio
 			return _make_error(source_path, "", "messages", "invalid_message_type", "messages 中的每一项必须是对象。")
 		var message: Dictionary = raw_message as Dictionary
 		var provisional_id: String = _read_event_id_or_empty(message)
-		for field_name: String in ["id", "sender", "body", "unlock_minute", "unlocks_broadcast_ids"]:
+		for field_name: String in ["id", "sender", "body", "unlock_minute", "unlocks_broadcast_ids", "statement_ids", "fact_ids"]:
 			if not message.has(field_name):
 				return _make_error(source_path, provisional_id, field_name, "missing_field", "短信缺少必填字段：%s。" % field_name)
 		if typeof(message["id"]) != TYPE_STRING or not _is_stable_id(String(message["id"])):
@@ -247,6 +356,10 @@ func _validate_test_messages(raw_messages: Array, source_path: String) -> Dictio
 		for broadcast_id: Variant in message["unlocks_broadcast_ids"] as Array:
 			if typeof(broadcast_id) != TYPE_STRING or not _is_stable_id(String(broadcast_id)):
 				return _make_error(source_path, message_id, "unlocks_broadcast_ids", "invalid_broadcast_id", "短信解锁的广播 ID 必须是英文 snake_case ID。")
+		for id_field: String in ["statement_ids", "fact_ids"]:
+			var id_array_result: Dictionary = _validate_stable_id_array(message[id_field], source_path, message_id, id_field)
+			if not bool(id_array_result.get("ok", false)):
+				return id_array_result
 		var normalized: Dictionary = message.duplicate(true)
 		normalized["unlock_minute"] = int(minute_result["value"])
 		by_id[message_id] = normalized
@@ -254,7 +367,110 @@ func _validate_test_messages(raw_messages: Array, source_path: String) -> Dictio
 	return {"ok": true, "by_id": by_id, "messages": messages}
 
 
-func _validate_test_broadcasts(raw_broadcasts: Array, condition_ids: Dictionary, source_path: String) -> Dictionary:
+func _combine_test_source_ids(event_by_id: Dictionary, checklist_by_id: Dictionary, news_by_id: Dictionary, message_by_id: Dictionary, source_path: String) -> Dictionary:
+	var source_ids: Dictionary = {}
+	for source_collection: Dictionary in [event_by_id, checklist_by_id, news_by_id, message_by_id]:
+		for source_id_variant: Variant in source_collection.keys():
+			var source_id: String = String(source_id_variant)
+			if source_ids.has(source_id):
+				return _make_error(source_path, source_id, "id", "duplicate_source_id", "来电事件与电脑来源条目之间不能复用稳定 ID。")
+			source_ids[source_id] = true
+	return {"ok": true, "source_ids": source_ids}
+
+
+## 陈述是“某个来源说过什么”的最小原子；不代表该陈述已经得到事实确认。
+func _validate_test_statements(raw_statements: Array, source_ids: Dictionary, source_path: String) -> Dictionary:
+	if raw_statements.is_empty():
+		return _make_error(source_path, "", "statements", "empty_statements", "测试剧情必须声明来源陈述。")
+	var by_id: Dictionary = {}
+	var statements: Array[Dictionary] = []
+	for raw_statement: Variant in raw_statements:
+		if not raw_statement is Dictionary:
+			return _make_error(source_path, "", "statements", "invalid_statement_type", "statements 中的每一项必须是对象。")
+		var statement: Dictionary = raw_statement as Dictionary
+		var provisional_id: String = _read_event_id_or_empty(statement)
+		for field_name: String in ["id", "source_id", "body"]:
+			if not statement.has(field_name):
+				return _make_error(source_path, provisional_id, "statements.%s" % field_name, "missing_field", "陈述缺少必填字段：%s。" % field_name)
+		if typeof(statement["id"]) != TYPE_STRING or not _is_stable_id(String(statement["id"])):
+			return _make_error(source_path, provisional_id, "statements.id", "invalid_statement_id", "陈述 ID 必须是英文 snake_case 标识符。")
+		var statement_id: String = String(statement["id"])
+		if by_id.has(statement_id):
+			return _make_error(source_path, statement_id, "statements.id", "duplicate_statement_id", "陈述 ID 在同一内容文件中重复。")
+		if typeof(statement["source_id"]) != TYPE_STRING or not source_ids.has(String(statement["source_id"])):
+			return _make_error(source_path, statement_id, "statements.source_id", "unknown_statement_source_id", "陈述必须引用已有的电脑来源条目或电话事件 ID。")
+		if typeof(statement["body"]) != TYPE_STRING or String(statement["body"]).strip_edges().is_empty():
+			return _make_error(source_path, statement_id, "statements.body", "invalid_statement_body", "陈述正文必须是非空字符串。")
+		var normalized: Dictionary = statement.duplicate(true)
+		by_id[statement_id] = normalized
+		statements.append(normalized)
+	return {"ok": true, "by_id": by_id, "statements": statements}
+
+
+## 事实只在所有 required_statement_ids 都已经揭示时确认；initially_confirmed
+## 仅适用于开局已知的基线事实，不会由任何单个角色陈述直接改写。
+func _validate_test_facts(raw_facts: Array, statement_by_id: Dictionary, source_path: String) -> Dictionary:
+	if raw_facts.is_empty():
+		return _make_error(source_path, "", "facts", "empty_facts", "测试剧情必须声明稳定事实 ID。")
+	var by_id: Dictionary = {}
+	var facts: Array[Dictionary] = []
+	for raw_fact: Variant in raw_facts:
+		if not raw_fact is Dictionary:
+			return _make_error(source_path, "", "facts", "invalid_fact_type", "facts 中的每一项必须是对象。")
+		var fact: Dictionary = raw_fact as Dictionary
+		var provisional_id: String = _read_event_id_or_empty(fact)
+		for field_name: String in ["id", "initially_confirmed", "required_statement_ids"]:
+			if not fact.has(field_name):
+				return _make_error(source_path, provisional_id, "facts.%s" % field_name, "missing_field", "事实缺少必填字段：%s。" % field_name)
+		if typeof(fact["id"]) != TYPE_STRING or not _is_stable_id(String(fact["id"])):
+			return _make_error(source_path, provisional_id, "facts.id", "invalid_fact_id", "事实 ID 必须是英文 snake_case 标识符。")
+		var fact_id: String = String(fact["id"])
+		if by_id.has(fact_id):
+			return _make_error(source_path, fact_id, "facts.id", "duplicate_fact_id", "事实 ID 在同一内容文件中重复。")
+		if typeof(fact["initially_confirmed"]) != TYPE_BOOL:
+			return _make_error(source_path, fact_id, "facts.initially_confirmed", "invalid_initially_confirmed", "initially_confirmed 必须是 bool。")
+		var statement_ids_result: Dictionary = _validate_stable_id_array(fact["required_statement_ids"], source_path, fact_id, "facts.required_statement_ids")
+		if not bool(statement_ids_result.get("ok", false)):
+			return statement_ids_result
+		for statement_id_variant: Variant in fact["required_statement_ids"] as Array:
+			if not statement_by_id.has(String(statement_id_variant)):
+				return _make_error(source_path, fact_id, "facts.required_statement_ids", "unknown_required_statement_id", "事实引用了不存在的必要陈述：%s。" % String(statement_id_variant))
+		if not bool(fact["initially_confirmed"]) and (fact["required_statement_ids"] as Array).is_empty() and not ENDING_ONLY_FACT_IDS.has(fact_id):
+			return _make_error(source_path, fact_id, "facts.required_statement_ids", "missing_fact_evidence", "未初始确认的事实至少需要一条必要陈述。")
+		var normalized: Dictionary = fact.duplicate(true)
+		by_id[fact_id] = normalized
+		facts.append(normalized)
+	for required_fact_id: String in REQUIRED_TEST_FACT_IDS:
+		if not by_id.has(required_fact_id):
+			return _make_error(source_path, required_fact_id, "facts.id", "missing_required_fact_id", "测试剧情缺少既定稳定事实 ID：%s。" % required_fact_id)
+	for fact_id_variant: Variant in by_id.keys():
+		if not REQUIRED_TEST_FACT_IDS.has(String(fact_id_variant)):
+			return _make_error(source_path, String(fact_id_variant), "facts.id", "unknown_test_fact_id", "测试剧情不能声明既定集合之外的事实 ID。")
+	return {"ok": true, "by_id": by_id, "facts": facts}
+
+
+func _validate_test_information_references(entry_collections: Array, statement_by_id: Dictionary, fact_by_id: Dictionary, source_path: String) -> Dictionary:
+	for raw_collection: Variant in entry_collections:
+		if not raw_collection is Array:
+			return _make_error(source_path, "", "information_entries", "invalid_information_entry_collection", "内部校验错误：电脑来源集合必须是数组。")
+		for raw_entry: Variant in raw_collection as Array:
+			if not raw_entry is Dictionary:
+				return _make_error(source_path, "", "information_entries", "invalid_information_entry", "内部校验错误：电脑来源条目必须是对象。")
+			var entry: Dictionary = raw_entry as Dictionary
+			var entry_id: String = String(entry["id"])
+			for statement_id_variant: Variant in entry["statement_ids"] as Array:
+				var statement_id: String = String(statement_id_variant)
+				if not statement_by_id.has(statement_id):
+					return _make_error(source_path, entry_id, "statement_ids", "unknown_statement_id", "电脑来源条目引用了不存在的陈述：%s。" % statement_id)
+				if String((statement_by_id[statement_id] as Dictionary)["source_id"]) != entry_id:
+					return _make_error(source_path, entry_id, "statement_ids", "statement_source_mismatch", "电脑来源条目只能关联以自身 ID 为 source_id 的陈述。")
+			for fact_id_variant: Variant in entry["fact_ids"] as Array:
+				if not fact_by_id.has(String(fact_id_variant)):
+					return _make_error(source_path, entry_id, "fact_ids", "unknown_fact_id", "电脑来源条目引用了不存在的事实：%s。" % String(fact_id_variant))
+	return {"ok": true}
+
+
+func _validate_test_broadcasts(raw_broadcasts: Array, condition_ids: Dictionary, fact_by_id: Dictionary, source_path: String) -> Dictionary:
 	if raw_broadcasts.size() != 3:
 		return _make_error(source_path, "", "broadcasts", "invalid_broadcast_count", "测试剧情必须精确包含 3 条预制广播稿。")
 	var by_id: Dictionary = {}
@@ -264,7 +480,7 @@ func _validate_test_broadcasts(raw_broadcasts: Array, condition_ids: Dictionary,
 			return _make_error(source_path, "", "broadcasts", "invalid_broadcast_type", "broadcasts 中的每一项必须是对象。")
 		var broadcast: Dictionary = raw_broadcast as Dictionary
 		var provisional_id: String = _read_event_id_or_empty(broadcast)
-		for field_name: String in ["id", "source", "body", "unlock_message_ids", "unlock_event_ids", "sets_condition_id", "exclusive_group_id"]:
+		for field_name: String in ["id", "source", "body", "unlock_message_ids", "unlock_event_ids", "sets_condition_id", "exclusive_group_id", "fact_ids"]:
 			if not broadcast.has(field_name):
 				return _make_error(source_path, provisional_id, field_name, "missing_field", "广播稿缺少必填字段：%s。" % field_name)
 		if typeof(broadcast["id"]) != TYPE_STRING or not _is_stable_id(String(broadcast["id"])):
@@ -293,6 +509,12 @@ func _validate_test_broadcasts(raw_broadcasts: Array, condition_ids: Dictionary,
 		var exclusive_group_id: String = String(broadcast["exclusive_group_id"])
 		if not exclusive_group_id.is_empty() and not _is_stable_id(exclusive_group_id):
 			return _make_error(source_path, broadcast_id, "exclusive_group_id", "invalid_exclusive_group_id", "exclusive_group_id 必须为空或英文 snake_case ID。")
+		var fact_ids_result: Dictionary = _validate_stable_id_array(broadcast["fact_ids"], source_path, broadcast_id, "fact_ids")
+		if not bool(fact_ids_result.get("ok", false)):
+			return fact_ids_result
+		for fact_id_variant: Variant in broadcast["fact_ids"] as Array:
+			if not fact_by_id.has(String(fact_id_variant)):
+				return _make_error(source_path, broadcast_id, "fact_ids", "unknown_fact_id", "广播稿引用了不存在的事实：%s。" % String(fact_id_variant))
 		by_id[broadcast_id] = broadcast.duplicate(true)
 		broadcasts.append(broadcast.duplicate(true))
 	return {"ok": true, "by_id": by_id, "broadcasts": broadcasts}
@@ -337,7 +559,7 @@ func _validate_test_unlock_references(event_by_id: Dictionary, message_by_id: Di
 	return {"ok": true}
 
 
-func _validate_test_dialogue_nodes(raw_nodes: Array, event_by_id: Dictionary, source_path: String) -> Dictionary:
+func _validate_test_dialogue_nodes(raw_nodes: Array, event_by_id: Dictionary, statement_by_id: Dictionary, source_path: String) -> Dictionary:
 	var node_by_id: Dictionary = {}
 	var option_ids: Dictionary = {}
 	var nodes: Array[Dictionary] = []
@@ -346,7 +568,7 @@ func _validate_test_dialogue_nodes(raw_nodes: Array, event_by_id: Dictionary, so
 			return _make_error(source_path, "", "dialogue_nodes", "invalid_dialogue_node_type", "dialogue_nodes 中的每一项必须是对象。")
 		var node: Dictionary = raw_node as Dictionary
 		var provisional_id: String = _read_event_id_or_empty(node)
-		for field_name: String in ["id", "event_id", "speaker", "text", "is_terminal", "options"]:
+		for field_name: String in ["id", "event_id", "speaker", "text", "is_terminal", "options", "reveals_statement_ids"]:
 			if not node.has(field_name):
 				return _make_error(source_path, provisional_id, field_name, "missing_field", "对话节点缺少必填字段：%s。" % field_name)
 		if typeof(node["id"]) != TYPE_STRING or not _is_stable_id(String(node["id"])):
@@ -361,6 +583,9 @@ func _validate_test_dialogue_nodes(raw_nodes: Array, event_by_id: Dictionary, so
 				return _make_error(source_path, node_id, field_name, "invalid_dialogue_text", "%s 必须是非空字符串。" % field_name)
 		if typeof(node["is_terminal"]) != TYPE_BOOL or typeof(node["options"]) != TYPE_ARRAY:
 			return _make_error(source_path, node_id, "is_terminal/options", "invalid_dialogue_shape", "is_terminal 必须是 bool，options 必须是数组。")
+		var node_statement_ids_result: Dictionary = _validate_statement_reveal_ids(node["reveals_statement_ids"], statement_by_id, String(node["event_id"]), source_path, node_id, "reveals_statement_ids")
+		if not bool(node_statement_ids_result.get("ok", false)):
+			return node_statement_ids_result
 		var options: Array = node["options"] as Array
 		if bool(node["is_terminal"]) and not options.is_empty():
 			return _make_error(source_path, node_id, "options", "terminal_has_options", "终止对话节点不能再包含选项。")
@@ -370,7 +595,7 @@ func _validate_test_dialogue_nodes(raw_nodes: Array, event_by_id: Dictionary, so
 			if not raw_option is Dictionary:
 				return _make_error(source_path, node_id, "options", "invalid_dialogue_option_type", "对话选项必须是对象。")
 			var option: Dictionary = raw_option as Dictionary
-			for field_name: String in ["id", "text", "next_node_id"]:
+			for field_name: String in ["id", "text", "next_node_id", "reveals_statement_ids"]:
 				if not option.has(field_name):
 					return _make_error(source_path, node_id, "options.%s" % field_name, "missing_field", "对话选项缺少必填字段：%s。" % field_name)
 			if typeof(option["id"]) != TYPE_STRING or not _is_stable_id(String(option["id"])):
@@ -381,6 +606,9 @@ func _validate_test_dialogue_nodes(raw_nodes: Array, event_by_id: Dictionary, so
 			option_ids[option_id] = true
 			if typeof(option["text"]) != TYPE_STRING or String(option["text"]).strip_edges().is_empty() or typeof(option["next_node_id"]) != TYPE_STRING or not _is_stable_id(String(option["next_node_id"])):
 				return _make_error(source_path, node_id, "options", "invalid_dialogue_option", "对话选项正文和 next_node_id 必须有效。")
+			var option_statement_ids_result: Dictionary = _validate_statement_reveal_ids(option["reveals_statement_ids"], statement_by_id, String(node["event_id"]), source_path, node_id, "options.reveals_statement_ids")
+			if not bool(option_statement_ids_result.get("ok", false)):
+				return option_statement_ids_result
 		node_by_id[node_id] = node.duplicate(true)
 		nodes.append(node.duplicate(true))
 
@@ -415,6 +643,33 @@ func _validate_test_dialogue_nodes(raw_nodes: Array, event_by_id: Dictionary, so
 	if not bool(round_result.get("ok", false)):
 		return round_result
 	return {"ok": true, "nodes": nodes}
+
+
+## 每条陈述都必须由所属来源的“阅读”或“对话推进”明确揭示。否则虽然
+## source_id 有效，却永远无法在游戏中取得，是损坏内容而不是可忽略的闲置数据。
+func _validate_statement_reveal_coverage(
+	entry_collections: Array,
+	dialogue_nodes: Array[Dictionary],
+	statement_by_id: Dictionary,
+	source_path: String
+) -> Dictionary:
+	var revealed_by_content: Dictionary = {}
+	for raw_collection: Variant in entry_collections:
+		for raw_entry: Variant in raw_collection as Array:
+			var entry: Dictionary = raw_entry as Dictionary
+			for statement_id_variant: Variant in entry["statement_ids"] as Array:
+				revealed_by_content[String(statement_id_variant)] = true
+	for node: Dictionary in dialogue_nodes:
+		for statement_id_variant: Variant in node["reveals_statement_ids"] as Array:
+			revealed_by_content[String(statement_id_variant)] = true
+		for option: Dictionary in node["options"] as Array:
+			for statement_id_variant: Variant in option["reveals_statement_ids"] as Array:
+				revealed_by_content[String(statement_id_variant)] = true
+	for statement_id_variant: Variant in statement_by_id.keys():
+		var statement_id: String = String(statement_id_variant)
+		if not revealed_by_content.has(statement_id):
+			return _make_error(source_path, statement_id, "statements.id", "unrevealed_statement", "陈述没有被所属电脑来源或对话节点/选项引用，玩家无法获得它。")
+	return {"ok": true}
 
 
 func _visit_dialogue_node(node_id: String, node_by_id: Dictionary, reachable: Dictionary, visiting: Dictionary, source_path: String) -> Dictionary:
@@ -555,6 +810,41 @@ func _is_stable_id(candidate: String) -> bool:
 		and candidate.is_valid_identifier()
 		and candidate.is_valid_ascii_identifier()
 	)
+
+
+func _validate_stable_id_array(value: Variant, source_path: String, entry_id: String, field_name: String) -> Dictionary:
+	if typeof(value) != TYPE_ARRAY:
+		return _make_error(source_path, entry_id, field_name, "invalid_stable_id_array", "%s 必须是数组。" % field_name)
+	var seen_ids: Dictionary = {}
+	for raw_id: Variant in value as Array:
+		if typeof(raw_id) != TYPE_STRING or not _is_stable_id(String(raw_id)):
+			return _make_error(source_path, entry_id, field_name, "invalid_stable_id", "%s 中的每一项必须是英文 snake_case ID。" % field_name)
+		var stable_id: String = String(raw_id)
+		if seen_ids.has(stable_id):
+			return _make_error(source_path, entry_id, field_name, "duplicate_stable_id", "%s 不能包含重复 ID。" % field_name)
+		seen_ids[stable_id] = true
+	return {"ok": true}
+
+
+func _validate_statement_reveal_ids(
+	value: Variant,
+	statement_by_id: Dictionary,
+	event_id: String,
+	source_path: String,
+	node_id: String,
+	field_name: String
+) -> Dictionary:
+	var shape_result: Dictionary = _validate_stable_id_array(value, source_path, node_id, field_name)
+	if not bool(shape_result.get("ok", false)):
+		return shape_result
+	for statement_id_variant: Variant in value as Array:
+		var statement_id: String = String(statement_id_variant)
+		if not statement_by_id.has(statement_id):
+			return _make_error(source_path, node_id, field_name, "unknown_statement_id", "对话揭示了不存在的陈述：%s。" % statement_id)
+		var statement: Dictionary = statement_by_id[statement_id] as Dictionary
+		if String(statement["source_id"]) != event_id:
+			return _make_error(source_path, node_id, field_name, "statement_source_mismatch", "电话对话只能揭示以本通 event_id 为来源的陈述。")
+	return {"ok": true}
 
 
 ## Godot 的 JSON 数字会依运行时以 int 或 float 形式给出。只有没有小数部分的

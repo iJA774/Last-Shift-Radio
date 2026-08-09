@@ -5,13 +5,24 @@ extends Control
 
 signal return_requested()
 signal broadcast_requested(broadcast_id: String)
+signal computer_entry_open_requested(category: String, entry_id: String)
+
+## 电脑页面是 UI 展示状态，不是 StoryEngine / ComputerSystem 的内容状态。
+## 这个白名单同时是未来存读档前可查询的稳定 UI 契约，不能接受任意字符串。
+const PAGE_CATEGORIES: Array[String] = [
+	"checklist",
+	"news",
+	"messages",
+	"call_log",
+	"broadcast",
+]
 
 var _is_return_enabled: bool = true
 var _is_motion_enabled: bool = true
 var _cursor_tween: Tween = null
 var _glow_tween: Tween = null
 
-@onready var _call_log_view: Control = %CallLogView
+@onready var _information_view: Control = %InformationView
 @onready var _return_button: Button = %BackButton
 @onready var _screen_glow: ColorRect = %ScreenGlow
 @onready var _screen_cursor: Label = %ScreenCursor
@@ -20,9 +31,9 @@ var _glow_tween: Tween = null
 func bind_phone_system(phone_system: RefCounted) -> Dictionary:
 	if phone_system == null:
 		return _make_error("电话系统实例不能为空。")
-	if _call_log_view == null or not _call_log_view.has_method(&"bind_phone_system"):
+	if _information_view == null or not _information_view.has_method(&"bind_phone_system"):
 		return _make_error("电脑来电记录组件缺少 bind_phone_system() 接口。")
-	var result: Variant = _call_log_view.call(&"bind_phone_system", phone_system)
+	var result: Variant = _information_view.call(&"bind_phone_system", phone_system)
 	return _validate_component_result(result, "绑定电话系统")
 
 
@@ -30,25 +41,56 @@ func bind_phone_system(phone_system: RefCounted) -> Dictionary:
 func bind_story_engine(story_engine: RefCounted) -> Dictionary:
 	if story_engine == null:
 		return _make_error("StoryEngine 实例不能为空。")
-	if _call_log_view == null or not _call_log_view.has_method(&"bind_story_engine"):
+	if _information_view == null or not _information_view.has_method(&"bind_story_engine"):
 		return _make_error("电脑记录组件缺少 bind_story_engine() 接口。")
-	var result: Variant = _call_log_view.call(&"bind_story_engine", story_engine)
+	var result: Variant = _information_view.call(&"bind_story_engine", story_engine)
 	return _validate_component_result(result, "绑定剧情引擎")
+
+
+## 仅维护当前可见页签；切页不会读取条目、写入 ComputerSystem 或推导剧情事实。
+func select_category(category: String) -> Dictionary:
+	if not PAGE_CATEGORIES.has(category):
+		# UI 边界上的无效点击/脚本请求是可恢复的拒绝，不把预期校验写成引擎错误。
+		print("[电脑][invalid_page_category] 拒绝未知电脑页签：%s。" % category)
+		return {"ok": false, "message": "未知电脑页签：%s。" % category}
+	if _information_view == null or not _information_view.has_method(&"select_category"):
+		return _make_error("电脑信息组件缺少 select_category() 接口。")
+	var result: Variant = _information_view.call(&"select_category", category)
+	return _validate_component_result(result, "切换电脑页签")
+
+
+func get_active_category() -> String:
+	if _information_view == null or not _information_view.has_method(&"get_active_category"):
+		push_error("[电脑][active_category_missing] 电脑信息组件缺少 get_active_category() 接口。")
+		return ""
+	var category_value: Variant = _information_view.call(&"get_active_category")
+	if typeof(category_value) != TYPE_STRING or not PAGE_CATEGORIES.has(String(category_value)):
+		push_error("[电脑][invalid_active_category] 电脑信息组件返回了无效页签：%s。" % str(category_value))
+		return ""
+	return String(category_value)
 
 
 ## GameScreen 转交 StoryEngine 的发送结果；电脑不自行调用发送接口或拼装记录。
 func show_broadcast_feedback(result: Dictionary) -> Dictionary:
-	if _call_log_view == null or not _call_log_view.has_method(&"show_broadcast_feedback"):
+	if _information_view == null or not _information_view.has_method(&"show_broadcast_feedback"):
 		return _make_error("电脑记录组件缺少 show_broadcast_feedback() 接口。")
-	var component_result: Variant = _call_log_view.call(&"show_broadcast_feedback", result)
+	var component_result: Variant = _information_view.call(&"show_broadcast_feedback", result)
 	return _validate_component_result(component_result, "显示播出反馈")
 
 
 func show_unauthorized_broadcast(record: Dictionary) -> Dictionary:
-	if _call_log_view == null or not _call_log_view.has_method(&"show_unauthorized_broadcast"):
+	if _information_view == null or not _information_view.has_method(&"show_unauthorized_broadcast"):
 		return _make_error("电脑来电记录组件缺少 show_unauthorized_broadcast() 接口。")
-	var result: Variant = _call_log_view.call(&"show_unauthorized_broadcast", record)
+	var result: Variant = _information_view.call(&"show_unauthorized_broadcast", record)
 	return _validate_component_result(result, "显示未授权播出记录")
+
+
+## 阅读状态已由 GameScreen 转交 StoryEngine 写入；这里只把确认后的条目展开给玩家看。
+func show_entry_content(category: String, entry_id: String) -> Dictionary:
+	if _information_view == null or not _information_view.has_method(&"show_entry_content"):
+		return _make_error("电脑信息组件缺少 show_entry_content() 接口。")
+	var result: Variant = _information_view.call(&"show_entry_content", category, entry_id)
+	return _validate_component_result(result, "显示电脑条目")
 
 
 ## 收束期间由 GameScreen 锁定导航；电脑近景不自行决定收束时间或剧情状态。
@@ -72,7 +114,7 @@ func set_motion_enabled(is_enabled: bool) -> Dictionary:
 
 
 func _ready() -> void:
-	_connect_call_log_signals()
+	_connect_information_view_signals()
 	_refresh_return_button()
 	_configure_ambient_fx()
 	_refresh_screen_motion()
@@ -94,23 +136,39 @@ func _on_back_button_pressed() -> void:
 		return_requested.emit()
 
 
-func _connect_call_log_signals() -> void:
-	if _call_log_view == null or not _call_log_view.has_signal(&"broadcast_requested"):
-		push_error("[电脑][broadcast_signal_missing] 电脑记录组件缺少 broadcast_requested 信号。")
+func _connect_information_view_signals() -> void:
+	if _information_view == null:
+		push_error("[电脑][computer_view_missing] 电脑信息组件不存在。")
 		return
-	var callback: Callable = Callable(self, "_on_call_log_broadcast_requested")
-	if _call_log_view.is_connected(&"broadcast_requested", callback):
-		return
-	var result: Error = _call_log_view.connect(&"broadcast_requested", callback)
-	if result != OK:
-		push_error("[电脑][broadcast_signal_connect_failed] 无法连接 broadcast_requested，错误码=%d。" % result)
+	var contracts: Array[Dictionary] = [
+		{"signal": &"broadcast_requested", "callback": Callable(self, "_on_information_broadcast_requested")},
+		{"signal": &"computer_entry_open_requested", "callback": Callable(self, "_on_information_entry_open_requested")},
+	]
+	for contract: Dictionary in contracts:
+		var signal_name: StringName = contract["signal"] as StringName
+		var callback: Callable = contract["callback"] as Callable
+		if not _information_view.has_signal(signal_name):
+			push_error("[电脑][computer_view_signal_missing] 电脑信息组件缺少 %s 信号。" % String(signal_name))
+			continue
+		if _information_view.is_connected(signal_name, callback):
+			continue
+		var result: Error = _information_view.connect(signal_name, callback)
+		if result != OK:
+			push_error("[电脑][computer_view_signal_connect_failed] 无法连接 %s，错误码=%d。" % [String(signal_name), result])
 
 
-func _on_call_log_broadcast_requested(broadcast_id: String) -> void:
+func _on_information_broadcast_requested(broadcast_id: String) -> void:
 	if broadcast_id.strip_edges().is_empty():
 		push_error("[电脑][invalid_broadcast_id] 记录组件发出了空广播 ID。")
 		return
 	broadcast_requested.emit(broadcast_id)
+
+
+func _on_information_entry_open_requested(category: String, entry_id: String) -> void:
+	if category.strip_edges().is_empty() or entry_id.strip_edges().is_empty():
+		push_error("[电脑][invalid_entry_open_intent] 电脑信息组件发出了空分类或空条目 ID。")
+		return
+	computer_entry_open_requested.emit(category, entry_id)
 
 
 func _configure_ambient_fx() -> void:

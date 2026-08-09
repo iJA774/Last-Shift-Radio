@@ -88,8 +88,8 @@ func _run() -> void:
 	_assert_equal(first_screen.get_current_view_id(), "computer", "02:00 后必须先切到 GameScreen 电脑页。")
 	var broadcast_record: Variant = first_engine.call(&"get_unauthorized_broadcast_record")
 	_assert_true(broadcast_record is Dictionary and not (broadcast_record as Dictionary).is_empty(), "02:00 后 StoryEngine 必须拥有权威未授权播出记录。")
-	var call_log_view: Control = first_screen.get_node_or_null(NodePath("ViewHost/ComputerCloseup/TerminalSurface/CallLogView")) as Control
-	var displayed_broadcast: Variant = call_log_view.get("_unauthorized_broadcast") if call_log_view != null else null
+	var information_view: Control = first_screen.get_node_or_null(NodePath("ViewHost/ComputerCloseup/TerminalSurface/InformationView")) as Control
+	var displayed_broadcast: Variant = information_view.get("_unauthorized_broadcast") if information_view != null else null
 	_assert_true(
 		displayed_broadcast is Dictionary and String((displayed_broadcast as Dictionary).get("fact_id", "")) == "fact_unauthorized_broadcast",
 		"延时进入结束页前，电脑必须显示权威未授权播出记录。"

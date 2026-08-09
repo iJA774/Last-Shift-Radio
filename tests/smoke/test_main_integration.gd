@@ -109,8 +109,8 @@ func _run() -> void:
 		_assert_equal(String(record.get("fact_id", "")), "fact_unauthorized_broadcast", "播出记录必须使用稳定事实 ID。")
 		_assert_equal(int(record.get("time_tick", -1)), 3_600, "播出记录必须精确标记 02:00 tick。")
 		_assert_equal(String(record.get("source", "")), "Studio A", "播出记录来源必须为 Studio A。")
-	var call_log_view: Control = game_screen.get_node("ViewHost/ComputerCloseup/TerminalSurface/CallLogView") as Control
-	var displayed_broadcast: Variant = call_log_view.get("_unauthorized_broadcast") if call_log_view != null else null
+	var information_view: Control = game_screen.get_node("ViewHost/ComputerCloseup/TerminalSurface/InformationView") as Control
+	var displayed_broadcast: Variant = information_view.get("_unauthorized_broadcast") if information_view != null else null
 	_assert_true(
 		displayed_broadcast is Dictionary and String((displayed_broadcast as Dictionary).get("fact_id", "")) == "fact_unauthorized_broadcast",
 		"电脑页必须展示 StoryEngine 交给 GameScreen 的未授权播出记录。"

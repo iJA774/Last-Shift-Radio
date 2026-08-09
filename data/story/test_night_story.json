@@ -168,13 +168,114 @@
       "unlocks_broadcast_ids": []
     }
   ],
+  "checklist_entries": [
+    {
+      "id": "checklist_north_bridge_closure",
+      "title": "北桥封闭交接",
+      "body": "市政交接：北桥因结构受损封闭。任何要求改走北桥的说法，都先按未核实处理。",
+      "unlock_minute": 0,
+      "statement_ids": [
+        "statement_checklist_bridge_closure"
+      ],
+      "fact_ids": [
+        "fact_bridge_accident_before_shift",
+        "fact_bridge_closed"
+      ]
+    },
+    {
+      "id": "checklist_listener_calls",
+      "title": "听众来电处理",
+      "body": "记录来电者原话、时间和可复核线索；不要把单一听众的推测当作正式路况。",
+      "unlock_minute": 0,
+      "statement_ids": [],
+      "fact_ids": []
+    },
+    {
+      "id": "checklist_weather_watch",
+      "title": "低雾值守",
+      "body": "河谷低雾会降低能见度。播出时提醒听众减速，避免引导他们掉头核实消息。",
+      "unlock_minute": 0,
+      "statement_ids": [],
+      "fact_ids": []
+    }
+  ],
+  "news_entries": [
+    {
+      "id": "news_north_bridge_closure",
+      "title": "北桥夜间封闭",
+      "source": "市政新闻台",
+      "topic_ids": [
+        "north_bridge",
+        "road_closure"
+      ],
+      "body": "市政工程办公室通报：北桥检测到结构受损，今晚起临时封闭，绕行方案由现场路牌更新。",
+      "unlock_minute": 0,
+      "statement_ids": [
+        "statement_news_bridge_closure"
+      ],
+      "fact_ids": [
+        "fact_bridge_accident_before_shift",
+        "fact_bridge_closed"
+      ]
+    },
+    {
+      "id": "news_river_fog_warning",
+      "title": "河谷浓雾预警",
+      "source": "县气象台",
+      "topic_ids": [
+        "weather"
+      ],
+      "body": "河谷低洼路段将持续出现浓雾，凌晨前能见度可能降至一百米以下。",
+      "unlock_minute": 8,
+      "statement_ids": [],
+      "fact_ids": []
+    },
+    {
+      "id": "news_cinema_schedule",
+      "title": "星光影院加场",
+      "source": "社区文化版",
+      "topic_ids": [
+        "community_culture"
+      ],
+      "body": "星光小影院因雨夜客流调整了末场放映时间，明天早报将刊登更新后的节目单。",
+      "unlock_minute": 18,
+      "statement_ids": [],
+      "fact_ids": []
+    },
+    {
+      "id": "news_hockey_third_period",
+      "title": "冰球赛进入第三节",
+      "source": "体育编辑台",
+      "topic_ids": [
+        "sports"
+      ],
+      "body": "米尔黑文队在客场进入第三节，最终比分仍待终场确认。",
+      "unlock_minute": 34,
+      "statement_ids": [],
+      "fact_ids": []
+    },
+    {
+      "id": "news_print_shop_delay",
+      "title": "印刷间校样延迟",
+      "source": "晨报编辑部",
+      "topic_ids": [
+        "newsroom"
+      ],
+      "body": "雨水导致印刷间一台设备卡纸，社区放映单校样将延后送达新闻室。",
+      "unlock_minute": 45,
+      "statement_ids": [],
+      "fact_ids": []
+    }
+  ],
   "messages": [
     {
       "id": "message_shift_handoff",
       "sender": "夜班交接",
       "body": "雨势比预报大。值班清单在终端里，咖啡壶别再空烧。",
       "unlock_minute": 0,
-      "unlocks_broadcast_ids": []
+      "unlocks_broadcast_ids": [],
+      "statement_ids": [],
+      "fact_ids": []
     },
     {
       "id": "message_01_miller",
@@ -183,6 +284,14 @@
       "unlock_minute": 12,
       "unlocks_broadcast_ids": [
         "broadcast_bridge_structural_closure"
+      ],
+      "statement_ids": [
+        "statement_miller_bridge_closure"
+      ],
+      "fact_ids": [
+        "fact_bridge_closed",
+        "fact_accounts_conflict",
+        "fact_bridge_traffic_after_closure"
       ]
     },
     {
@@ -190,28 +299,38 @@
       "sender": "天气台",
       "body": "河谷低雾持续到清晨，能见度会再降。常规播报已排进整点带。",
       "unlock_minute": 19,
-      "unlocks_broadcast_ids": []
+      "unlocks_broadcast_ids": [],
+      "statement_ids": [],
+      "fact_ids": []
     },
     {
       "id": "message_printer_service",
       "sender": "印刷间",
       "body": "社区放映单的校样卡纸了，明早再送一份干净的到新闻室。",
       "unlock_minute": 30,
-      "unlocks_broadcast_ids": []
+      "unlocks_broadcast_ids": [],
+      "statement_ids": [],
+      "fact_ids": []
     },
     {
       "id": "message_city_desk",
       "sender": "市政桌",
       "body": "北桥封闭公告已转给晨报。除官方结构受损通知外，暂不确认其他事故说法。",
       "unlock_minute": 39,
-      "unlocks_broadcast_ids": []
+      "unlocks_broadcast_ids": [],
+      "statement_ids": [],
+      "fact_ids": [
+        "fact_bridge_closed"
+      ]
     },
     {
       "id": "message_night_editor",
       "sender": "夜编室",
       "body": "冰球比分若有人问，等第三节结束再说；别把未核实的听众电话写进晨间摘要。",
       "unlock_minute": 50,
-      "unlocks_broadcast_ids": []
+      "unlocks_broadcast_ids": [],
+      "statement_ids": [],
+      "fact_ids": []
     }
   ],
   "broadcasts": [
@@ -224,7 +343,8 @@
         "call_01_warren"
       ],
       "sets_condition_id": "",
-      "exclusive_group_id": "bridge_closure_report"
+      "exclusive_group_id": "bridge_closure_report",
+      "fact_ids": []
     },
     {
       "id": "broadcast_bridge_structural_closure",
@@ -235,7 +355,10 @@
       ],
       "unlock_event_ids": [],
       "sets_condition_id": "",
-      "exclusive_group_id": "bridge_closure_report"
+      "exclusive_group_id": "bridge_closure_report",
+      "fact_ids": [
+        "fact_bridge_closed"
+      ]
     },
     {
       "id": "broadcast_wagon_witness_request",
@@ -246,7 +369,11 @@
         "call_03_martha"
       ],
       "sets_condition_id": "condition_wagon_witness_request_sent",
-      "exclusive_group_id": ""
+      "exclusive_group_id": "",
+      "fact_ids": [
+        "fact_same_wagon_recurs",
+        "fact_wagon_positions_conflict"
+      ]
     }
   ],
   "dialogue_nodes": [
@@ -256,16 +383,19 @@
       "speaker": "沃伦",
       "text": "喂，WMLH？是我沃伦。雨一落下来膝盖就像塞了把锉刀。能把《米尔黑文，我的母亲》留到下一段吗？",
       "is_terminal": false,
+      "reveals_statement_ids": [],
       "options": [
         {
           "id": "opt_warren_song",
           "text": "我记下了，先找个暖和地方歇着。",
-          "next_node_id": "dlg_warren_follow"
+          "next_node_id": "dlg_warren_follow",
+          "reveals_statement_ids": []
         },
         {
           "id": "opt_warren_sober",
           "text": "你听起来喝多了，今晚别开车。",
-          "next_node_id": "dlg_warren_follow"
+          "next_node_id": "dlg_warren_follow",
+          "reveals_statement_ids": []
         }
       ]
     },
@@ -275,16 +405,21 @@
       "speaker": "沃伦",
       "text": "你们夜班总比酒吧里的说法靠谱些。那事要不要提一句？",
       "is_terminal": false,
+      "reveals_statement_ids": [],
       "options": [
         {
           "id": "opt_warren_follow_report",
-          "text": "我会标明是未核实传闻。",
-          "next_node_id": "dlg_warren_song_end"
+          "text": "北桥那边具体出了什么事？我只会按未核实传闻记录。",
+          "next_node_id": "dlg_warren_song_end",
+          "reveals_statement_ids": [
+            "statement_warren_tanker_fire_claim"
+          ]
         },
         {
           "id": "opt_warren_follow_caution",
           "text": "我先等官方消息，你也别往桥边去。",
-          "next_node_id": "dlg_warren_sober_end"
+          "next_node_id": "dlg_warren_sober_end",
+          "reveals_statement_ids": []
         }
       ]
     },
@@ -294,6 +429,7 @@
       "speaker": "沃伦",
       "text": "好，好。对了，威廉酒吧有人说北桥那边一辆油罐车翻了，车头还在冒烟。我没亲眼瞧见，只是觉得你们别等天亮才提。",
       "is_terminal": true,
+      "reveals_statement_ids": [],
       "options": []
     },
     {
@@ -302,6 +438,7 @@
       "speaker": "沃伦",
       "text": "我没开车，真没。酒吧里有人嚷北桥那边油罐车翻了还冒烟，雨里什么也看不清，别把我的话当新闻。",
       "is_terminal": true,
+      "reveals_statement_ids": [],
       "options": []
     },
     {
@@ -310,16 +447,19 @@
       "speaker": "夜班烘焙工",
       "text": "你好，是奥尔森仓库吗？我这边三袋高筋粉少了一袋，司机说单子在你们那里。",
       "is_terminal": false,
+      "reveals_statement_ids": [],
       "options": [
         {
           "id": "opt_wrong_number_correct",
           "text": "这里是 WMLH 电台，不是仓库。",
-          "next_node_id": "dlg_wrong_number_follow"
+          "next_node_id": "dlg_wrong_number_follow",
+          "reveals_statement_ids": []
         },
         {
           "id": "opt_wrong_number_kind",
           "text": "你拨错了，不过祝你能找到那袋面粉。",
-          "next_node_id": "dlg_wrong_number_follow"
+          "next_node_id": "dlg_wrong_number_follow",
+          "reveals_statement_ids": []
         }
       ]
     },
@@ -329,16 +469,19 @@
       "speaker": "夜班烘焙工",
       "text": "我该去问司机，还是先把炉里的面包拉出来？",
       "is_terminal": false,
+      "reveals_statement_ids": [],
       "options": [
         {
           "id": "opt_wrong_number_follow_driver",
           "text": "先顾烤炉，再按送货单找司机。",
-          "next_node_id": "dlg_wrong_number_correct_end"
+          "next_node_id": "dlg_wrong_number_correct_end",
+          "reveals_statement_ids": []
         },
         {
           "id": "opt_wrong_number_follow_number",
           "text": "找仓库总机，他们能查到收货人。",
-          "next_node_id": "dlg_wrong_number_kind_end"
+          "next_node_id": "dlg_wrong_number_kind_end",
+          "reveals_statement_ids": []
         }
       ]
     },
@@ -348,6 +491,7 @@
       "speaker": "夜班烘焙工",
       "text": "电台？天啊，难怪没人回我货号。抱歉，夜里烤炉一响人就糊涂了。",
       "is_terminal": true,
+      "reveals_statement_ids": [],
       "options": []
     },
     {
@@ -356,6 +500,7 @@
       "speaker": "夜班烘焙工",
       "text": "谢谢。要是它在烤炉旁边，我明早大概就能闻出来。抱歉打扰。",
       "is_terminal": true,
+      "reveals_statement_ids": [],
       "options": []
     },
     {
@@ -364,16 +509,19 @@
       "speaker": "玛莎·克莱恩",
       "text": "请问……你们有没有听见北桥那边的消息？我儿子丹尼本来只说出去给朋友送东西，到现在也没回家。",
       "is_terminal": false,
+      "reveals_statement_ids": [],
       "options": [
         {
           "id": "opt_martha_vehicle",
           "text": "请说说他开的车和可能的路线。",
-          "next_node_id": "dlg_martha_follow"
+          "next_node_id": "dlg_martha_follow",
+          "reveals_statement_ids": ["statement_martha_wagon_route"]
         },
         {
           "id": "opt_martha_calm",
           "text": "我们会留意消息。先告诉我他的名字和回家时间。",
-          "next_node_id": "dlg_martha_follow"
+          "next_node_id": "dlg_martha_follow",
+          "reveals_statement_ids": []
         }
       ]
     },
@@ -383,16 +531,19 @@
       "speaker": "玛莎·克莱恩",
       "text": "我不想让人冒险去找他，可我什么都做不了。你们能不能替我留意一下？",
       "is_terminal": false,
+      "reveals_statement_ids": [],
       "options": [
         {
           "id": "opt_martha_follow_request",
           "text": "我可以征集安全地点的目击信息。",
-          "next_node_id": "dlg_martha_vehicle_end"
+          "next_node_id": "dlg_martha_vehicle_end",
+          "reveals_statement_ids": []
         },
         {
           "id": "opt_martha_follow_official",
           "text": "先联系警方，也请保持电话畅通。",
-          "next_node_id": "dlg_martha_calm_end"
+          "next_node_id": "dlg_martha_calm_end",
+          "reveals_statement_ids": []
         }
       ]
     },
@@ -402,6 +553,7 @@
       "speaker": "玛莎·克莱恩",
       "text": "丹尼·克莱恩，开的我那辆旧旅行车，天太黑看着是很深的颜色。右后灯总是接触不好，颠一下才会亮。他常从北桥回城南。",
       "is_terminal": true,
+      "reveals_statement_ids": [],
       "options": []
     },
     {
@@ -410,6 +562,7 @@
       "speaker": "玛莎·克莱恩",
       "text": "他叫丹尼，十一点前说半小时就回。车是老旅行车，右后灯总犯毛病。要是有人打来提到它，拜托让他们别挂。",
       "is_terminal": true,
+      "reveals_statement_ids": [],
       "options": []
     },
     {
@@ -418,16 +571,19 @@
       "speaker": "河边遛狗者",
       "text": "是你们刚才在征集那辆旅行车的消息吗？我在河堤遛狗，桥西头乱成一团时，有辆很旧的车从那边慢慢挪走了。",
       "is_terminal": false,
+      "reveals_statement_ids": [],
       "options": [
         {
           "id": "opt_dog_walker_color",
           "text": "你看清车的颜色或车牌了吗？",
-          "next_node_id": "dlg_dog_walker_follow"
+          "next_node_id": "dlg_dog_walker_follow",
+          "reveals_statement_ids": ["statement_dog_walker_wagon_color"]
         },
         {
           "id": "opt_dog_walker_direction",
           "text": "它是往哪边离开的？",
-          "next_node_id": "dlg_dog_walker_follow"
+          "next_node_id": "dlg_dog_walker_follow",
+          "reveals_statement_ids": []
         }
       ]
     },
@@ -437,16 +593,19 @@
       "speaker": "河边遛狗者",
       "text": "我不想把不确定的东西说得像真事，可那辆车确实让我记住了。还需要什么？",
       "is_terminal": false,
+      "reveals_statement_ids": [],
       "options": [
         {
           "id": "opt_dog_walker_follow_color",
           "text": "只说你有把握的外观细节。",
-          "next_node_id": "dlg_dog_walker_color_end"
+          "next_node_id": "dlg_dog_walker_color_end",
+          "reveals_statement_ids": ["statement_dog_walker_wagon_color"]
         },
         {
           "id": "opt_dog_walker_follow_direction",
           "text": "请确认你最后看见它的方向。",
-          "next_node_id": "dlg_dog_walker_direction_end"
+          "next_node_id": "dlg_dog_walker_direction_end",
+          "reveals_statement_ids": []
         }
       ]
     },
@@ -456,6 +615,7 @@
       "speaker": "河边遛狗者",
       "text": "雨全糊在挡风玻璃上，我不敢说颜色。像是深色的旧车，侧面有道浅条纹，也可能只是河堤的反光。",
       "is_terminal": true,
+      "reveals_statement_ids": [],
       "options": []
     },
     {
@@ -464,6 +624,7 @@
       "speaker": "河边遛狗者",
       "text": "从西侧往城里那条辅路去了。我忙着拉住狗，没看见它后来拐到哪儿。",
       "is_terminal": true,
+      "reveals_statement_ids": [],
       "options": []
     },
     {
@@ -472,16 +633,19 @@
       "speaker": "星光小影院值班员",
       "text": "打扰一下，社区放映排期是不是也会送到你们新闻室？我们的印刷机把明早那页咬住了，我怕漏掉日期。",
       "is_terminal": false,
+      "reveals_statement_ids": [],
       "options": [
         {
           "id": "opt_cinema_schedule",
           "text": "有的话会在晨间清单里核对。",
-          "next_node_id": "dlg_cinema_follow"
+          "next_node_id": "dlg_cinema_follow",
+          "reveals_statement_ids": []
         },
         {
           "id": "opt_cinema_printer",
           "text": "先别急，印刷间刚说他们也在处理卡纸。",
-          "next_node_id": "dlg_cinema_follow"
+          "next_node_id": "dlg_cinema_follow",
+          "reveals_statement_ids": []
         }
       ]
     },
@@ -491,16 +655,19 @@
       "speaker": "星光小影院值班员",
       "text": "好吧，反正放映机还没开，我还能再等一会儿。",
       "is_terminal": false,
+      "reveals_statement_ids": [],
       "options": [
         {
           "id": "opt_cinema_follow_wait",
           "text": "明早有更新就会放进清单。",
-          "next_node_id": "dlg_cinema_schedule_end"
+          "next_node_id": "dlg_cinema_schedule_end",
+          "reveals_statement_ids": []
         },
         {
           "id": "opt_cinema_follow_print",
           "text": "先留一份手写排期，免得再卡住。",
-          "next_node_id": "dlg_cinema_printer_end"
+          "next_node_id": "dlg_cinema_printer_end",
+          "reveals_statement_ids": []
         }
       ]
     },
@@ -510,6 +677,7 @@
       "speaker": "星光小影院值班员",
       "text": "那我把日期再念一遍给自己听，免得明早贴错。谢谢，夜班愉快。",
       "is_terminal": true,
+      "reveals_statement_ids": [],
       "options": []
     },
     {
@@ -518,6 +686,7 @@
       "speaker": "星光小影院值班员",
       "text": "原来大家今晚都在和纸打架。好，我再等他们的电话。",
       "is_terminal": true,
+      "reveals_statement_ids": [],
       "options": []
     },
     {
@@ -526,16 +695,19 @@
       "speaker": "东侧卡车司机",
       "text": "北桥东边堵得像停车场，你们电台要是知道绕路就说一声。我前面全是刹车灯，后面还有个家伙一直按喇叭。",
       "is_terminal": false,
+      "reveals_statement_ids": [],
       "options": [
         {
           "id": "opt_trucker_car",
           "text": "后面的车是什么样？",
-          "next_node_id": "dlg_trucker_follow"
+          "next_node_id": "dlg_trucker_follow",
+          "reveals_statement_ids": []
         },
         {
           "id": "opt_trucker_closure",
           "text": "官方通知是桥面封闭，请留在车里等指引。",
-          "next_node_id": "dlg_trucker_follow"
+          "next_node_id": "dlg_trucker_follow",
+          "reveals_statement_ids": []
         }
       ]
     },
@@ -545,16 +717,19 @@
       "speaker": "东侧卡车司机",
       "text": "我不打算往前蹭，前面的人已经下车看路了。那辆车倒像比谁都着急。",
       "is_terminal": false,
+      "reveals_statement_ids": [],
       "options": [
         {
           "id": "opt_trucker_follow_car",
           "text": "别让道，告诉我它有什么显眼特征。",
-          "next_node_id": "dlg_trucker_car_end"
+          "next_node_id": "dlg_trucker_car_end",
+          "reveals_statement_ids": []
         },
         {
           "id": "opt_trucker_follow_wait",
           "text": "留在车里，等现场人员处理。",
-          "next_node_id": "dlg_trucker_closure_end"
+          "next_node_id": "dlg_trucker_closure_end",
+          "reveals_statement_ids": []
         }
       ]
     },
@@ -564,6 +739,7 @@
       "speaker": "东侧卡车司机",
       "text": "一辆老旅行车，右边尾灯黑着，隔两秒又闪一下。它贴在我车后催我让道，好像前面还能长出一条路。",
       "is_terminal": true,
+      "reveals_statement_ids": [],
       "options": []
     },
     {
@@ -572,6 +748,7 @@
       "speaker": "东侧卡车司机",
       "text": "封闭？那就告诉后面那辆老旅行车去听广播吧，它的喇叭快把我仪表盘震散了。",
       "is_terminal": true,
+      "reveals_statement_ids": [],
       "options": []
     },
     {
@@ -580,16 +757,19 @@
       "speaker": "罗尼·哈特",
       "text": "这里是罗尼，哈特拖车。我想问问你们有没有记过一单北桥附近的拖车……大概零点半？我脑子里有辆旧旅行车，可调度单上什么都没有。",
       "is_terminal": false,
+      "reveals_statement_ids": [],
       "options": [
         {
           "id": "opt_ronnie_one_detail",
           "text": "你还记得车有什么损坏吗？",
-          "next_node_id": "dlg_ronnie_one_follow"
+          "next_node_id": "dlg_ronnie_one_follow",
+          "reveals_statement_ids": []
         },
         {
           "id": "opt_ronnie_one_rest",
           "text": "先核对调度和车斗，疲劳时记忆会串。",
-          "next_node_id": "dlg_ronnie_one_follow"
+          "next_node_id": "dlg_ronnie_one_follow",
+          "reveals_statement_ids": []
         }
       ]
     },
@@ -599,16 +779,19 @@
       "speaker": "罗尼·哈特",
       "text": "我再看一遍车斗和调度机。要是我真跑过那趟，总该留下点东西。",
       "is_terminal": false,
+      "reveals_statement_ids": [],
       "options": [
         {
           "id": "opt_ronnie_one_follow_damage",
           "text": "先把你确定记得的损坏记下来。",
-          "next_node_id": "dlg_ronnie_one_detail_end"
+          "next_node_id": "dlg_ronnie_one_detail_end",
+          "reveals_statement_ids": []
         },
         {
           "id": "opt_ronnie_one_follow_rest",
           "text": "别急着再出车，先让调度复核。",
-          "next_node_id": "dlg_ronnie_one_rest_end"
+          "next_node_id": "dlg_ronnie_one_rest_end",
+          "reveals_statement_ids": []
         }
       ]
     },
@@ -618,6 +801,7 @@
       "speaker": "罗尼·哈特",
       "text": "后窗像是碎了，右后那边还有灯罩碎片。车漆……绿的？还是夜里偏蓝？可我车斗干干净净，一点玻璃也没有。",
       "is_terminal": true,
+      "reveals_statement_ids": [],
       "options": []
     },
     {
@@ -626,6 +810,7 @@
       "speaker": "罗尼·哈特",
       "text": "也许吧。我连车是绿还是蓝都拿不准。可那种玻璃碴踩在靴底下的感觉，怎么会记得这么清楚？",
       "is_terminal": true,
+      "reveals_statement_ids": [],
       "options": []
     },
     {
@@ -634,16 +819,19 @@
       "speaker": "西仓门卫",
       "text": "你们那台收音机有冰球赛比分吗？我巡楼错过了第二节，自动售货机还吞了我两枚硬币。",
       "is_terminal": false,
+      "reveals_statement_ids": [],
       "options": [
         {
           "id": "opt_score_wait",
           "text": "第三节结束前还没有可靠的最终比分。",
-          "next_node_id": "dlg_score_follow"
+          "next_node_id": "dlg_score_follow",
+          "reveals_statement_ids": []
         },
         {
           "id": "opt_score_vending",
           "text": "比分我会留意，硬币就只能祝你好运了。",
-          "next_node_id": "dlg_score_follow"
+          "next_node_id": "dlg_score_follow",
+          "reveals_statement_ids": []
         }
       ]
     },
@@ -653,16 +841,19 @@
       "speaker": "西仓门卫",
       "text": "要是主队又在最后一分钟掉球，我明天可得被人笑一整班。",
       "is_terminal": false,
+      "reveals_statement_ids": [],
       "options": [
         {
           "id": "opt_score_follow_wait",
           "text": "等终场哨响，我会按最终比分播。",
-          "next_node_id": "dlg_score_wait_end"
+          "next_node_id": "dlg_score_wait_end",
+          "reveals_statement_ids": []
         },
         {
           "id": "opt_score_follow_vending",
           "text": "先把售货机那笔账记在它头上。",
-          "next_node_id": "dlg_score_vending_end"
+          "next_node_id": "dlg_score_vending_end",
+          "reveals_statement_ids": []
         }
       ]
     },
@@ -672,6 +863,7 @@
       "speaker": "西仓门卫",
       "text": "行，我等巡到下一层再听。别让我明早才知道加时赛。",
       "is_terminal": true,
+      "reveals_statement_ids": [],
       "options": []
     },
     {
@@ -680,6 +872,7 @@
       "speaker": "西仓门卫",
       "text": "那它今晚就赢了。谢了，主持人。",
       "is_terminal": true,
+      "reveals_statement_ids": [],
       "options": []
     },
     {
@@ -688,16 +881,19 @@
       "speaker": "路过的年轻司机",
       "text": "给你报个路况，我刚被几块临时路牌引过北桥，居然挺顺的。刚才听到的封桥消息大概还没更新吧？",
       "is_terminal": false,
+      "reveals_statement_ids": [],
       "options": [
         {
           "id": "opt_southbound_confirm",
           "text": "你确定是北桥，不是河西辅桥？",
-          "next_node_id": "dlg_southbound_follow"
+          "next_node_id": "dlg_southbound_follow",
+          "reveals_statement_ids": ["statement_southbound_bridge_claim"]
         },
         {
           "id": "opt_southbound_vehicle",
           "text": "桥上或附近还有别的车辆吗？",
-          "next_node_id": "dlg_southbound_follow"
+          "next_node_id": "dlg_southbound_follow",
+          "reveals_statement_ids": ["statement_southbound_wagon_sighting"]
         }
       ]
     },
@@ -707,16 +903,19 @@
       "speaker": "路过的年轻司机",
       "text": "我已经到城南路口了，听你这么说才觉得不对劲。你想让我再确认什么？",
       "is_terminal": false,
+      "reveals_statement_ids": [],
       "options": [
         {
           "id": "opt_southbound_follow_bridge",
           "text": "回想一下路牌和桥面位置，不要掉头。",
-          "next_node_id": "dlg_southbound_confirm_end"
+          "next_node_id": "dlg_southbound_confirm_end",
+          "reveals_statement_ids": ["statement_southbound_bridge_claim"]
         },
         {
           "id": "opt_southbound_follow_vehicle",
           "text": "说说超过你的那辆车。",
-          "next_node_id": "dlg_southbound_vehicle_end"
+          "next_node_id": "dlg_southbound_vehicle_end",
+          "reveals_statement_ids": ["statement_southbound_wagon_sighting"]
         }
       ]
     },
@@ -726,6 +925,7 @@
       "speaker": "路过的年轻司机",
       "text": "牌子指着北桥，我就照走了。路上雾大得很，我只想赶紧下桥，可能是哪个部门临时改了安排。",
       "is_terminal": true,
+      "reveals_statement_ids": [],
       "options": []
     },
     {
@@ -734,6 +934,7 @@
       "speaker": "路过的年轻司机",
       "text": "有辆旧旅行车从后面超过我，往城南开得很快。别的我没顾上看，雨刷几乎没停过。",
       "is_terminal": true,
+      "reveals_statement_ids": [],
       "options": []
     },
     {
@@ -742,16 +943,19 @@
       "speaker": "罗尼·哈特",
       "text": "是我，罗尼。我手机上显示我几分钟前打给过你们，可我一点都不记得。现在钥匙就在我手里，我像是要去北桥拿什么。",
       "is_terminal": false,
+      "reveals_statement_ids": [],
       "options": [
         {
           "id": "opt_ronnie_two_stop",
           "text": "先别开车，把钥匙放下，联系你的调度。",
-          "next_node_id": "dlg_ronnie_two_follow"
+          "next_node_id": "dlg_ronnie_two_follow",
+          "reveals_statement_ids": []
         },
         {
           "id": "opt_ronnie_two_ask",
           "text": "你觉得自己忘了什么？",
-          "next_node_id": "dlg_ronnie_two_follow"
+          "next_node_id": "dlg_ronnie_two_follow",
+          "reveals_statement_ids": []
         }
       ]
     },
@@ -761,16 +965,19 @@
       "speaker": "罗尼·哈特",
       "text": "我听见你说先别去，可那种念头还在拽着我。好像不去就会漏掉什么。",
       "is_terminal": false,
+      "reveals_statement_ids": [],
       "options": [
         {
           "id": "opt_ronnie_two_follow_stop",
           "text": "把钥匙交给别人，今晚不要独自出车。",
-          "next_node_id": "dlg_ronnie_two_stop_end"
+          "next_node_id": "dlg_ronnie_two_stop_end",
+          "reveals_statement_ids": []
         },
         {
           "id": "opt_ronnie_two_follow_name",
           "text": "先把你能想起的地点写下来。",
-          "next_node_id": "dlg_ronnie_two_ask_end"
+          "next_node_id": "dlg_ronnie_two_ask_end",
+          "reveals_statement_ids": []
         }
       ]
     },
@@ -780,6 +987,7 @@
       "speaker": "罗尼·哈特",
       "text": "我……好，我把钥匙放桌上。可手指还攥着，像有人刚塞给我一样。",
       "is_terminal": true,
+      "reveals_statement_ids": [],
       "options": []
     },
     {
@@ -788,6 +996,7 @@
       "speaker": "罗尼·哈特",
       "text": "说不上来。不是工具，也不是车。我只知道要去桥边，然后脑子里就空了。",
       "is_terminal": true,
+      "reveals_statement_ids": [],
       "options": []
     },
     {
@@ -796,11 +1005,13 @@
       "speaker": "艾米",
       "text": "求求你……我和男朋友困在北桥附近，雾太大了。我们的收音机里刚刚传出你的声音，说北桥已经恢复通行，让我们别停车。可桥就在前面塌着。",
       "is_terminal": false,
+      "reveals_statement_ids": [],
       "options": [
         {
           "id": "opt_amy_broadcast",
           "text": "我播报了什么？",
-          "next_node_id": "dlg_amy_broadcast_end"
+          "next_node_id": "dlg_amy_broadcast_end",
+          "reveals_statement_ids": ["statement_amy_unauthorized_broadcast"]
         }
       ]
     },
@@ -810,7 +1021,109 @@
       "speaker": "艾米",
       "text": "就是那句，恢复通行，保持车速……等等，后面有辆旧旅行车停下来了。它右后边那盏灯一亮一灭。它在……",
       "is_terminal": true,
+      "reveals_statement_ids": [],
       "options": []
+    }
+  ],
+  "statements": [
+    {
+      "id": "statement_checklist_bridge_closure",
+      "source_id": "checklist_north_bridge_closure",
+      "body": "值班交接明确要求把北桥视为因结构受损而封闭。"
+    },
+    {
+      "id": "statement_news_bridge_closure",
+      "source_id": "news_north_bridge_closure",
+      "body": "市政新闻台称北桥因结构受损临时封闭。"
+    },
+    {
+      "id": "statement_miller_bridge_closure",
+      "source_id": "message_01_miller",
+      "body": "警员米勒要求广播北桥结构受损封闭。"
+    },
+    {
+      "id": "statement_warren_tanker_fire_claim",
+      "source_id": "call_01_warren",
+      "body": "沃伦转述酒吧传闻：北桥附近一辆油罐车翻倒并冒烟；他没有亲眼看见。"
+    },
+    {
+      "id": "statement_martha_wagon_route",
+      "source_id": "call_03_martha",
+      "body": "玛莎称丹尼驾驶一辆右后灯接触不良的深色旧旅行车，常经北桥回城南。"
+    },
+    {
+      "id": "statement_dog_walker_wagon_color",
+      "source_id": "call_04_dog_walker",
+      "body": "遛狗者称河边看见一辆深色旧旅行车，右后灯忽明忽暗。"
+    },
+    {
+      "id": "statement_southbound_bridge_claim",
+      "source_id": "call_09_southbound",
+      "body": "年轻司机声称封桥消息后仍按临时路牌经过北桥。"
+    },
+    {
+      "id": "statement_southbound_wagon_sighting",
+      "source_id": "call_09_southbound",
+      "body": "年轻司机称一辆旧旅行车从后方超过他，正向城南驶去。"
+    },
+    {
+      "id": "statement_amy_unauthorized_broadcast",
+      "source_id": "call_11_final_amy",
+      "body": "艾米称收音机播出了北桥恢复通行、不要停车的声音。"
+    }
+  ],
+  "facts": [
+    {
+      "id": "fact_bridge_accident_before_shift",
+      "initially_confirmed": true,
+      "required_statement_ids": []
+    },
+    {
+      "id": "fact_bridge_closed",
+      "initially_confirmed": true,
+      "required_statement_ids": []
+    },
+    {
+      "id": "fact_accounts_conflict",
+      "initially_confirmed": false,
+      "required_statement_ids": [
+        "statement_miller_bridge_closure",
+        "statement_warren_tanker_fire_claim"
+      ]
+    },
+    {
+      "id": "fact_same_wagon_recurs",
+      "initially_confirmed": false,
+      "required_statement_ids": [
+        "statement_martha_wagon_route",
+        "statement_dog_walker_wagon_color"
+      ]
+    },
+    {
+      "id": "fact_wagon_positions_conflict",
+      "initially_confirmed": false,
+      "required_statement_ids": [
+        "statement_dog_walker_wagon_color",
+        "statement_southbound_wagon_sighting"
+      ]
+    },
+    {
+      "id": "fact_bridge_traffic_after_closure",
+      "initially_confirmed": false,
+      "required_statement_ids": [
+        "statement_miller_bridge_closure",
+        "statement_southbound_bridge_claim"
+      ]
+    },
+    {
+      "id": "fact_unauthorized_broadcast",
+      "initially_confirmed": false,
+      "required_statement_ids": []
+    },
+    {
+      "id": "fact_anomaly_cause_unknown",
+      "initially_confirmed": false,
+      "required_statement_ids": []
     }
   ]
 }
