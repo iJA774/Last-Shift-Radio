@@ -37,9 +37,9 @@ func _run() -> void:
 		var settings_button: Button = main_menu.get_node_or_null(NodePath("Content/MenuPanel/Margin/Layout/SettingsButton")) as Button
 		var load_reason: Label = main_menu.get_node_or_null(NodePath("Content/MenuPanel/Margin/Layout/LoadDisabledReason")) as Label
 		var settings_reason: Label = main_menu.get_node_or_null(NodePath("Content/MenuPanel/Margin/Layout/SettingsDisabledReason")) as Label
-		_assert_true(load_button != null and load_button.disabled, "主菜单读取存档必须禁用。")
+		_assert_true(load_button != null and not load_button.disabled, "第七阶段后主菜单读取存档必须可用。")
 		_assert_true(settings_button != null and settings_button.disabled, "主菜单设置必须禁用。")
-		_assert_true(load_reason != null and load_reason.visible and load_reason.text.contains("存档系统尚未建立"), "主菜单必须直接显示存档禁用原因。")
+		_assert_true(load_reason != null and load_reason.visible and load_reason.text.contains("本地三槽"), "主菜单必须直接说明本地三槽读取入口。")
 		_assert_true(settings_reason != null and settings_reason.visible and settings_reason.text.contains("设置系统尚未建立"), "主菜单必须直接显示设置禁用原因。")
 
 	app.call(&"request_start_shift")

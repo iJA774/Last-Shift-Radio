@@ -53,6 +53,20 @@ offset_top = 18.0
 offset_right = -24.0
 offset_bottom = 104.0
 
+[node name="SaveButton" type="Button" parent="."]
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -198.0
+offset_top = 26.0
+offset_right = -26.0
+offset_bottom = 76.0
+grow_horizontal = 0
+theme_override_font_sizes/font_size = 18
+text = "存档"
+tooltip_text = "打开三槽存档界面；故事时间不会暂停。"
+
 [node name="SystemMessagePanel" type="PanelContainer" parent="."]
 layout_mode = 1
 anchors_preset = 12

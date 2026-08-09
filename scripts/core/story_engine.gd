@@ -17,6 +17,8 @@ signal story_error(error_code: String, message: String)
 const TICKS_PER_GAME_MINUTE: int = 60
 const ENDING_TICK: int = 60 * TICKS_PER_GAME_MINUTE
 const ENDING_ONLY_FACT_IDS: PackedStringArray = ["fact_unauthorized_broadcast", "fact_anomaly_cause_unknown"]
+const SNAPSHOT_VERSION: int = 1
+const SNAPSHOT_SYSTEM_ID: String = "story_engine"
 const BROADCAST_SYSTEM_SCRIPT: GDScript = preload("res://scripts/systems/broadcast_system.gd")
 const COMPUTER_SYSTEM_SCRIPT: GDScript = preload("res://scripts/systems/computer_system.gd")
 const CONTENT_VALIDATOR_SCRIPT: GDScript = preload("res://scripts/core/content_validator.gd")
@@ -31,6 +33,9 @@ signal computer_entries_changed(category: String)
 
 var _scheduler: EventScheduler = EventScheduler.new()
 var _condition_state_by_id: Dictionary = {}
+## 内容中声明的所有条件均在此集合中占位，即使当前为 false；这使存档不会因
+## “缺字段即 false”而吞掉内容差异。
+var _declared_condition_ids: Dictionary = {}
 var _game_clock: Node = null
 var _phone_system: RefCounted = null
 var _current_game_tick: int = 0
@@ -162,6 +167,7 @@ func configure_test_night_story(content: Dictionary) -> Dictionary:
 	var next_statement_by_id: Dictionary = {}
 	var next_fact_by_id: Dictionary = {}
 	var next_broadcast_fact_ids_by_id: Dictionary = {}
+	var next_declared_condition_ids: Dictionary = {}
 	for raw_event: Variant in checked_content["events"] as Array:
 		if not raw_event is Dictionary:
 			return _make_error("invalid_story_content", "测试剧情 events 中包含非对象项目。")
@@ -172,6 +178,8 @@ func configure_test_night_story(content: Dictionary) -> Dictionary:
 		if next_event_by_id.has(event_id):
 			return _make_error("invalid_story_content", "测试剧情 events 中出现重复 ID。")
 		next_event_by_id[event_id] = event_data.duplicate(true)
+		for raw_condition_id: Variant in event_data.get("condition_ids", []) as Array:
+			next_declared_condition_ids[String(raw_condition_id)] = true
 	for raw_message: Variant in checked_content["messages"] as Array:
 		if not raw_message is Dictionary:
 			return _make_error("invalid_story_content", "测试剧情 messages 中包含非对象项目。")
@@ -218,6 +226,9 @@ func configure_test_night_story(content: Dictionary) -> Dictionary:
 		var broadcast: Dictionary = raw_broadcast as Dictionary
 		var broadcast_id: String = String(broadcast["id"])
 		next_broadcast_fact_ids_by_id[broadcast_id] = (broadcast["fact_ids"] as Array).duplicate(true)
+		var broadcast_condition_id: String = String(broadcast.get("sets_condition_id", ""))
+		if not broadcast_condition_id.is_empty():
+			next_declared_condition_ids[broadcast_condition_id] = true
 	# 到这里尚未写入任何 StoryEngine 或 BroadcastSystem 内容。所有轻量边界检查
 	# 成功后才登记事件、配置广播稿并一次性提交运行时映射。
 	var computer_result_value: Variant = _computer_system.call(
@@ -241,6 +252,10 @@ func configure_test_night_story(content: Dictionary) -> Dictionary:
 	_story_event_by_id = next_event_by_id
 	_message_by_id = next_message_by_id
 	_broadcast_fact_ids_by_id = next_broadcast_fact_ids_by_id
+	_declared_condition_ids = next_declared_condition_ids
+	_condition_state_by_id = {}
+	for condition_id_variant: Variant in _declared_condition_ids:
+		_condition_state_by_id[String(condition_id_variant)] = false
 	_dialogue_node_by_id = next_dialogue_node_by_id
 	_statement_by_id = next_statement_by_id
 	_fact_by_id = next_fact_by_id
@@ -318,6 +333,12 @@ func force_ending_at_0200(end_tick: int = ENDING_TICK) -> Dictionary:
 	_clear_active_dialogue()
 	_current_game_tick = max(_current_game_tick, end_tick)
 	_current_minute = _current_game_tick / TICKS_PER_GAME_MINUTE
+	# 02:00 同样是一个真实的整数分钟边界。若不先推进电脑来源，结尾快照会
+	# 把剧情写在 60 分钟而电脑停在上一分钟，读取时只能靠错误默认值掩盖。
+	if _is_test_story_configured:
+		var computer_advance_value: Variant = _computer_system.call(&"advance_to_minute", _current_minute)
+		if not computer_advance_value is Dictionary or not bool((computer_advance_value as Dictionary).get("ok", false)):
+			return _make_error("computer_ending_advance_failed", "02:00 时 ComputerSystem 未能推进到结束分钟。")
 	var scheduler_result: Dictionary = _scheduler.force_ending()
 	if not bool(scheduler_result["ok"]):
 		return scheduler_result
@@ -354,6 +375,8 @@ func force_ending_at_0200(end_tick: int = ENDING_TICK) -> Dictionary:
 func set_condition_state(condition_id: String, is_met: bool) -> Dictionary:
 	if condition_id.is_empty() or condition_id.begins_with("_") or condition_id != condition_id.to_lower() or not condition_id.is_valid_identifier() or not condition_id.is_valid_ascii_identifier():
 		return _make_error("invalid_condition_id", "条件 ID 必须是英文 snake_case 标识符。")
+	if _is_test_story_configured and not _declared_condition_ids.has(condition_id):
+		return _make_error("unknown_condition_id", "当前内容没有声明该条件 ID。")
 	_condition_state_by_id[condition_id] = is_met
 	return {"ok": true}
 
@@ -376,6 +399,441 @@ func get_current_minute() -> int:
 
 func get_scheduler() -> EventScheduler:
 	return _scheduler
+
+
+## 剧情快照只保存运行时事实与子系统状态；所有对白、新闻正文、事件定义及
+## 广播稿定义仍由当前已校验内容包提供。SaveManager 必须先配置内容、恢复并绑定
+## PhoneSystem，再调用本系统恢复，以便 ComputerSystem 严格引用真实来电记录。
+func create_snapshot() -> Dictionary:
+	var active_dialogue: Variant = null
+	if not _active_dialogue_event_id.is_empty() or not _active_dialogue_node_id.is_empty():
+		active_dialogue = {
+			"event_id": _active_dialogue_event_id,
+			"node_id": _active_dialogue_node_id,
+		}
+	var unauthorized_record: Variant = null
+	if not _unauthorized_broadcast_record.is_empty():
+		unauthorized_record = _unauthorized_broadcast_record.duplicate(true)
+	var snapshot: Dictionary = {
+		"snapshot_version": SNAPSHOT_VERSION,
+		"system_id": SNAPSHOT_SYSTEM_ID,
+		"current_game_tick": _current_game_tick,
+		"current_minute": _current_minute,
+		"condition_state_by_id": _sorted_bool_state(_condition_state_by_id),
+		"revealed_statement_ids": _sorted_dictionary_keys(_revealed_statement_ids),
+		"confirmed_fact_ids": _sorted_dictionary_keys(_confirmed_fact_ids),
+		"completed_dialogue_event_ids": _sorted_dictionary_keys(_completed_dialogue_event_ids),
+		"active_dialogue": active_dialogue,
+		"is_ending_forced": _is_ending_forced,
+		"unauthorized_broadcast_record": unauthorized_record,
+		"scheduler": _scheduler.create_snapshot(),
+		"computer": _computer_system.call(&"create_snapshot"),
+		"broadcast": _broadcast_system.call(&"create_snapshot"),
+	}
+	snapshot.make_read_only()
+	return snapshot
+
+
+## 在任何字段写入前，先校验剧情本体和三个嵌套系统。返回 normalized 状态供
+## restore_snapshot() 一次性提交；无效档案不会重放任何解锁、陈述、事实、广播
+## 或调度信号。
+func validate_snapshot(snapshot: Dictionary, context: Dictionary = {}) -> Dictionary:
+	if not _is_test_story_configured:
+		return _make_error("snapshot_story_not_configured", "测试剧情尚未配置，不能校验存档。")
+	var envelope: Dictionary = _validate_snapshot_envelope(snapshot)
+	if not bool(envelope.get("ok", false)):
+		return envelope
+	var tick_result: Dictionary = _validate_snapshot_integer(snapshot["current_game_tick"], "current_game_tick", 0, ENDING_TICK)
+	if not bool(tick_result.get("ok", false)):
+		return tick_result
+	var minute_result: Dictionary = _validate_snapshot_integer(snapshot["current_minute"], "current_minute", 0, ENDING_TICK / TICKS_PER_GAME_MINUTE)
+	if not bool(minute_result.get("ok", false)):
+		return minute_result
+	var current_tick: int = int(tick_result["value"])
+	var current_minute: int = int(minute_result["value"])
+	if current_minute != current_tick / TICKS_PER_GAME_MINUTE:
+		return _make_error("snapshot_tick_minute_mismatch", "剧情存档的 current_minute 必须等于 current_game_tick / 60。")
+	if context.has("current_game_tick"):
+		var context_tick_result: Dictionary = _validate_snapshot_integer(context["current_game_tick"], "context.current_game_tick", 0, ENDING_TICK)
+		if not bool(context_tick_result.get("ok", false)):
+			return context_tick_result
+		if int(context_tick_result["value"]) != current_tick:
+			return _make_error("snapshot_phone_tick_mismatch", "剧情存档时间与已恢复 PhoneSystem 时间不一致。")
+
+	var conditions_result: Dictionary = _validate_condition_snapshot(snapshot["condition_state_by_id"])
+	if not bool(conditions_result.get("ok", false)):
+		return conditions_result
+	var statements_result: Dictionary = _validate_known_id_array(snapshot["revealed_statement_ids"], _statement_by_id, "revealed_statement_ids", "statement")
+	if not bool(statements_result.get("ok", false)):
+		return statements_result
+	var facts_result: Dictionary = _validate_known_id_array(snapshot["confirmed_fact_ids"], _fact_by_id, "confirmed_fact_ids", "fact")
+	if not bool(facts_result.get("ok", false)):
+		return facts_result
+	var completed_result: Dictionary = _validate_completed_dialogue_ids(snapshot["completed_dialogue_event_ids"])
+	if not bool(completed_result.get("ok", false)):
+		return completed_result
+	var active_dialogue_result: Dictionary = _validate_active_dialogue(snapshot["active_dialogue"])
+	if not bool(active_dialogue_result.get("ok", false)):
+		return active_dialogue_result
+	if typeof(snapshot["is_ending_forced"]) != TYPE_BOOL:
+		return _make_error("invalid_snapshot_ending", "剧情存档的 is_ending_forced 必须是布尔值。")
+	var is_ending_forced: bool = bool(snapshot["is_ending_forced"])
+	if is_ending_forced != (current_tick == ENDING_TICK):
+		return _make_error("snapshot_ending_tick_mismatch", "02:00 剧情状态必须与精确结束 tick 一致。")
+	var unauthorized_result: Dictionary = _validate_unauthorized_broadcast_record(snapshot["unauthorized_broadcast_record"], is_ending_forced)
+	if not bool(unauthorized_result.get("ok", false)):
+		return unauthorized_result
+	if is_ending_forced and not bool(active_dialogue_result["is_empty"]):
+		return _make_error("snapshot_ending_dialogue_active", "02:00 收束后不能保留活动对话。")
+
+	var revealed_lookup: Dictionary = _string_array_to_lookup(statements_result["ids"] as Array[String])
+	var facts_validation: Dictionary = _validate_confirmed_facts(facts_result["ids"] as Array[String], revealed_lookup, is_ending_forced)
+	if not bool(facts_validation.get("ok", false)):
+		return facts_validation
+
+	if not snapshot["scheduler"] is Dictionary or not snapshot["computer"] is Dictionary or not snapshot["broadcast"] is Dictionary:
+		return _make_error("invalid_snapshot_subsystem", "剧情存档的 scheduler、computer、broadcast 必须是对象。")
+	var scheduler_context: Dictionary = {"event_by_id": _story_event_by_id}
+	var scheduler_validation: Dictionary = _scheduler.validate_snapshot(snapshot["scheduler"] as Dictionary, scheduler_context)
+	if not bool(scheduler_validation.get("ok", false)):
+		return _make_error("scheduler_snapshot_invalid", "事件调度器存档校验失败：%s" % String(scheduler_validation.get("message", "未知错误。")))
+	var computer_context: Dictionary = {}
+	if context.has("phone_system"):
+		computer_context["phone_system"] = context["phone_system"]
+	if context.has("call_record_event_ids"):
+		computer_context["call_record_event_ids"] = context["call_record_event_ids"]
+	var computer_validation_value: Variant = _computer_system.call(&"validate_snapshot", snapshot["computer"], computer_context)
+	if not computer_validation_value is Dictionary or not bool((computer_validation_value as Dictionary).get("ok", false)):
+		return _make_error("computer_snapshot_invalid", "电脑系统存档校验失败：%s" % _snapshot_message(computer_validation_value))
+	var computer_validation: Dictionary = computer_validation_value as Dictionary
+	if int((computer_validation["normalized"] as Dictionary)["current_minute"]) != current_minute:
+		return _make_error("snapshot_computer_minute_mismatch", "电脑存档分钟必须与剧情时间一致。")
+	var phone_scheduler_result: Dictionary = _validate_phone_scheduler_relationship(
+		context,
+		scheduler_validation["normalized_snapshot"] as Dictionary,
+		is_ending_forced
+	)
+	if not bool(phone_scheduler_result.get("ok", false)):
+		return phone_scheduler_result
+	var broadcast_validation_value: Variant = _broadcast_system.call(&"validate_snapshot", snapshot["broadcast"])
+	if not broadcast_validation_value is Dictionary or not bool((broadcast_validation_value as Dictionary).get("ok", false)):
+		return _make_error("broadcast_snapshot_invalid", "广播系统存档校验失败：%s" % _snapshot_message(broadcast_validation_value))
+	var broadcast_validation: Dictionary = broadcast_validation_value as Dictionary
+	for record: Dictionary in (broadcast_validation["normalized"] as Dictionary)["player_records"] as Array[Dictionary]:
+		if int(record["sent_at_tick"]) > current_tick:
+			return _make_error("snapshot_broadcast_time_invalid", "广播记录发送时间不能晚于剧情存档时间。")
+	if bool((scheduler_validation["normalized_snapshot"] as Dictionary)["ending_forced"]) != is_ending_forced:
+		return _make_error("snapshot_scheduler_ending_mismatch", "调度器与剧情的 02:00 收束状态不一致。")
+
+	return {
+		"ok": true,
+		"normalized": {
+			"current_game_tick": current_tick,
+			"current_minute": current_minute,
+			"condition_state_by_id": conditions_result["states"],
+			"revealed_statement_ids": statements_result["ids"],
+			"confirmed_fact_ids": facts_result["ids"],
+			"completed_dialogue_event_ids": completed_result["ids"],
+			"active_dialogue": active_dialogue_result["value"],
+			"is_ending_forced": is_ending_forced,
+			"unauthorized_broadcast_record": unauthorized_result["record"],
+		},
+		"subsystem_context": {
+			"scheduler": scheduler_context,
+			"computer": computer_context,
+			"broadcast": {},
+		},
+	}
+
+
+## 先对全部嵌套状态完成校验，再恢复它们。理论上的二次恢复失败会用进入前的
+## 快照回滚，确保不会留下“半个已读、半条队列”的运行时；成功路径不会派发业务信号。
+func restore_snapshot(snapshot: Dictionary, context: Dictionary = {}) -> Dictionary:
+	var validation: Dictionary = validate_snapshot(snapshot, context)
+	if not bool(validation.get("ok", false)):
+		return validation
+	var old_scheduler_snapshot: Dictionary = _scheduler.create_snapshot()
+	var old_computer_snapshot_value: Variant = _computer_system.call(&"create_snapshot")
+	var old_broadcast_snapshot_value: Variant = _broadcast_system.call(&"create_snapshot")
+	if not old_computer_snapshot_value is Dictionary or not old_broadcast_snapshot_value is Dictionary:
+		return _make_error("snapshot_internal_contract", "剧情子系统无法生成回滚快照。")
+	var subsystem_context: Dictionary = validation["subsystem_context"] as Dictionary
+	var scheduler_restore: Dictionary = _scheduler.restore_snapshot(snapshot["scheduler"] as Dictionary, subsystem_context["scheduler"] as Dictionary)
+	if not bool(scheduler_restore.get("ok", false)):
+		return scheduler_restore
+	var computer_restore_value: Variant = _computer_system.call(&"restore_snapshot", snapshot["computer"], subsystem_context["computer"])
+	if not computer_restore_value is Dictionary or not bool((computer_restore_value as Dictionary).get("ok", false)):
+		_scheduler.restore_snapshot(old_scheduler_snapshot)
+		return _make_error("computer_snapshot_restore_failed", "电脑系统恢复失败，调度器已回滚。")
+	var broadcast_restore_value: Variant = _broadcast_system.call(&"restore_snapshot", snapshot["broadcast"], subsystem_context["broadcast"])
+	if not broadcast_restore_value is Dictionary or not bool((broadcast_restore_value as Dictionary).get("ok", false)):
+		_computer_system.call(&"restore_snapshot", old_computer_snapshot_value as Dictionary, subsystem_context["computer"])
+		_scheduler.restore_snapshot(old_scheduler_snapshot)
+		return _make_error("broadcast_snapshot_restore_failed", "广播系统恢复失败，已回滚剧情子系统。")
+	var normalized: Dictionary = validation["normalized"] as Dictionary
+	_current_game_tick = int(normalized["current_game_tick"])
+	_current_minute = int(normalized["current_minute"])
+	_condition_state_by_id = (normalized["condition_state_by_id"] as Dictionary).duplicate(true)
+	_revealed_statement_ids = _string_array_to_lookup(normalized["revealed_statement_ids"] as Array[String])
+	_confirmed_fact_ids = _string_array_to_lookup(normalized["confirmed_fact_ids"] as Array[String])
+	_completed_dialogue_event_ids = _string_array_to_lookup(normalized["completed_dialogue_event_ids"] as Array[String])
+	var restored_dialogue: Variant = normalized["active_dialogue"]
+	if restored_dialogue == null:
+		_active_dialogue_event_id = ""
+		_active_dialogue_node_id = ""
+	else:
+		var dialogue_state: Dictionary = restored_dialogue as Dictionary
+		_active_dialogue_event_id = String(dialogue_state["event_id"])
+		_active_dialogue_node_id = String(dialogue_state["node_id"])
+	_is_ending_forced = bool(normalized["is_ending_forced"])
+	var restored_unauthorized: Variant = normalized["unauthorized_broadcast_record"]
+	if restored_unauthorized == null:
+		_unauthorized_broadcast_record = {}
+	else:
+		_unauthorized_broadcast_record = (restored_unauthorized as Dictionary).duplicate(true)
+		_unauthorized_broadcast_record.make_read_only()
+	return {"ok": true}
+
+
+func _validate_snapshot_envelope(snapshot: Dictionary) -> Dictionary:
+	var expected_fields: PackedStringArray = [
+		"snapshot_version", "system_id", "current_game_tick", "current_minute",
+		"condition_state_by_id", "revealed_statement_ids", "confirmed_fact_ids",
+		"completed_dialogue_event_ids", "active_dialogue", "is_ending_forced",
+		"unauthorized_broadcast_record", "scheduler", "computer", "broadcast",
+	]
+	if snapshot.size() != expected_fields.size():
+		return _make_error("snapshot_fields_invalid", "剧情存档字段缺失或包含未知字段。")
+	for field_name: String in expected_fields:
+		if not snapshot.has(field_name):
+			return _make_error("snapshot_missing_field", "剧情存档缺少字段：%s。" % field_name)
+	var version_result: Dictionary = _validate_snapshot_integer(snapshot["snapshot_version"], "snapshot_version", SNAPSHOT_VERSION, SNAPSHOT_VERSION)
+	if not bool(version_result.get("ok", false)):
+		return _make_error("snapshot_version_unsupported", "剧情存档版本不受支持。")
+	if typeof(snapshot["system_id"]) != TYPE_STRING or String(snapshot["system_id"]) != SNAPSHOT_SYSTEM_ID:
+		return _make_error("snapshot_system_id_mismatch", "剧情存档所属系统不匹配。")
+	return {"ok": true}
+
+
+func _validate_snapshot_integer(value: Variant, field_name: String, minimum: int, maximum: int) -> Dictionary:
+	var parsed: int = 0
+	if typeof(value) == TYPE_INT:
+		parsed = int(value)
+	elif typeof(value) == TYPE_FLOAT and is_equal_approx(float(value), floor(float(value))):
+		parsed = int(value)
+	else:
+		return _make_error("snapshot_invalid_integer", "剧情存档字段 %s 必须是 %d 到 %d 的整数。" % [field_name, minimum, maximum])
+	if parsed < minimum or parsed > maximum:
+		return _make_error("snapshot_invalid_integer", "剧情存档字段 %s 必须是 %d 到 %d 的整数。" % [field_name, minimum, maximum])
+	return {"ok": true, "value": parsed}
+
+
+func _validate_condition_snapshot(value: Variant) -> Dictionary:
+	if not value is Dictionary:
+		return _make_error("snapshot_invalid_conditions", "剧情存档的 condition_state_by_id 必须是对象。")
+	var raw_states: Dictionary = value as Dictionary
+	if raw_states.size() != _declared_condition_ids.size():
+		return _make_error("snapshot_condition_set_mismatch", "剧情存档必须包含当前内容声明的完整条件集合。")
+	var normalized: Dictionary = {}
+	for condition_id_variant: Variant in _declared_condition_ids:
+		var condition_id: String = String(condition_id_variant)
+		if not raw_states.has(condition_id) or typeof(raw_states[condition_id]) != TYPE_BOOL:
+			return _make_error("snapshot_condition_invalid", "剧情存档缺少或错误声明条件：%s。" % condition_id)
+		normalized[condition_id] = bool(raw_states[condition_id])
+	for raw_condition_id: Variant in raw_states:
+		if not raw_condition_id is String or not _declared_condition_ids.has(String(raw_condition_id)):
+			return _make_error("snapshot_condition_unknown", "剧情存档含有当前内容未声明的条件。")
+	return {"ok": true, "states": normalized}
+
+
+func _validate_known_id_array(value: Variant, definitions: Dictionary, field_name: String, display_name: String) -> Dictionary:
+	if not value is Array:
+		return _make_error("snapshot_invalid_id_array", "剧情存档字段 %s 必须是数组。" % field_name)
+	var ids: Array[String] = []
+	var seen: Dictionary = {}
+	for raw_id: Variant in value as Array:
+		if not raw_id is String or not definitions.has(String(raw_id)):
+			return _make_error("snapshot_unknown_%s" % display_name, "剧情存档引用了当前内容不存在的%s ID。" % display_name)
+		var stable_id: String = String(raw_id)
+		if seen.has(stable_id):
+			return _make_error("snapshot_duplicate_%s" % display_name, "剧情存档不能包含重复%s ID。" % display_name)
+		seen[stable_id] = true
+		ids.append(stable_id)
+	ids.sort()
+	return {"ok": true, "ids": ids}
+
+
+func _validate_completed_dialogue_ids(value: Variant) -> Dictionary:
+	var result: Dictionary = _validate_known_id_array(value, _story_event_by_id, "completed_dialogue_event_ids", "对话事件")
+	if not bool(result.get("ok", false)):
+		return result
+	for event_id: String in result["ids"] as Array[String]:
+		var event_data: Dictionary = _story_event_by_id[event_id] as Dictionary
+		if not event_data.has("dialogue_start_id") or String(event_data["dialogue_start_id"]).is_empty():
+			return _make_error("snapshot_completed_dialogue_invalid", "已完成对话必须属于包含预制对话的来电事件。")
+	return result
+
+
+func _validate_active_dialogue(value: Variant) -> Dictionary:
+	if value == null:
+		return {"ok": true, "is_empty": true, "value": null}
+	if not value is Dictionary:
+		return _make_error("snapshot_active_dialogue_invalid", "剧情存档的 active_dialogue 必须为 null 或对象。")
+	var dialogue: Dictionary = value as Dictionary
+	if dialogue.size() != 2 or not dialogue.has("event_id") or not dialogue.has("node_id") or not dialogue["event_id"] is String or not dialogue["node_id"] is String:
+		return _make_error("snapshot_active_dialogue_invalid", "活动对话必须只包含 event_id 与 node_id 字符串。")
+	var event_id: String = String(dialogue["event_id"])
+	var node_id: String = String(dialogue["node_id"])
+	if not _story_event_by_id.has(event_id) or not _dialogue_node_by_id.has(node_id):
+		return _make_error("snapshot_active_dialogue_unknown", "活动对话引用了当前内容不存在的事件或节点。")
+	if not _dialogue_node_belongs_to_event(node_id, event_id):
+		return _make_error("snapshot_dialogue_node_mismatch", "活动对话节点不属于指定来电事件。")
+	return {"ok": true, "is_empty": false, "value": {"event_id": event_id, "node_id": node_id}}
+
+
+func _validate_confirmed_facts(confirmed_fact_ids: Array[String], revealed_lookup: Dictionary, is_ending_forced: bool) -> Dictionary:
+	var expected: Dictionary = {}
+	for fact_id_variant: Variant in _fact_by_id:
+		var fact_id: String = String(fact_id_variant)
+		var fact: Dictionary = _fact_by_id[fact_id] as Dictionary
+		if ENDING_ONLY_FACT_IDS.has(fact_id):
+			if is_ending_forced:
+				expected[fact_id] = true
+			continue
+		if bool(fact["initially_confirmed"]):
+			expected[fact_id] = true
+			continue
+		var has_all_required: bool = true
+		for required_id_variant: Variant in fact["required_statement_ids"] as Array:
+			if not revealed_lookup.has(String(required_id_variant)):
+				has_all_required = false
+				break
+		if has_all_required:
+			expected[fact_id] = true
+	if _string_array_to_lookup(confirmed_fact_ids) != expected:
+		return _make_error("snapshot_fact_rule_mismatch", "剧情存档的已确认事实不满足当前内容事实规则。")
+	return {"ok": true}
+
+
+## PhoneSystem 已先恢复时，调度器的 triggered 状态必须能由一条真实电话记录或
+## 当前活动线路解释；否则坏档可能在继续推进时重新开始同一来电。
+func _validate_phone_scheduler_relationship(context: Dictionary, scheduler_snapshot: Dictionary, story_is_ending_forced: bool) -> Dictionary:
+	var phone_system: RefCounted = _phone_system
+	if context.has("phone_system"):
+		if not context["phone_system"] is RefCounted:
+			return _make_error("snapshot_phone_context_invalid", "剧情存档恢复上下文的 PhoneSystem 无效。")
+		phone_system = context["phone_system"] as RefCounted
+	if phone_system == null or not phone_system.has_method(&"get_active_event_id") or not phone_system.has_method(&"get_call_records") or not phone_system.has_method(&"is_forced_ended"):
+		return _make_error("snapshot_phone_context_missing", "剧情存档校验需要已恢复 PhoneSystem 的真实线路状态。")
+	var active_value: Variant = phone_system.call(&"get_active_event_id")
+	var records_value: Variant = phone_system.call(&"get_call_records")
+	var forced_value: Variant = phone_system.call(&"is_forced_ended")
+	if not active_value is String or not records_value is Array or typeof(forced_value) != TYPE_BOOL:
+		return _make_error("snapshot_phone_context_invalid", "PhoneSystem 返回的活动线路或来电记录无效。")
+	if bool(forced_value) != story_is_ending_forced:
+		return _make_error("snapshot_phone_forced_end_mismatch", "PhoneSystem 的强制结束状态必须与剧情 02:00 收束状态一致。")
+	var active_event_id: String = String(active_value)
+	var resolved_event_ids: Dictionary = {}
+	for raw_record: Variant in records_value as Array:
+		if not raw_record is Dictionary or not (raw_record as Dictionary).get("event_id") is String:
+			return _make_error("snapshot_phone_context_invalid", "PhoneSystem 来电记录缺少稳定 event_id。")
+		resolved_event_ids[String((raw_record as Dictionary)["event_id"])] = true
+	if not active_event_id.is_empty():
+		resolved_event_ids[active_event_id] = true
+	var statuses: Dictionary = scheduler_snapshot["event_status_by_id"] as Dictionary
+	if not active_event_id.is_empty() and String(statuses.get(active_event_id, "")) != "triggered":
+		return _make_error("snapshot_active_call_scheduler_mismatch", "当前活动来电必须对应调度器的 triggered 事件。")
+	for event_id_variant: Variant in statuses:
+		var event_id: String = String(event_id_variant)
+		var status: String = String(statuses[event_id])
+		if status == "triggered" and not resolved_event_ids.has(event_id):
+			return _make_error("snapshot_triggered_event_unresolved", "调度器已触发事件缺少真实电话记录或活动线路。")
+	for record_event_id_variant: Variant in resolved_event_ids:
+		var record_event_id: String = String(record_event_id_variant)
+		var record_status: String = String(statuses.get(record_event_id, ""))
+		if record_status != "triggered" and record_status != "expired":
+			return _make_error("snapshot_phone_record_scheduler_mismatch", "真实电话记录与调度器事件状态不一致。")
+	return {"ok": true}
+
+
+func _validate_unauthorized_broadcast_record(value: Variant, is_ending_forced: bool) -> Dictionary:
+	if not is_ending_forced:
+		if value != null:
+			return _make_error("snapshot_unauthorized_before_ending", "02:00 前不能保存未授权播出记录。")
+		return {"ok": true, "record": null}
+	if not value is Dictionary:
+		return _make_error("snapshot_missing_unauthorized_record", "02:00 后必须保存未授权播出记录。")
+	var record: Dictionary = value as Dictionary
+	var expected: Dictionary = {
+		"broadcast_id": "broadcast_unauthorized_north_bridge_open",
+		"fact_id": "fact_unauthorized_broadcast",
+		"sent_at_tick": ENDING_TICK,
+		"time_tick": ENDING_TICK,
+		"source": "Studio A",
+		"body": "北桥已经恢复通行。请保持车速，不要停车。",
+		"is_unauthorized": true,
+	}
+	if record.size() != expected.size():
+		return _make_error("snapshot_unauthorized_record_invalid", "未授权播出记录字段不完整或包含未知字段。")
+	for field_name: String in expected:
+		if not record.has(field_name):
+			return _make_error("snapshot_unauthorized_record_invalid", "未授权播出记录与 02:00 权威事件不一致。")
+		if field_name == "sent_at_tick" or field_name == "time_tick":
+			var tick_result: Dictionary = _validate_snapshot_integer(record[field_name], field_name, ENDING_TICK, ENDING_TICK)
+			if not bool(tick_result.get("ok", false)):
+				return _make_error("snapshot_unauthorized_record_invalid", "未授权播出记录与 02:00 权威事件不一致。")
+		elif record[field_name] != expected[field_name]:
+			return _make_error("snapshot_unauthorized_record_invalid", "未授权播出记录与 02:00 权威事件不一致。")
+	return {"ok": true, "record": expected}
+
+
+func _dialogue_node_belongs_to_event(node_id: String, event_id: String) -> bool:
+	if not _story_event_by_id.has(event_id):
+		return false
+	var event_data: Dictionary = _story_event_by_id[event_id] as Dictionary
+	var start_node_id: String = String(event_data.get("dialogue_start_id", ""))
+	var pending_node_ids: Array[String] = [start_node_id]
+	var visited: Dictionary = {}
+	while not pending_node_ids.is_empty():
+		var current_node_id: String = pending_node_ids.pop_back()
+		if current_node_id == node_id:
+			return true
+		if visited.has(current_node_id) or not _dialogue_node_by_id.has(current_node_id):
+			continue
+		visited[current_node_id] = true
+		var node: Dictionary = _dialogue_node_by_id[current_node_id] as Dictionary
+		for option: Dictionary in node["options"] as Array:
+			pending_node_ids.append(String(option["next_node_id"]))
+	return false
+
+
+func _sorted_bool_state(source: Dictionary) -> Dictionary:
+	var sorted_ids: Array[String] = _sorted_dictionary_keys(source)
+	var result: Dictionary = {}
+	for stable_id: String in sorted_ids:
+		result[stable_id] = bool(source[stable_id])
+	return result
+
+
+func _sorted_dictionary_keys(source: Dictionary) -> Array[String]:
+	var ids: Array[String] = []
+	for raw_id: Variant in source:
+		ids.append(String(raw_id))
+	ids.sort()
+	return ids
+
+
+func _string_array_to_lookup(ids: Array[String]) -> Dictionary:
+	var lookup: Dictionary = {}
+	for stable_id: String in ids:
+		lookup[stable_id] = true
+	return lookup
+
+
+func _snapshot_message(value: Variant) -> String:
+	if value is Dictionary:
+		return String((value as Dictionary).get("message", "未知错误。"))
+	return "返回值不是有效结果。"
 
 
 ## 电脑播出工作台的只读稿件接口。UI 只能展示此返回值并提交其中的 broadcast_id。

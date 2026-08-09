@@ -12,6 +12,7 @@ const GLOBAL_STATUS_SCENE: PackedScene = preload("res://scenes/ui/global_status.
 const MAIN_SCENE: PackedScene = preload("res://scenes/app/main.tscn")
 const CONTENT_NOTICE_SCENE: PackedScene = preload("res://scenes/app/content_notice.tscn")
 const ENDING_SCREEN_SCENE: PackedScene = preload("res://scenes/app/ending_screen.tscn")
+const SAVE_SLOT_PANEL_SCENE: PackedScene = preload("res://scenes/ui/save_slot_panel.tscn")
 const PHONE_SYSTEM_SCRIPT: GDScript = preload("res://scripts/systems/phone_system.gd")
 
 const LARGE_FONT_SCALE: float = 1.25
@@ -34,6 +35,7 @@ func _run() -> void:
 	await _test_global_status_long_caller()
 	await _test_static_studio_views()
 	await _test_application_pages()
+	await _test_save_slot_panel()
 	_finish()
 
 
@@ -157,6 +159,27 @@ func _test_application_pages() -> void:
 		_restore_font_scale()
 		ending.queue_free()
 		await process_frame
+
+
+func _test_save_slot_panel() -> void:
+	var panel: SaveSlotPanel = SAVE_SLOT_PANEL_SCENE.instantiate() as SaveSlotPanel
+	_assert_true(panel != null, "三槽存档界面必须能实例化。")
+	if panel == null:
+		return
+	root.add_child(panel)
+	await _wait_frames(3)
+	panel.set_mode(SaveSlotPanel.Mode.LOAD)
+	panel.set_slot_summaries([
+		{"slot_id": "slot_1", "exists": true, "is_valid": true, "saved_at_utc": "2026-08-09T14:37:00Z", "display_time": "01:23", "message": "可读取"},
+		{"slot_id": "slot_2", "exists": true, "is_valid": false, "message": "损坏或不兼容：存档 JSON 损坏，已拒绝读取；请返回主菜单后选择其他槽位。"},
+		{"slot_id": "slot_3", "exists": false, "is_valid": false, "message": "空槽位"},
+	])
+	_apply_font_scale(panel, LARGE_FONT_SCALE)
+	await _wait_frames(4)
+	_assert_layout(panel, "三槽存档覆盖层（长错误、125% 字号）")
+	_restore_font_scale()
+	panel.queue_free()
+	await process_frame
 
 
 func _assert_layout(layout_root: Control, context: String) -> void:

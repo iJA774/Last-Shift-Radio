@@ -7,6 +7,9 @@ extends Control
 ## 派生的工作状态；剧情、时间和记录不在这里保存副本。
 
 signal work_state_changed(previous_state: int, current_state: int, reason_ids: PackedStringArray)
+signal save_slot_requested(slot_id: String)
+signal save_panel_opened
+signal save_panel_closed
 
 enum WorkState {
 	IDLE,
@@ -34,6 +37,7 @@ const TRANSITION_COMPUTER_SECONDS: float = 0.26
 const TRANSITION_PHONE_SECONDS: float = 0.20
 const TRANSITION_DOOR_SECONDS: float = 0.32
 const TRANSITION_RETURN_TO_STUDIO_SECONDS: float = 0.24
+const SAVE_SLOT_PANEL_SCENE: PackedScene = preload("res://scenes/ui/save_slot_panel.tscn")
 
 var _story_engine: RefCounted = null
 var _phone_system: RefCounted = null
@@ -49,6 +53,7 @@ var _is_motion_enabled: bool = true
 var _is_view_transitioning: bool = false
 var _view_transition: Tween = null
 var _transition_serial: int = 0
+var _save_slot_panel: SaveSlotPanel = null
 
 @onready var _studio_overview: Control = $ViewHost/StudioOverview
 @onready var _phone_closeup: Control = $ViewHost/PhoneCloseup
@@ -57,6 +62,7 @@ var _transition_serial: int = 0
 @onready var _global_status: GlobalStatus = $GlobalStatus
 @onready var _system_message: Label = $SystemMessagePanel/SystemMessage
 @onready var _system_message_panel: PanelContainer = $SystemMessagePanel
+@onready var _save_button: Button = $SaveButton
 
 
 func _ready() -> void:
@@ -68,6 +74,7 @@ func _ready() -> void:
 		VIEW_DOOR: _door_window_closeup,
 	}
 	_system_message_panel.visible = false
+	_save_button.pressed.connect(_on_save_button_pressed)
 	_show_view_internal(VIEW_STUDIO, true)
 
 
@@ -179,6 +186,8 @@ func show_ending(record: Dictionary) -> Dictionary:
 	if record.is_empty():
 		return _make_error("02:00 收束缺少权威未授权播出记录。")
 	_is_ending = true
+	_close_save_panel()
+	_save_button.visible = false
 	# 02:00 具有最高优先级：先终止任何进行中的 Tween，再立即锁到电脑视图。
 	_cancel_view_transition()
 	var computer_result: Variant = _computer_closeup.call(&"show_unauthorized_broadcast", record)
@@ -251,10 +260,79 @@ func is_view_transitioning() -> bool:
 	return _is_view_transitioning
 
 
+## 存档只保存界面展示位置，不承载 StoryEngine / PhoneSystem 的任何权威剧情状态。
+func create_snapshot() -> Dictionary:
+	if _is_ending:
+		return {"ok": false, "error_code": "ending_active", "message": "02:00 强制收束中不能保存界面状态。"}
+	var active_category: String = _read_active_computer_category()
+	if active_category.is_empty():
+		return {"ok": false, "error_code": "invalid_computer_category", "message": "电脑当前页签无效，不能保存。"}
+	return {
+		"ok": true,
+		"snapshot": {
+			"system_id": "game_screen",
+			"snapshot_version": 1,
+			"current_view_id": _current_view_id,
+			"computer_active_category": active_category,
+		},
+	}
+
+
+func validate_snapshot(snapshot: Dictionary, _context: Dictionary = {}) -> Dictionary:
+	for field_name: String in ["system_id", "snapshot_version", "current_view_id", "computer_active_category"]:
+		if not snapshot.has(field_name):
+			return {"ok": false, "error_code": "missing_field", "message": "GameScreen 存档缺少字段：%s。" % field_name}
+	if typeof(snapshot["system_id"]) != TYPE_STRING or String(snapshot["system_id"]) != "game_screen":
+		return {"ok": false, "error_code": "invalid_system_id", "message": "GameScreen 存档 system_id 无效。"}
+	var version_result: Dictionary = _read_exact_integer(snapshot["snapshot_version"])
+	if not bool(version_result.get("ok", false)) or int(version_result["value"]) != 1:
+		return {"ok": false, "error_code": "unsupported_snapshot_version", "message": "GameScreen 存档版本不受支持。"}
+	if typeof(snapshot["current_view_id"]) != TYPE_STRING or not VIEW_IDS.has(String(snapshot["current_view_id"])):
+		return {"ok": false, "error_code": "invalid_view_id", "message": "GameScreen 存档包含未知固定视图。"}
+	if typeof(snapshot["computer_active_category"]) != TYPE_STRING or not ComputerCloseup.PAGE_CATEGORIES.has(String(snapshot["computer_active_category"])):
+		return {"ok": false, "error_code": "invalid_computer_category", "message": "GameScreen 存档包含未知电脑页签。"}
+	return {"ok": true}
+
+
+func restore_snapshot(snapshot: Dictionary, context: Dictionary = {}) -> Dictionary:
+	var validation: Dictionary = validate_snapshot(snapshot, context)
+	if not bool(validation.get("ok", false)):
+		return validation
+	if _is_ending:
+		return {"ok": false, "error_code": "ending_active", "message": "02:00 收束中的界面不能恢复普通班次存档。"}
+	var category_result: Variant = _computer_closeup.call(&"select_category", String(snapshot["computer_active_category"]))
+	if not _is_ok_result(category_result):
+		return {"ok": false, "error_code": "computer_restore_failed", "message": "恢复电脑页签失败：%s" % _describe_operation_failure(category_result, "未知原因。")}
+	_show_view_internal(String(snapshot["current_view_id"]), true)
+	var sync_result: Dictionary = _sync_work_state_and_time_rate()
+	if not bool(sync_result.get("ok", false)):
+		return sync_result
+	return {"ok": true}
+
+
+func set_save_slot_summaries(summaries: Array[Dictionary]) -> Dictionary:
+	if _save_slot_panel == null or not is_instance_valid(_save_slot_panel):
+		return {"ok": false, "error_code": "save_panel_closed", "message": "存档界面未打开。"}
+	return _save_slot_panel.set_slot_summaries(summaries)
+
+
+func show_save_result(result: Dictionary) -> void:
+	if _save_slot_panel == null or not is_instance_valid(_save_slot_panel):
+		return
+	var is_ok: bool = bool(result.get("ok", false))
+	var text_value: String = "保存完成。" if is_ok else "保存失败：%s" % String(result.get("message", "未知原因。"))
+	_save_slot_panel.show_message(text_value, not is_ok)
+
+
+func is_save_panel_open() -> bool:
+	return _save_slot_panel != null and is_instance_valid(_save_slot_panel)
+
+
 ## 由应用壳在替换本局 GameScreen 前调用。视图节点随后会被销毁；此处只清理
 ## 本控制器持有的运行时引用和自身回调，不能重置 StoryEngine 或 PhoneSystem。
 func release_runtime() -> Dictionary:
 	_cancel_view_transition()
+	_close_save_panel()
 	_disconnect_view_signals()
 	_disconnect_work_state_signals()
 	_story_engine = null
@@ -363,6 +441,7 @@ func _disconnect_work_state_signals() -> void:
 
 
 func _on_phone_state_changed(_previous_state: int, _current_state: int, _event_id: String) -> void:
+	_refresh_save_panel_availability()
 	_sync_work_state_or_show_error()
 
 
@@ -616,6 +695,91 @@ func _on_hang_up_requested() -> void:
 
 func _on_finish_call_requested() -> void:
 	_call_phone_action(&"finish_call", "结束通话", true)
+
+
+func _on_save_button_pressed() -> void:
+	if _is_ending:
+		show_system_error("02:00 强制收束中不能保存。")
+		return
+	if is_save_panel_open():
+		_close_save_panel()
+		return
+	_save_slot_panel = SAVE_SLOT_PANEL_SCENE.instantiate() as SaveSlotPanel
+	if _save_slot_panel == null:
+		show_system_error("无法实例化存档界面。")
+		return
+	_save_slot_panel.z_index = 50
+	_save_slot_panel.set_mode(SaveSlotPanel.Mode.SAVE)
+	_save_slot_panel.slot_save_requested.connect(_on_save_slot_requested)
+	_save_slot_panel.return_requested.connect(_on_save_panel_return_requested)
+	add_child(_save_slot_panel)
+	_refresh_save_panel_availability()
+	save_panel_opened.emit()
+
+
+func _on_save_slot_requested(slot_id: String) -> void:
+	if slot_id.strip_edges().is_empty():
+		show_save_result({"ok": false, "message": "存档槽位不能为空。"})
+		return
+	if not _can_current_phone_save():
+		show_save_result({"ok": false, "message": _get_current_save_block_reason()})
+		_refresh_save_panel_availability()
+		return
+	save_slot_requested.emit(slot_id)
+
+
+func _on_save_panel_return_requested() -> void:
+	_close_save_panel()
+
+
+func _close_save_panel() -> void:
+	if _save_slot_panel == null or not is_instance_valid(_save_slot_panel):
+		_save_slot_panel = null
+		return
+	_save_slot_panel.queue_free()
+	_save_slot_panel = null
+	save_panel_closed.emit()
+
+
+func _refresh_save_panel_availability() -> void:
+	if _save_slot_panel == null or not is_instance_valid(_save_slot_panel):
+		return
+	var can_save: bool = _can_current_phone_save() and not _is_ending
+	var reason: String = _get_current_save_block_reason()
+	if _is_ending:
+		reason = "02:00 强制收束中不能保存。"
+	var result: Dictionary = _save_slot_panel.set_save_availability(can_save, reason)
+	if not bool(result.get("ok", false)):
+		push_error("[游戏界面][save_panel_refresh_error] %s" % String(result.get("message", "未知错误。")))
+
+
+func _can_current_phone_save() -> bool:
+	return _phone_system != null and _phone_system.has_method(&"can_save") and bool(_phone_system.call(&"can_save"))
+
+
+func _get_current_save_block_reason() -> String:
+	if _phone_system == null or not _phone_system.has_method(&"get_save_block_reason"):
+		return "电话系统未提供存档状态。"
+	var reason: Variant = _phone_system.call(&"get_save_block_reason")
+	return String(reason) if typeof(reason) == TYPE_STRING else "电话系统未返回存档限制原因。"
+
+
+func _read_active_computer_category() -> String:
+	if _computer_closeup == null or not _computer_closeup.has_method(&"get_active_category"):
+		return ""
+	var category: Variant = _computer_closeup.call(&"get_active_category")
+	return String(category) if typeof(category) == TYPE_STRING else ""
+
+
+func _read_exact_integer(value: Variant) -> Dictionary:
+	if typeof(value) == TYPE_INT:
+		return {"ok": true, "value": int(value)}
+	if typeof(value) != TYPE_FLOAT:
+		return {"ok": false}
+	var number: float = float(value)
+	if is_nan(number) or is_inf(number) or number != floor(number):
+		return {"ok": false}
+	return {"ok": true, "value": int(number)}
 
 
 func _call_phone_action(method_name: StringName, action_name: String, needs_game_tick: bool) -> bool:
