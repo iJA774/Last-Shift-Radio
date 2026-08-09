@@ -1,0 +1,75 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/game_screen.gd" id="1_script"]
+[ext_resource type="PackedScene" path="res://scenes/studio/studio_overview.tscn" id="2_overview"]
+[ext_resource type="PackedScene" path="res://scenes/studio/phone_closeup.tscn" id="3_phone"]
+[ext_resource type="PackedScene" path="res://scenes/studio/computer_closeup.tscn" id="4_computer"]
+[ext_resource type="PackedScene" path="res://scenes/studio/door_window_closeup.tscn" id="5_door"]
+[ext_resource type="PackedScene" path="res://scenes/ui/global_status.tscn" id="6_status"]
+
+[node name="GameScreen" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_script")
+
+[node name="ViewHost" type="Control" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="TransitionBackdrop" type="ColorRect" parent="ViewHost"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.012, 0.018, 0.02, 1)
+
+[node name="StudioOverview" parent="ViewHost" instance=ExtResource("2_overview")]
+layout_mode = 1
+
+[node name="PhoneCloseup" parent="ViewHost" instance=ExtResource("3_phone")]
+layout_mode = 1
+
+[node name="ComputerCloseup" parent="ViewHost" instance=ExtResource("4_computer")]
+layout_mode = 1
+
+[node name="DoorWindowCloseup" parent="ViewHost" instance=ExtResource("5_door")]
+layout_mode = 1
+
+[node name="GlobalStatus" parent="." instance=ExtResource("6_status")]
+layout_mode = 1
+offset_left = 24.0
+offset_top = 18.0
+offset_right = -24.0
+offset_bottom = 90.0
+
+[node name="SystemMessagePanel" type="PanelContainer" parent="."]
+layout_mode = 1
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 24.0
+offset_top = -82.0
+offset_right = -24.0
+offset_bottom = -22.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_filter = 2
+
+[node name="SystemMessage" type="Label" parent="SystemMessagePanel"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = ""
+autowrap_mode = 2
+vertical_alignment = 1

@@ -1,0 +1,30 @@
+{
+  "content_format_version": 1,
+  "content_kind": "incoming_call_events",
+  "events": [
+    {
+      "id": "call_duplicate",
+      "kind": "incoming_call",
+      "priority": "normal",
+      "window_start_minute": 0,
+      "window_end_minute": 2,
+      "when_busy": "expire",
+      "on_expire": "mark_missed",
+      "condition_ids": [],
+      "caller_display_name": "重复 ID 测试线路 A",
+      "caller_number": "000-0204"
+    },
+    {
+      "id": "call_duplicate",
+      "kind": "incoming_call",
+      "priority": "main",
+      "window_start_minute": 3,
+      "window_end_minute": 5,
+      "when_busy": "queue",
+      "on_expire": "mark_missed",
+      "condition_ids": [],
+      "caller_display_name": "重复 ID 测试线路 B",
+      "caller_number": "000-0205"
+    }
+  ]
+}

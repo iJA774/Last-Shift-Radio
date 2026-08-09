@@ -1,0 +1,18 @@
+{
+  "content_format_version": 1,
+  "content_kind": "incoming_call_events",
+  "events": [
+    {
+      "id": "call_wrong_type",
+      "kind": "incoming_call",
+      "priority": "normal",
+      "window_start_minute": "0",
+      "window_end_minute": 2,
+      "when_busy": "expire",
+      "on_expire": "mark_missed",
+      "condition_ids": [],
+      "caller_display_name": "错类型测试线路",
+      "caller_number": "000-0203"
+    }
+  ]
+}

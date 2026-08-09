@@ -1,0 +1,183 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/phone_closeup.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://art/runtime/phone_closeup/phone_base.png" id="2_background"]
+[ext_resource type="PackedScene" path="res://scenes/ui/fx/ambient_fx.tscn" id="3_ambient_fx"]
+[ext_resource type="Texture2D" path="res://art/runtime/phone_closeup/phone_state_indicator_on.png" id="4_indicator_on"]
+[ext_resource type="Theme" path="res://resources/app_ui_theme.tres" id="5_theme"]
+[ext_resource type="Texture2D" path="res://art/ui/aged_newsroom_v1/runtime/dialogue_backdrop.png" id="6_dialogue"]
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxDialogue"]
+texture = ExtResource("6_dialogue")
+texture_margin_left = 160.0
+texture_margin_top = 120.0
+texture_margin_right = 160.0
+texture_margin_bottom = 120.0
+content_margin_left = 30.0
+content_margin_top = 24.0
+content_margin_right = 30.0
+content_margin_bottom = 24.0
+modulate_color = Color(0.60, 0.53, 0.38, 0.96)
+
+[node name="PhoneCloseup" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme = ExtResource("5_theme")
+script = ExtResource("1_script")
+
+[node name="Background" type="TextureRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = ExtResource("2_background")
+expand_mode = 1
+stretch_mode = 6
+
+[node name="ReadableOverlay" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.01, 0.02, 0.02, 0.20)
+
+[node name="AmbientFx" parent="." instance=ExtResource("3_ambient_fx")]
+layout_mode = 1
+
+[node name="PhoneIndicatorLight" type="TextureRect" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = ExtResource("4_indicator_on")
+expand_mode = 1
+stretch_mode = 6
+
+[node name="HeaderPanel" type="PanelContainer" parent="."]
+layout_mode = 0
+offset_left = 48.0
+offset_top = 120.0
+offset_right = 790.0
+offset_bottom = 276.0
+
+[node name="HeaderContent" type="VBoxContainer" parent="HeaderPanel"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="TitleLabel" type="Label" parent="HeaderPanel/HeaderContent"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.93, 0.9, 0.78, 1)
+theme_override_font_sizes/font_size = 29
+text = "电话线路／私下沟通"
+
+[node name="PhoneStateLabel" type="Label" parent="HeaderPanel/HeaderContent"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.98, 0.9, 0.62, 1)
+theme_override_font_sizes/font_size = 23
+text = "电话状态：初始化中"
+
+[node name="CallerLabel" type="Label" parent="HeaderPanel/HeaderContent"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.9, 0.89, 0.8, 1)
+theme_override_font_sizes/font_size = 19
+text = "来显：等待电话系统提供活动线路。"
+
+[node name="DialoguePanel" type="PanelContainer" parent="."]
+layout_mode = 0
+offset_left = 104.0
+offset_top = 690.0
+offset_right = 1816.0
+offset_bottom = 1004.0
+theme_override_styles/panel = SubResource("StyleBoxDialogue")
+
+[node name="DialogueContent" type="VBoxContainer" parent="DialoguePanel"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="DialogueHintLabel" type="Label" parent="DialoguePanel/DialogueContent"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.92, 0.9, 0.81, 1)
+theme_override_font_sizes/font_size = 20
+autowrap_mode = 2
+text = "对话：当前没有可操作的接通线路。"
+
+[node name="Actions" type="HBoxContainer" parent="DialoguePanel/DialogueContent"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="AnswerButton" type="Button" parent="DialoguePanel/DialogueContent/Actions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(228, 64)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.95, 0.93, 0.81, 1)
+theme_override_colors/font_disabled_color = Color(0.76, 0.76, 0.76, 1)
+theme_override_font_sizes/font_size = 21
+text = "接听"
+
+[node name="DialogueChoiceButton" type="Button" parent="DialoguePanel/DialogueContent/Actions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(284, 64)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.95, 0.93, 0.81, 1)
+theme_override_colors/font_disabled_color = Color(0.76, 0.76, 0.76, 1)
+theme_override_font_sizes/font_size = 21
+text = "进入一轮选择"
+
+[node name="HangUpButton" type="Button" parent="DialoguePanel/DialogueContent/Actions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(228, 64)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.95, 0.93, 0.81, 1)
+theme_override_colors/font_disabled_color = Color(0.76, 0.76, 0.76, 1)
+theme_override_font_sizes/font_size = 21
+text = "主动挂断"
+
+[node name="FinishButton" type="Button" parent="DialoguePanel/DialogueContent/Actions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(228, 64)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.95, 0.93, 0.81, 1)
+theme_override_colors/font_disabled_color = Color(0.76, 0.76, 0.76, 1)
+theme_override_font_sizes/font_size = 21
+text = "结束通话"
+
+[node name="OutboundStatusLabel" type="Label" parent="DialoguePanel/DialogueContent"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.84, 0.84, 0.77, 1)
+theme_override_font_sizes/font_size = 18
+text = "外拨线路维护中：MVP 不提供主动拨号。"
+
+[node name="BackButton" type="Button" parent="."]
+unique_name_in_owner = true
+layout_mode = 0
+offset_left = 1588.0
+offset_top = 120.0
+offset_right = 1872.0
+offset_bottom = 190.0
+theme_override_colors/font_color = Color(0.95, 0.93, 0.81, 1)
+theme_override_font_sizes/font_size = 20
+text = "返回工作室总览"
+tooltip_text = "返回工作室总览。"
+
+[connection signal="pressed" from="DialoguePanel/DialogueContent/Actions/AnswerButton" to="." method="_on_answer_button_pressed"]
+[connection signal="pressed" from="DialoguePanel/DialogueContent/Actions/DialogueChoiceButton" to="." method="_on_dialogue_choice_button_pressed"]
+[connection signal="pressed" from="DialoguePanel/DialogueContent/Actions/HangUpButton" to="." method="_on_hang_up_button_pressed"]
+[connection signal="pressed" from="DialoguePanel/DialogueContent/Actions/FinishButton" to="." method="_on_finish_button_pressed"]
+[connection signal="pressed" from="BackButton" to="." method="_on_back_button_pressed"]

@@ -1,0 +1,327 @@
+[gd_scene load_steps=11 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/studio_overview.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://art/concept/style_baseline_v1/studio_overview_v2.png" id="2_background"]
+[ext_resource type="PackedScene" path="res://scenes/ui/fx/ambient_fx.tscn" id="3_ambient_fx"]
+[ext_resource type="PackedScene" path="res://scenes/ui/fx/low_frequency_light_fx.tscn" id="4_light_fx"]
+[ext_resource type="Texture2D" path="res://art/concept/style_baseline_v1/studio_overview_lamp_off_v3.png" id="5_background_lamp_off"]
+[ext_resource type="PackedScene" path="res://scenes/ui/fx/window_rain_fx.tscn" id="7_window_rain_fx"]
+[ext_resource type="Texture2D" path="res://art/runtime/studio_overview/studio_foreground_window.png" id="8_window_foreground"]
+
+[sub_resource type="StyleBoxFlat" id="StyleHotspotDefault"]
+bg_color = Color(0.035, 0.075, 0.085, 0)
+border_color = Color(0.72, 0.65, 0.46, 0)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+content_margin_left = 12.0
+content_margin_top = 8.0
+content_margin_right = 12.0
+content_margin_bottom = 8.0
+
+[sub_resource type="StyleBoxFlat" id="StyleHotspotHover"]
+bg_color = Color(0.39, 0.39, 0.25, 0.10)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.95, 0.80, 0.42, 0.82)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+content_margin_left = 10.0
+content_margin_top = 6.0
+content_margin_right = 10.0
+content_margin_bottom = 6.0
+
+[sub_resource type="StyleBoxFlat" id="StyleHotspotPressed"]
+bg_color = Color(0.43, 0.32, 0.12, 0.18)
+border_width_left = 3
+border_width_top = 3
+border_width_right = 3
+border_width_bottom = 3
+border_color = Color(1, 0.91, 0.59, 0.94)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+content_margin_left = 9.0
+content_margin_top = 5.0
+content_margin_right = 9.0
+content_margin_bottom = 5.0
+
+[sub_resource type="StyleBoxFlat" id="StyleHotspotDisabled"]
+bg_color = Color(0.08, 0.08, 0.08, 0.26)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.62, 0.62, 0.62, 0.72)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+content_margin_left = 12.0
+content_margin_top = 8.0
+content_margin_right = 12.0
+content_margin_bottom = 8.0
+
+[sub_resource type="StyleBoxFlat" id="StyleHotspotHint"]
+bg_color = Color(0.015, 0.035, 0.04, 0.88)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.82, 0.74, 0.48, 0.76)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
+content_margin_left = 10.0
+content_margin_top = 5.0
+content_margin_right = 10.0
+content_margin_bottom = 5.0
+
+[node name="StudioOverview" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_script")
+
+[node name="Background" type="TextureRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = ExtResource("2_background")
+expand_mode = 1
+stretch_mode = 6
+
+[node name="BackgroundLampOff" type="TextureRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = ExtResource("5_background_lamp_off")
+expand_mode = 1
+stretch_mode = 6
+visible = false
+
+[node name="WindowRainClip" type="Control" parent="."]
+layout_mode = 0
+offset_left = 406.0
+offset_top = 203.0
+offset_right = 1190.0
+offset_bottom = 650.0
+mouse_filter = 2
+clip_contents = true
+
+[node name="WindowRainFx" parent="WindowRainClip" instance=ExtResource("7_window_rain_fx")]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="WindowInteriorForeground" type="TextureRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = ExtResource("8_window_foreground")
+expand_mode = 1
+stretch_mode = 6
+
+[node name="ReadableOverlay" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.01, 0.025, 0.03, 0.16)
+
+[node name="AmbientFx" parent="." instance=ExtResource("3_ambient_fx")]
+layout_mode = 1
+
+[node name="TableLampMaterialSwitch" parent="." instance=ExtResource("4_light_fx")]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+light_texture_rect_path = NodePath("../Background")
+off_texture_rect_path = NodePath("../BackgroundLampOff")
+minimum_wait_seconds = 4.0
+maximum_wait_seconds = 8.0
+minimum_off_seconds = 0.055
+maximum_off_seconds = 0.11
+minimum_on_gap_seconds = 0.06
+maximum_on_gap_seconds = 0.14
+minimum_burst_flickers = 3
+maximum_burst_flickers = 5
+random_seed = 19991231
+
+[node name="ViewLabel" type="Label" parent="."]
+layout_mode = 0
+offset_left = 42.0
+offset_top = 112.0
+offset_right = 590.0
+offset_bottom = 164.0
+theme_override_colors/font_color = Color(0.92, 0.9, 0.79, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_offset_x = 2
+theme_override_constants/shadow_offset_y = 2
+theme_override_font_sizes/font_size = 28
+text = "A 号直播室／工作室总览"
+
+[node name="InteractionHint" type="Label" parent="."]
+layout_mode = 0
+offset_left = 42.0
+offset_top = 166.0
+offset_right = 670.0
+offset_bottom = 198.0
+theme_override_colors/font_color = Color(0.89, 0.87, 0.77, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_offset_x = 1
+theme_override_constants/shadow_offset_y = 1
+theme_override_font_sizes/font_size = 18
+text = "移动鼠标，查看可操作设备。"
+
+[node name="PhoneHotspot" type="Button" parent="."]
+unique_name_in_owner = true
+layout_mode = 0
+offset_left = 38.0
+offset_top = 734.0
+offset_right = 292.0
+offset_bottom = 930.0
+focus_mode = 0
+mouse_default_cursor_shape = 2
+theme_override_styles/normal = SubResource("StyleHotspotDefault")
+theme_override_styles/hover = SubResource("StyleHotspotHover")
+theme_override_styles/pressed = SubResource("StyleHotspotPressed")
+theme_override_styles/disabled = SubResource("StyleHotspotDisabled")
+tooltip_text = "点击查看电话。"
+
+[node name="ComputerHotspot" type="Button" parent="."]
+unique_name_in_owner = true
+layout_mode = 0
+offset_left = 830.0
+offset_top = 510.0
+offset_right = 1132.0
+offset_bottom = 742.0
+focus_mode = 0
+mouse_default_cursor_shape = 2
+theme_override_styles/normal = SubResource("StyleHotspotDefault")
+theme_override_styles/hover = SubResource("StyleHotspotHover")
+theme_override_styles/pressed = SubResource("StyleHotspotPressed")
+theme_override_styles/disabled = SubResource("StyleHotspotDisabled")
+tooltip_text = "点击使用电脑终端。"
+
+[node name="DoorHotspot" type="Button" parent="."]
+unique_name_in_owner = true
+layout_mode = 0
+offset_left = 1468.0
+offset_top = 118.0
+offset_right = 1895.0
+offset_bottom = 1002.0
+focus_mode = 0
+mouse_default_cursor_shape = 2
+theme_override_styles/normal = SubResource("StyleHotspotDefault")
+theme_override_styles/hover = SubResource("StyleHotspotHover")
+theme_override_styles/pressed = SubResource("StyleHotspotPressed")
+theme_override_styles/disabled = SubResource("StyleHotspotDisabled")
+tooltip_text = "点击查看门与观察窗。"
+
+[node name="PhoneHint" type="PanelContainer" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 0
+offset_left = 38.0
+offset_top = 676.0
+offset_right = 292.0
+offset_bottom = 724.0
+mouse_filter = 2
+theme_override_styles/panel = SubResource("StyleHotspotHint")
+
+[node name="PhoneHintLabel" type="Label" parent="PhoneHint"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.95, 0.92, 0.80, 1)
+theme_override_font_sizes/font_size = 18
+horizontal_alignment = 1
+vertical_alignment = 1
+text = "查看电话"
+
+[node name="ComputerHint" type="PanelContainer" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 0
+offset_left = 780.0
+offset_top = 448.0
+offset_right = 1182.0
+offset_bottom = 498.0
+mouse_filter = 2
+theme_override_styles/panel = SubResource("StyleHotspotHint")
+
+[node name="ComputerHintLabel" type="Label" parent="ComputerHint"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.95, 0.92, 0.80, 1)
+theme_override_font_sizes/font_size = 18
+horizontal_alignment = 1
+vertical_alignment = 1
+text = "使用电脑终端"
+
+[node name="DoorHint" type="PanelContainer" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 0
+offset_left = 1510.0
+offset_top = 220.0
+offset_right = 1820.0
+offset_bottom = 270.0
+mouse_filter = 2
+theme_override_styles/panel = SubResource("StyleHotspotHint")
+
+[node name="DoorHintLabel" type="Label" parent="DoorHint"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.95, 0.92, 0.80, 1)
+theme_override_font_sizes/font_size = 18
+horizontal_alignment = 1
+vertical_alignment = 1
+text = "查看门与观察窗"
+
+[connection signal="pressed" from="PhoneHotspot" to="." method="_on_phone_hotspot_pressed"]
+[connection signal="pressed" from="ComputerHotspot" to="." method="_on_computer_hotspot_pressed"]
+[connection signal="pressed" from="DoorHotspot" to="." method="_on_door_hotspot_pressed"]
+[connection signal="mouse_entered" from="PhoneHotspot" to="." method="_on_hotspot_mouse_entered" binds= ["phone"]]
+[connection signal="mouse_exited" from="PhoneHotspot" to="." method="_on_hotspot_mouse_exited" binds= ["phone"]]
+[connection signal="button_down" from="PhoneHotspot" to="." method="_on_hotspot_button_down" binds= ["phone"]]
+[connection signal="button_up" from="PhoneHotspot" to="." method="_on_hotspot_button_up" binds= ["phone"]]
+[connection signal="mouse_entered" from="ComputerHotspot" to="." method="_on_hotspot_mouse_entered" binds= ["computer"]]
+[connection signal="mouse_exited" from="ComputerHotspot" to="." method="_on_hotspot_mouse_exited" binds= ["computer"]]
+[connection signal="button_down" from="ComputerHotspot" to="." method="_on_hotspot_button_down" binds= ["computer"]]
+[connection signal="button_up" from="ComputerHotspot" to="." method="_on_hotspot_button_up" binds= ["computer"]]
+[connection signal="mouse_entered" from="DoorHotspot" to="." method="_on_hotspot_mouse_entered" binds= ["door"]]
+[connection signal="mouse_exited" from="DoorHotspot" to="." method="_on_hotspot_mouse_exited" binds= ["door"]]
+[connection signal="button_down" from="DoorHotspot" to="." method="_on_hotspot_button_down" binds= ["door"]]
+[connection signal="button_up" from="DoorHotspot" to="." method="_on_hotspot_button_up" binds= ["door"]]

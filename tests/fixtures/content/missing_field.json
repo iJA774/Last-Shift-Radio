@@ -1,0 +1,17 @@
+{
+  "content_format_version": 1,
+  "content_kind": "incoming_call_events",
+  "events": [
+    {
+      "id": "call_missing_number",
+      "kind": "incoming_call",
+      "priority": "normal",
+      "window_start_minute": 0,
+      "window_end_minute": 2,
+      "when_busy": "expire",
+      "on_expire": "mark_missed",
+      "condition_ids": [],
+      "caller_display_name": "缺字段测试线路"
+    }
+  ]
+}

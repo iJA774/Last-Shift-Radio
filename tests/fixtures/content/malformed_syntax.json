@@ -1,0 +1,9 @@
+{
+  "content_format_version": 1,
+  "content_kind": "incoming_call_events",
+  "events": [
+    {
+      "id": "call_broken_json",
+      "kind": "incoming_call"
+    }
+  ]

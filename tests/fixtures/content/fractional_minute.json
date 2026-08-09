@@ -1,0 +1,18 @@
+{
+  "content_format_version": 1,
+  "content_kind": "incoming_call_events",
+  "events": [
+    {
+      "id": "call_fractional_minute",
+      "kind": "incoming_call",
+      "priority": "normal",
+      "window_start_minute": 1.5,
+      "window_end_minute": 2,
+      "when_busy": "expire",
+      "on_expire": "mark_missed",
+      "condition_ids": [],
+      "caller_display_name": "小数分钟测试线路",
+      "caller_number": "000-0207"
+    }
+  ]
+}

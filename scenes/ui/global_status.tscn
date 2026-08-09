@@ -1,0 +1,47 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/global_status.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://art/ui/low_saturation_v1/icons/runtime/icon_phone_ringing.png" id="2_ringing_icon"]
+
+[node name="GlobalStatus" type="PanelContainer"]
+custom_minimum_size = Vector2(0, 72)
+layout_mode = 3
+anchors_preset = 10
+anchor_right = 1.0
+grow_horizontal = 2
+script = ExtResource("1_script")
+
+[node name="Content" type="HBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="TimeLabel" type="Label" parent="Content"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 26
+text = "1999 年 12 月 31 日 / 01:00"
+vertical_alignment = 1
+
+[node name="RingingIndicator" type="HBoxContainer" parent="Content"]
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="RingingIcon" type="TextureRect" parent="Content/RingingIndicator"]
+custom_minimum_size = Vector2(42, 42)
+layout_mode = 2
+texture = ExtResource("2_ringing_icon")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="RingingText" type="Label" parent="Content/RingingIndicator"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "电话正在响铃"
+vertical_alignment = 1
+
+[node name="PhoneButton" type="Button" parent="Content/RingingIndicator"]
+custom_minimum_size = Vector2(108, 0)
+layout_mode = 2
+text = "前往电话"
+tooltip_text = "打开电话近景；不会自动接听。"

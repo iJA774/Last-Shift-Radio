@@ -1,0 +1,132 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/app/main_menu.gd" id="1_script"]
+[ext_resource type="Theme" path="res://resources/app_ui_theme.tres" id="2_theme"]
+
+[node name="MainMenu" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme = ExtResource("2_theme")
+script = ExtResource("1_script")
+
+[node name="Backdrop" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.012, 0.027, 0.043, 1)
+
+[node name="TopRule" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_bottom = 5.0
+grow_horizontal = 2
+mouse_filter = 2
+color = Color(0.52, 0.38, 0.20, 0.68)
+
+[node name="Content" type="CenterContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 188.0
+offset_top = 108.0
+offset_right = -188.0
+offset_bottom = -108.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="MenuPanel" type="PanelContainer" parent="Content"]
+custom_minimum_size = Vector2(680, 0)
+layout_mode = 2
+
+[node name="Margin" type="MarginContainer" parent="Content/MenuPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 34
+theme_override_constants/margin_top = 28
+theme_override_constants/margin_right = 34
+theme_override_constants/margin_bottom = 28
+
+[node name="Layout" type="VBoxContainer" parent="Content/MenuPanel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 14
+
+[node name="Eyebrow" type="Label" parent="Content/MenuPanel/Margin/Layout"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.45, 0.78, 0.79, 1)
+theme_override_font_sizes/font_size = 18
+text = "WMLH 780 AM / 夜间新闻室"
+horizontal_alignment = 1
+
+[node name="Title" type="Label" parent="Content/MenuPanel/Margin/Layout"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.92, 0.97, 0.96, 1)
+theme_override_font_sizes/font_size = 42
+text = "末班电台"
+horizontal_alignment = 1
+
+[node name="Subtitle" type="Label" parent="Content/MenuPanel/Margin/Layout"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.62, 0.71, 0.73, 1)
+theme_override_font_sizes/font_size = 18
+text = "1999 年 · 午夜值守"
+horizontal_alignment = 1
+
+[node name="Rule" type="HSeparator" parent="Content/MenuPanel/Margin/Layout"]
+layout_mode = 2
+
+[node name="StartShiftButton" type="Button" parent="Content/MenuPanel/Margin/Layout"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 54)
+layout_mode = 2
+text = "开始值班"
+
+[node name="LoadGameButton" type="Button" parent="Content/MenuPanel/Margin/Layout"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 54)
+layout_mode = 2
+text = "读取存档"
+
+[node name="LoadDisabledReason" type="Label" parent="Content/MenuPanel/Margin/Layout"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.61, 0.66, 0.67, 1)
+theme_override_font_sizes/font_size = 16
+text = "存档系统尚未建立"
+horizontal_alignment = 1
+
+[node name="SettingsButton" type="Button" parent="Content/MenuPanel/Margin/Layout"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 54)
+layout_mode = 2
+text = "设置"
+
+[node name="SettingsDisabledReason" type="Label" parent="Content/MenuPanel/Margin/Layout"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.61, 0.66, 0.67, 1)
+theme_override_font_sizes/font_size = 16
+text = "设置系统尚未建立"
+horizontal_alignment = 1
+
+[node name="ExitButton" type="Button" parent="Content/MenuPanel/Margin/Layout"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 54)
+layout_mode = 2
+text = "退出"
+
+[node name="Footer" type="Label" parent="Content/MenuPanel/Margin/Layout"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.44, 0.56, 0.59, 1)
+theme_override_font_sizes/font_size = 15
+text = "内部体验验证版 / 所有必要操作均可使用鼠标完成"
+horizontal_alignment = 1
+autowrap_mode = 2

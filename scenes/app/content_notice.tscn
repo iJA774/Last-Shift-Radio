@@ -1,0 +1,111 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/app/content_notice.gd" id="1_script"]
+[ext_resource type="Theme" path="res://resources/app_ui_theme.tres" id="2_theme"]
+[sub_resource type="StyleBoxFlat" id="StyleBoxError"]
+bg_color = Color(0.22, 0.07, 0.07, 0.92)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.78, 0.3, 0.27, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+content_margin_left = 14.0
+content_margin_top = 10.0
+content_margin_right = 14.0
+content_margin_bottom = 10.0
+
+[node name="ContentNotice" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme = ExtResource("2_theme")
+script = ExtResource("1_script")
+
+[node name="Backdrop" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.018, 0.032, 0.047, 1)
+
+[node name="Content" type="CenterContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 224.0
+offset_top = 140.0
+offset_right = -224.0
+offset_bottom = -140.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="NoticePanel" type="PanelContainer" parent="Content"]
+custom_minimum_size = Vector2(760, 0)
+layout_mode = 2
+
+[node name="Margin" type="MarginContainer" parent="Content/NoticePanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 38
+theme_override_constants/margin_top = 34
+theme_override_constants/margin_right = 38
+theme_override_constants/margin_bottom = 34
+
+[node name="Layout" type="VBoxContainer" parent="Content/NoticePanel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 18
+
+[node name="Title" type="Label" parent="Content/NoticePanel/Margin/Layout"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.91, 0.97, 0.96, 1)
+theme_override_font_sizes/font_size = 34
+text = "内容提示"
+horizontal_alignment = 1
+
+[node name="NoticeText" type="Label" parent="Content/NoticePanel/Margin/Layout"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 21
+text = "《末班电台》包含克制的心理恐怖氛围，以及对交通事故、失踪或死亡的暗示。部分场景含有轻度的突发声音或视觉刺激。"
+autowrap_mode = 2
+
+[node name="Prompt" type="Label" parent="Content/NoticePanel/Margin/Layout"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.55, 0.72, 0.73, 1)
+theme_override_font_sizes/font_size = 17
+text = "确认后将从 01:00 开始本次值班。"
+horizontal_alignment = 1
+
+[node name="ErrorPanel" type="PanelContainer" parent="Content/NoticePanel/Margin/Layout"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxError")
+
+[node name="ErrorLabel" type="Label" parent="Content/NoticePanel/Margin/Layout/ErrorPanel"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.78, 0.74, 1)
+theme_override_font_sizes/font_size = 16
+autowrap_mode = 2
+
+[node name="ConfirmShiftButton" type="Button" parent="Content/NoticePanel/Margin/Layout"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 56)
+layout_mode = 2
+text = "开始值班"
+
+[node name="ReturnToMenuButton" type="Button" parent="Content/NoticePanel/Margin/Layout"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 56)
+layout_mode = 2
+text = "返回主菜单"

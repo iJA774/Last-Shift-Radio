@@ -1,0 +1,18 @@
+{
+  "content_format_version": 1,
+  "content_kind": "incoming_call_events",
+  "events": [
+    {
+      "id": "call_unknown_policy",
+      "kind": "incoming_call",
+      "priority": "normal",
+      "window_start_minute": 0,
+      "window_end_minute": 2,
+      "when_busy": "hold",
+      "on_expire": "discard",
+      "condition_ids": [],
+      "caller_display_name": "未知策略测试线路",
+      "caller_number": "000-0206"
+    }
+  ]
+}

@@ -1,0 +1,106 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/app/ending_screen.gd" id="1_script"]
+[ext_resource type="Theme" path="res://resources/app_ui_theme.tres" id="2_theme"]
+
+[node name="EndingScreen" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme = ExtResource("2_theme")
+script = ExtResource("1_script")
+
+[node name="Backdrop" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.01, 0.019, 0.03, 1)
+
+[node name="EndRule" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = -5.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_filter = 2
+color = Color(0.52, 0.38, 0.20, 0.62)
+
+[node name="Content" type="CenterContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 224.0
+offset_top = 150.0
+offset_right = -224.0
+offset_bottom = -150.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="EndingPanel" type="PanelContainer" parent="Content"]
+custom_minimum_size = Vector2(700, 0)
+layout_mode = 2
+
+[node name="Margin" type="MarginContainer" parent="Content/EndingPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 38
+theme_override_constants/margin_top = 34
+theme_override_constants/margin_right = 38
+theme_override_constants/margin_bottom = 34
+
+[node name="Layout" type="VBoxContainer" parent="Content/EndingPanel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="Title" type="Label" parent="Content/EndingPanel/Margin/Layout"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.91, 0.97, 0.96, 1)
+theme_override_font_sizes/font_size = 34
+text = "本次值班已结束"
+horizontal_alignment = 1
+
+[node name="Summary" type="Label" parent="Content/EndingPanel/Margin/Layout"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6, 0.72, 0.74, 1)
+theme_override_font_sizes/font_size = 19
+text = "夜已过去。"
+horizontal_alignment = 1
+
+[node name="Rule" type="HSeparator" parent="Content/EndingPanel/Margin/Layout"]
+layout_mode = 2
+
+[node name="RestartButton" type="Button" parent="Content/EndingPanel/Margin/Layout"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 56)
+layout_mode = 2
+text = "重新开始"
+
+[node name="LoadGameButton" type="Button" parent="Content/EndingPanel/Margin/Layout"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 56)
+layout_mode = 2
+text = "读取存档"
+
+[node name="LoadDisabledReason" type="Label" parent="Content/EndingPanel/Margin/Layout"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.61, 0.66, 0.67, 1)
+theme_override_font_sizes/font_size = 16
+text = "存档系统尚未建立"
+horizontal_alignment = 1
+
+[node name="ReturnToMenuButton" type="Button" parent="Content/EndingPanel/Margin/Layout"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 56)
+layout_mode = 2
+text = "返回主菜单"

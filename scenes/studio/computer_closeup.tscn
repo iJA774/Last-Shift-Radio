@@ -1,0 +1,123 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/computer_closeup.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://art/concept/style_baseline_v1/computer_closeup.png" id="2_background"]
+[ext_resource type="Script" path="res://scripts/ui/computer_call_log_view.gd" id="3_call_log"]
+[ext_resource type="PackedScene" path="res://scenes/ui/fx/ambient_fx.tscn" id="4_ambient_fx"]
+[ext_resource type="Theme" path="res://resources/app_ui_theme.tres" id="5_theme"]
+
+[sub_resource type="StyleBoxFlat" id="StyleTerminalSurface"]
+bg_color = Color(0.025, 0.085, 0.067, 0.91)
+border_width_left = 5
+border_width_top = 5
+border_width_right = 5
+border_width_bottom = 5
+border_color = Color(0.42, 0.58, 0.47, 0.92)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+content_margin_left = 8.0
+content_margin_top = 8.0
+content_margin_right = 8.0
+content_margin_bottom = 8.0
+
+[node name="ComputerCloseup" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme = ExtResource("5_theme")
+script = ExtResource("1_script")
+
+[node name="Background" type="TextureRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = ExtResource("2_background")
+expand_mode = 1
+stretch_mode = 6
+
+[node name="ReadableOverlay" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.0, 0.02, 0.01, 0.16)
+
+[node name="AmbientFx" parent="." instance=ExtResource("4_ambient_fx")]
+layout_mode = 1
+
+[node name="TerminalLabel" type="Label" parent="."]
+layout_mode = 0
+offset_left = 514.0
+offset_top = 126.0
+offset_right = 1418.0
+offset_bottom = 169.0
+theme_override_colors/font_color = Color(0.76, 0.91, 0.74, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_offset_x = 1
+theme_override_constants/shadow_offset_y = 1
+theme_override_font_sizes/font_size = 21
+text = "WMLH 新闻室终端／只读来电记录"
+horizontal_alignment = 1
+
+[node name="TerminalSurface" type="PanelContainer" parent="."]
+layout_mode = 0
+offset_left = 438.0
+offset_top = 180.0
+offset_right = 1482.0
+offset_bottom = 794.0
+theme_override_styles/panel = SubResource("StyleTerminalSurface")
+
+[node name="ScreenGlow" type="ColorRect" parent="."]
+unique_name_in_owner = true
+layout_mode = 0
+offset_left = 454.0
+offset_top = 194.0
+offset_right = 1466.0
+offset_bottom = 780.0
+mouse_filter = 2
+color = Color(0.16, 0.82, 0.48, 0.045)
+
+[node name="ScreenCursor" type="Label" parent="."]
+unique_name_in_owner = true
+layout_mode = 0
+offset_left = 1417.0
+offset_top = 734.0
+offset_right = 1455.0
+offset_bottom = 772.0
+mouse_filter = 2
+theme_override_colors/font_color = Color(0.62, 0.92, 0.68, 0.90)
+theme_override_font_sizes/font_size = 22
+text = "▌"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="CallLogView" type="PanelContainer" parent="TerminalSurface"]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("3_call_log")
+
+[node name="BackButton" type="Button" parent="."]
+unique_name_in_owner = true
+layout_mode = 0
+offset_left = 1588.0
+offset_top = 120.0
+offset_right = 1872.0
+offset_bottom = 190.0
+theme_override_colors/font_color = Color(0.95, 0.93, 0.81, 1)
+theme_override_font_sizes/font_size = 20
+text = "返回工作室总览"
+tooltip_text = "返回工作室总览。"
+
+[connection signal="pressed" from="BackButton" to="." method="_on_back_button_pressed"]
