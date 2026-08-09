@@ -22,7 +22,8 @@ func _run() -> void:
 		return
 	var app: Control = MAIN_SCENE.instantiate() as Control
 	_app = app
-	app.set("ending_transition_delay_seconds", 0.10)
+	# 需要比一帧的内容/设置重排开销更长，才能稳定验证 02:00 的电脑余韵。
+	app.set("ending_transition_delay_seconds", 0.50)
 	game_clock.connect(&"shift_started", Callable(self, "_on_shift_started"))
 	root.add_child(app)
 	await process_frame
@@ -38,9 +39,9 @@ func _run() -> void:
 		var load_reason: Label = main_menu.get_node_or_null(NodePath("Content/MenuPanel/Margin/Layout/LoadDisabledReason")) as Label
 		var settings_reason: Label = main_menu.get_node_or_null(NodePath("Content/MenuPanel/Margin/Layout/SettingsDisabledReason")) as Label
 		_assert_true(load_button != null and not load_button.disabled, "第七阶段后主菜单读取存档必须可用。")
-		_assert_true(settings_button != null and settings_button.disabled, "主菜单设置必须禁用。")
+		_assert_true(settings_button != null and not settings_button.disabled, "第八阶段后主菜单设置必须可用。")
 		_assert_true(load_reason != null and load_reason.visible and load_reason.text.contains("本地三槽"), "主菜单必须直接说明本地三槽读取入口。")
-		_assert_true(settings_reason != null and settings_reason.visible and settings_reason.text.contains("设置系统尚未建立"), "主菜单必须直接显示设置禁用原因。")
+		_assert_true(settings_reason != null and not settings_reason.visible, "设置已建立后不得遗留过时的禁用原因。")
 
 	app.call(&"request_start_shift")
 	await process_frame
@@ -94,7 +95,7 @@ func _run() -> void:
 		displayed_broadcast is Dictionary and String((displayed_broadcast as Dictionary).get("fact_id", "")) == "fact_unauthorized_broadcast",
 		"延时进入结束页前，电脑必须显示权威未授权播出记录。"
 	)
-	await create_timer(0.16).timeout
+	await create_timer(0.56).timeout
 	assert_application_ending(app)
 
 	var ending: Control = app.get_node_or_null(NodePath("ScreenHost/EndingScreen")) as Control
@@ -129,7 +130,7 @@ func _run() -> void:
 	_assert_true((second_engine.call(&"get_unauthorized_broadcast_record") as Dictionary).is_empty(), "第二局不得遗留未授权播出记录。")
 
 	_assert_true(bool(game_clock.call(&"advance_ticks_for_verification", int(game_clock.call(&"get_remaining_game_ticks")))), "第二局必须可推进到结束页。")
-	await create_timer(0.16).timeout
+	await create_timer(0.56).timeout
 	_assert_equal(app.call(&"get_application_state_name"), "ENDING", "第二局收束后必须进入 ENDING。")
 	app.call(&"return_to_main_menu")
 	await process_frame

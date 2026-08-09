@@ -1,0 +1,275 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/settings_panel.gd" id="1_script"]
+[ext_resource type="Theme" path="res://resources/app_ui_theme.tres" id="2_theme"]
+
+[node name="SettingsPanel" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme = ExtResource("2_theme")
+script = ExtResource("1_script")
+
+[node name="Dimmer" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+color = Color(0.005, 0.012, 0.018, 0.82)
+
+[node name="Center" type="CenterContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 180.0
+offset_top = 58.0
+offset_right = -180.0
+offset_bottom = -58.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Panel" type="PanelContainer" parent="Center"]
+custom_minimum_size = Vector2(760, 0)
+layout_mode = 2
+
+[node name="Margin" type="MarginContainer" parent="Center/Panel"]
+layout_mode = 2
+theme_override_constants/margin_left = 28
+theme_override_constants/margin_top = 22
+theme_override_constants/margin_right = 28
+theme_override_constants/margin_bottom = 22
+
+[node name="Layout" type="VBoxContainer" parent="Center/Panel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Title" type="Label" parent="Center/Panel/Margin/Layout"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.90, 0.95, 0.93, 1)
+theme_override_font_sizes/font_size = 32
+text = "设置"
+horizontal_alignment = 1
+
+[node name="Hint" type="Label" parent="Center/Panel/Margin/Layout"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.65, 0.77, 0.77, 1)
+theme_override_font_sizes/font_size = 16
+text = "设置立即生效并保存。打开本面板不会暂停故事时间。"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="Separator" type="HSeparator" parent="Center/Panel/Margin/Layout"]
+layout_mode = 2
+
+[node name="ContentScroll" type="ScrollContainer" parent="Center/Panel/Margin/Layout"]
+custom_minimum_size = Vector2(0, 500)
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="SettingsRows" type="VBoxContainer" parent="Center/Panel/Margin/Layout/ContentScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 12
+
+[node name="MasterRow" type="VBoxContainer" parent="Center/Panel/Margin/Layout/ContentScroll/SettingsRows"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Center/Panel/Margin/Layout/ContentScroll/SettingsRows/MasterRow"]
+layout_mode = 2
+text = "主音量"
+
+[node name="ControlRow" type="HBoxContainer" parent="Center/Panel/Margin/Layout/ContentScroll/SettingsRows/MasterRow"]
+layout_mode = 2
+theme_override_constants/separation = 14
+
+[node name="MasterSlider" type="HSlider" parent="Center/Panel/Margin/Layout/ContentScroll/SettingsRows/MasterRow/ControlRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 34)
+layout_mode = 2
+size_flags_horizontal = 3
+max_value = 1.0
+step = 0.01
+
+[node name="MasterValue" type="Label" parent="Center/Panel/Margin/Layout/ContentScroll/SettingsRows/MasterRow/ControlRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(80, 0)
+layout_mode = 2
+text = "100%"
+horizontal_alignment = 2
+vertical_alignment = 1
+
+[node name="AmbienceRow" type="VBoxContainer" parent="Center/Panel/Margin/Layout/ContentScroll/SettingsRows"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Center/Panel/Margin/Layout/ContentScroll/SettingsRows/AmbienceRow"]
+layout_mode = 2
+text = "环境音量"
+
+[node name="ControlRow" type="HBoxContainer" parent="Center/Panel/Margin/Layout/ContentScroll/SettingsRows/AmbienceRow"]
+layout_mode = 2
+theme_override_constants/separation = 14
+
+[node name="AmbienceSlider" type="HSlider" parent="Center/Panel/Margin/Layout/ContentScroll/SettingsRows/AmbienceRow/ControlRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 34)
+layout_mode = 2
+size_flags_horizontal = 3
+max_value = 1.0
+step = 0.01
+
+[node name="AmbienceValue" type="Label" parent="Center/Panel/Margin/Layout/ContentScroll/SettingsRows/AmbienceRow/ControlRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(80, 0)
+layout_mode = 2
+text = "100%"
+horizontal_alignment = 2
+vertical_alignment = 1
+
+[node name="UiPhoneRow" type="VBoxContainer" parent="Center/Panel/Margin/Layout/ContentScroll/SettingsRows"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Center/Panel/Margin/Layout/ContentScroll/SettingsRows/UiPhoneRow"]
+layout_mode = 2
+text = "界面与电话提示音量"
+
+[node name="ControlRow" type="HBoxContainer" parent="Center/Panel/Margin/Layout/ContentScroll/SettingsRows/UiPhoneRow"]
+layout_mode = 2
+theme_override_constants/separation = 14
+
+[node name="UiPhoneSlider" type="HSlider" parent="Center/Panel/Margin/Layout/ContentScroll/SettingsRows/UiPhoneRow/ControlRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 34)
+layout_mode = 2
+size_flags_horizontal = 3
+max_value = 1.0
+step = 0.01
+
+[node name="UiPhoneValue" type="Label" parent="Center/Panel/Margin/Layout/ContentScroll/SettingsRows/UiPhoneRow/ControlRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(80, 0)
+layout_mode = 2
+text = "100%"
+horizontal_alignment = 2
+vertical_alignment = 1
+
+[node name="WindowModeRow" type="HBoxContainer" parent="Center/Panel/Margin/Layout/ContentScroll/SettingsRows"]
+layout_mode = 2
+theme_override_constants/separation = 18
+
+[node name="Label" type="Label" parent="Center/Panel/Margin/Layout/ContentScroll/SettingsRows/WindowModeRow"]
+custom_minimum_size = Vector2(260, 0)
+layout_mode = 2
+text = "窗口显示"
+vertical_alignment = 1
+
+[node name="WindowModeOption" type="OptionButton" parent="Center/Panel/Margin/Layout/ContentScroll/SettingsRows/WindowModeRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="TextSpeedRow" type="VBoxContainer" parent="Center/Panel/Margin/Layout/ContentScroll/SettingsRows"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Center/Panel/Margin/Layout/ContentScroll/SettingsRows/TextSpeedRow"]
+layout_mode = 2
+text = "逐字文字速度"
+
+[node name="ControlRow" type="HBoxContainer" parent="Center/Panel/Margin/Layout/ContentScroll/SettingsRows/TextSpeedRow"]
+layout_mode = 2
+theme_override_constants/separation = 14
+
+[node name="TextSpeedSlider" type="HSlider" parent="Center/Panel/Margin/Layout/ContentScroll/SettingsRows/TextSpeedRow/ControlRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 34)
+layout_mode = 2
+size_flags_horizontal = 3
+min_value = 0.25
+max_value = 4.0
+step = 0.25
+value = 1.0
+
+[node name="TextSpeedValue" type="Label" parent="Center/Panel/Margin/Layout/ContentScroll/SettingsRows/TextSpeedRow/ControlRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(80, 0)
+layout_mode = 2
+text = "1.00×"
+horizontal_alignment = 2
+vertical_alignment = 1
+
+[node name="TextSpeedHint" type="Label" parent="Center/Panel/Margin/Layout/ContentScroll/SettingsRows"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.65, 0.72, 0.72, 1)
+theme_override_font_sizes/font_size = 15
+text = "此倍率用于电话对话的逐字展示；不会改变故事、时钟或电话状态。"
+autowrap_mode = 2
+
+[node name="FontSizeRow" type="HBoxContainer" parent="Center/Panel/Margin/Layout/ContentScroll/SettingsRows"]
+layout_mode = 2
+theme_override_constants/separation = 18
+
+[node name="Label" type="Label" parent="Center/Panel/Margin/Layout/ContentScroll/SettingsRows/FontSizeRow"]
+custom_minimum_size = Vector2(260, 0)
+layout_mode = 2
+text = "字体大小"
+vertical_alignment = 1
+
+[node name="FontSizeOption" type="OptionButton" parent="Center/Panel/Margin/Layout/ContentScroll/SettingsRows/FontSizeRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="ReduceFlashingCheck" type="CheckBox" parent="Center/Panel/Margin/Layout/ContentScroll/SettingsRows"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "减少闪烁（停止电话指示灯、CRT 光标与环境亮灭动态）"
+autowrap_mode = 2
+
+[node name="ReduceFlashingHint" type="Label" parent="Center/Panel/Margin/Layout/ContentScroll/SettingsRows"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.65, 0.72, 0.72, 1)
+theme_override_font_sizes/font_size = 15
+text = "此设置不会降低音频突发；可分别使用上方音量滑块控制。"
+autowrap_mode = 2
+
+[node name="CrtEnabledCheck" type="CheckBox" parent="Center/Panel/Margin/Layout/ContentScroll/SettingsRows"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "启用 CRT / 噪声视觉效果"
+
+[node name="CrtHint" type="Label" parent="Center/Panel/Margin/Layout/ContentScroll/SettingsRows"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.65, 0.72, 0.72, 1)
+theme_override_font_sizes/font_size = 15
+text = "关闭后会保留所有文字、热点和布局，仅隐藏 CRT 光感、光标与噪声动态。"
+autowrap_mode = 2
+
+[node name="MessageLabel" type="Label" parent="Center/Panel/Margin/Layout"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+autowrap_mode = 2
+
+[node name="Actions" type="HBoxContainer" parent="Center/Panel/Margin/Layout"]
+layout_mode = 2
+alignment = 2
+theme_override_constants/separation = 12
+
+[node name="ResetButton" type="Button" parent="Center/Panel/Margin/Layout/Actions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(190, 50)
+layout_mode = 2
+text = "恢复默认设置"
+
+[node name="CloseButton" type="Button" parent="Center/Panel/Margin/Layout/Actions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(160, 50)
+layout_mode = 2
+text = "关闭设置"

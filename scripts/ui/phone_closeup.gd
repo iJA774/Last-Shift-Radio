@@ -20,6 +20,11 @@ var _is_return_enabled: bool = true
 var _is_motion_enabled: bool = true
 var _indicator_timer: Timer = null
 var _is_indicator_lit: bool = false
+var _text_speed_multiplier: float = 1.0
+var _typewriter_tween: Tween = null
+var _typewriter_full_text: String = ""
+
+const DIALOGUE_CHARACTERS_PER_SECOND: float = 34.0
 
 @onready var _phone_state_label: Label = %PhoneStateLabel
 @onready var _caller_label: Label = %CallerLabel
@@ -45,6 +50,7 @@ func _ready() -> void:
 
 
 func _exit_tree() -> void:
+	_stop_typewriter()
 	_disconnect_phone_system()
 	_disconnect_story_engine()
 
@@ -101,6 +107,35 @@ func set_motion_enabled(is_enabled: bool) -> Dictionary:
 		return _make_error("环境效果组件缺少 set_motion_enabled() 接口。")
 	ambient_fx.call(&"set_motion_enabled", is_enabled)
 	_refresh_phone_indicator()
+	return {"ok": true}
+
+
+## 此倍率只作用于 DialogueHintLabel 的逐字展示；它不推进 StoryEngine、
+## GameClock 或 PhoneSystem。设置变更时从完整当前文本安全重启展示。
+func set_text_speed_multiplier(multiplier: float) -> Dictionary:
+	if is_nan(multiplier) or is_inf(multiplier) or multiplier < 0.25 or multiplier > 4.0:
+		return _make_error("逐字文字速度必须在 0.25 到 4.0 之间。")
+	_text_speed_multiplier = multiplier
+	if not _typewriter_full_text.is_empty():
+		_start_typewriter(_typewriter_full_text)
+	return {"ok": true, "text_speed": _text_speed_multiplier}
+
+
+func get_text_speed_multiplier() -> float:
+	return _text_speed_multiplier
+
+
+## 只读展示状态供设置验收使用；不复制任何剧情状态。
+func get_text_presentation_snapshot() -> Dictionary:
+	return {
+		"text_speed": _text_speed_multiplier,
+		"is_revealing": _typewriter_tween != null and _typewriter_tween.is_valid() and _typewriter_tween.is_running(),
+		"text_length": _typewriter_full_text.length(),
+	}
+
+
+func stop_text_presentation() -> Dictionary:
+	_stop_typewriter()
 	return {"ok": true}
 
 
@@ -171,7 +206,7 @@ func _refresh() -> void:
 	if _phone_system == null:
 		_phone_state_label.text = "电话状态：系统未连接"
 		_caller_label.text = "来显：等待电话系统提供活动线路。"
-		_dialogue_hint_label.text = "对话：当前不能提交电话操作。"
+		_set_dialogue_hint_text("对话：当前不能提交电话操作。")
 		_set_action_availability("", false)
 		_refresh_phone_indicator()
 		return
@@ -180,7 +215,7 @@ func _refresh() -> void:
 	if typeof(state_value) != TYPE_STRING:
 		_phone_state_label.text = "电话状态：数据无效"
 		_caller_label.text = "来显：电话系统未返回有效状态。"
-		_dialogue_hint_label.text = "对话：状态数据无效，已禁用操作。"
+		_set_dialogue_hint_text("对话：状态数据无效，已禁用操作。")
 		push_error("[电话][invalid_state] PhoneSystem.get_state_name() 必须返回 String。")
 		_set_action_availability("", false)
 		_refresh_phone_indicator()
@@ -193,6 +228,27 @@ func _refresh() -> void:
 	_refresh_dialogue_options(state_name)
 	_set_action_availability(state_name, _are_actions_enabled)
 	_refresh_phone_indicator()
+	_apply_current_font_size()
+
+
+## 对话选项按钮由运行时快照创建；刷新后即时继承当前的 100% / 125% 档位。
+func _apply_current_font_size() -> void:
+	var settings_manager: Node = get_tree().root.get_node_or_null(NodePath("SettingsManager")) as Node
+	if settings_manager == null or not settings_manager.has_method(&"get_settings_snapshot"):
+		return
+	var snapshot_value: Variant = settings_manager.call(&"get_settings_snapshot")
+	if not snapshot_value is Dictionary:
+		return
+	var font_size_value: Variant = (snapshot_value as Dictionary).get("font_size", 100)
+	if typeof(font_size_value) != TYPE_INT:
+		return
+	var font_size_percent: int = int(font_size_value)
+	if font_size_percent != 100 and font_size_percent != 125:
+		return
+	var inherited_percent: int = int(get_meta(SettingsUiScale.META_APPLIED_PERCENT, font_size_percent))
+	var result: Dictionary = SettingsUiScale.apply_font_size(self, font_size_percent, inherited_percent)
+	if not bool(result.get("ok", false)):
+		push_error("[电话][dynamic_font_apply_failed] %s" % String(result.get("message", "未知原因。")))
 
 
 func _refresh_caller_snapshot() -> void:
@@ -225,17 +281,48 @@ func _refresh_dialogue_hint(state_name: String) -> void:
 			var suffix: String = "\n\n请选择回应。"
 			if bool(_dialogue_snapshot.get("is_terminal", false)):
 				suffix = "\n\n本轮对话结束，可结束通话。"
-			_dialogue_hint_label.text = "%s：\n%s%s" % [speaker, text, suffix]
+			_set_dialogue_hint_text("%s：\n%s%s" % [speaker, text, suffix], true)
 			return
 	match state_name:
 		"RINGING":
-			_dialogue_hint_label.text = "线路正在响铃。接听或等待系统处理；不能主动外拨。"
+			_set_dialogue_hint_text("线路正在响铃。接听或等待系统处理；不能主动外拨。")
 		"CONNECTED":
-			_dialogue_hint_label.text = "线路已接通。可以请求进入一轮预制选择、主动挂断或结束通话。"
+			_set_dialogue_hint_text("线路已接通。可以请求进入一轮预制选择、主动挂断或结束通话。")
 		"DIALOGUE_CHOICE":
-			_dialogue_hint_label.text = "正在等待本轮选择。时钟继续流动，02:00 可由系统中断。"
+			_set_dialogue_hint_text("正在等待本轮选择。时钟继续流动，02:00 可由系统中断。")
 		_:
-			_dialogue_hint_label.text = "当前没有可操作的接通线路。"
+			_set_dialogue_hint_text("当前没有可操作的接通线路。")
+
+
+func _set_dialogue_hint_text(text_value: String, use_typewriter: bool = false) -> void:
+	if _dialogue_hint_label == null:
+		return
+	_stop_typewriter()
+	_typewriter_full_text = text_value
+	_dialogue_hint_label.text = text_value
+	_dialogue_hint_label.visible_ratio = 1.0
+	if use_typewriter and not text_value.is_empty():
+		_start_typewriter(text_value)
+
+
+func _start_typewriter(text_value: String) -> void:
+	if _dialogue_hint_label == null:
+		return
+	_stop_typewriter()
+	_typewriter_full_text = text_value
+	_dialogue_hint_label.text = text_value
+	_dialogue_hint_label.visible_ratio = 0.0
+	var duration: float = maxf(0.05, float(text_value.length()) / (DIALOGUE_CHARACTERS_PER_SECOND * _text_speed_multiplier))
+	_typewriter_tween = create_tween()
+	_typewriter_tween.tween_property(_dialogue_hint_label, "visible_ratio", 1.0, duration)
+
+
+func _stop_typewriter() -> void:
+	if _typewriter_tween != null and _typewriter_tween.is_valid():
+		_typewriter_tween.kill()
+	_typewriter_tween = null
+	if _dialogue_hint_label != null:
+		_dialogue_hint_label.visible_ratio = 1.0
 
 
 func _refresh_dialogue_options(state_name: String) -> void:

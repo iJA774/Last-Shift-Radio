@@ -355,6 +355,28 @@ func _refresh() -> void:
 		_refresh_broadcast_page()
 	else:
 		_refresh_information_page(_active_category)
+	_apply_current_font_size()
+
+
+## 页签与信息卡片在运行时创建。每次重建后用当前全局档位处理新增控件，
+## 避免 125% 下新出现的新闻、短信、记录或播出卡片退回默认字号。
+func _apply_current_font_size() -> void:
+	var settings_manager: Node = get_tree().root.get_node_or_null(NodePath("SettingsManager")) as Node
+	if settings_manager == null or not settings_manager.has_method(&"get_settings_snapshot"):
+		return
+	var snapshot_value: Variant = settings_manager.call(&"get_settings_snapshot")
+	if not snapshot_value is Dictionary:
+		return
+	var font_size_value: Variant = (snapshot_value as Dictionary).get("font_size", 100)
+	if typeof(font_size_value) != TYPE_INT:
+		return
+	var font_size_percent: int = int(font_size_value)
+	if font_size_percent != 100 and font_size_percent != 125:
+		return
+	var inherited_percent: int = int(get_meta(SettingsUiScale.META_APPLIED_PERCENT, font_size_percent))
+	var result: Dictionary = SettingsUiScale.apply_font_size(self, font_size_percent, inherited_percent)
+	if not bool(result.get("ok", false)):
+		push_error("[电脑][dynamic_font_apply_failed] %s" % String(result.get("message", "未知原因。")))
 
 
 func _refresh_tab_labels() -> void:

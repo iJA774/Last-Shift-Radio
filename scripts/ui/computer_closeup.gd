@@ -19,6 +19,7 @@ const PAGE_CATEGORIES: Array[String] = [
 
 var _is_return_enabled: bool = true
 var _is_motion_enabled: bool = true
+var _is_crt_enabled: bool = true
 var _cursor_tween: Tween = null
 var _glow_tween: Tween = null
 
@@ -108,9 +109,25 @@ func set_motion_enabled(is_enabled: bool) -> Dictionary:
 	var ambient_fx: Control = get_node_or_null(NodePath("AmbientFx")) as Control
 	if ambient_fx == null or not ambient_fx.has_method(&"set_motion_enabled"):
 		return _make_error("环境效果组件缺少 set_motion_enabled() 接口。")
-	ambient_fx.call(&"set_motion_enabled", is_enabled)
+	ambient_fx.call(&"set_motion_enabled", is_enabled and _is_crt_enabled)
 	_refresh_screen_motion()
 	return {"ok": true}
+
+
+## CRT 开关与“减少闪烁”独立：关闭时隐藏终端光感、光标与设备噪声层，
+## 不改终端面板、文字、热点或任何运行时剧情状态。
+func set_crt_enabled(is_enabled: bool) -> Dictionary:
+	_is_crt_enabled = is_enabled
+	var ambient_fx: Control = get_node_or_null(NodePath("AmbientFx")) as Control
+	if ambient_fx == null or not ambient_fx.has_method(&"set_motion_enabled"):
+		return _make_error("环境效果组件缺少 set_motion_enabled() 接口。")
+	ambient_fx.call(&"set_motion_enabled", _is_motion_enabled and _is_crt_enabled)
+	_refresh_screen_motion()
+	return {"ok": true, "crt_enabled": _is_crt_enabled}
+
+
+func is_crt_enabled() -> bool:
+	return _is_crt_enabled
 
 
 func _ready() -> void:
@@ -187,13 +204,13 @@ func _configure_ambient_fx() -> void:
 
 
 func _refresh_screen_motion() -> void:
-	_screen_glow.visible = true
+	_screen_glow.visible = _is_crt_enabled
 	_screen_glow.modulate = Color(1.0, 1.0, 1.0, 0.72)
-	_screen_cursor.visible = true
+	_screen_cursor.visible = _is_crt_enabled
 	_screen_cursor.modulate = Color(1.0, 1.0, 1.0, 0.76)
 	_stop_cursor_tween()
 	_stop_glow_tween()
-	if not _is_motion_enabled:
+	if not _is_motion_enabled or not _is_crt_enabled:
 		return
 	# 极低频、低幅度的屏幕呼吸光，仅营造 CRT 通电感，不制造闪烁惊吓。
 	_glow_tween = create_tween().set_loops()

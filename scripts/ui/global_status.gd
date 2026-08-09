@@ -186,6 +186,8 @@ func _describe_active_reasons(reason_ids: PackedStringArray) -> String:
 				labels.append("存在需要处理的待播稿件")
 			"computer_open":
 				labels.append("正在查看电脑")
+			"settings_open":
+				labels.append("设置面板已打开（故事时间继续推进）")
 			_:
 				labels.append("未知原因：%s" % reason_id)
 	return "非空闲原因：%s。" % "、".join(labels)

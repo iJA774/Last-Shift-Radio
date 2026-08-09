@@ -21,6 +21,7 @@ const WORK_REASON_PHONE_CONNECTED: String = "phone_connected"
 const WORK_REASON_DIALOGUE_CHOICE: String = "dialogue_choice"
 const WORK_REASON_BROADCAST_PENDING: String = "broadcast_pending"
 const WORK_REASON_COMPUTER_OPEN: String = "computer_open"
+const WORK_REASON_SETTINGS_OPEN: String = "settings_open"
 
 const VIEW_STUDIO: String = "studio"
 const VIEW_PHONE: String = "phone"
@@ -38,6 +39,7 @@ const TRANSITION_PHONE_SECONDS: float = 0.20
 const TRANSITION_DOOR_SECONDS: float = 0.32
 const TRANSITION_RETURN_TO_STUDIO_SECONDS: float = 0.24
 const SAVE_SLOT_PANEL_SCENE: PackedScene = preload("res://scenes/ui/save_slot_panel.tscn")
+const SETTINGS_PANEL_SCENE: PackedScene = preload("res://scenes/ui/settings_panel.tscn")
 
 var _story_engine: RefCounted = null
 var _phone_system: RefCounted = null
@@ -54,6 +56,8 @@ var _is_view_transitioning: bool = false
 var _view_transition: Tween = null
 var _transition_serial: int = 0
 var _save_slot_panel: SaveSlotPanel = null
+var _settings_panel: SettingsPanel = null
+var _text_speed_multiplier: float = 1.0
 
 @onready var _studio_overview: Control = $ViewHost/StudioOverview
 @onready var _phone_closeup: Control = $ViewHost/PhoneCloseup
@@ -63,6 +67,7 @@ var _save_slot_panel: SaveSlotPanel = null
 @onready var _system_message: Label = $SystemMessagePanel/SystemMessage
 @onready var _system_message_panel: PanelContainer = $SystemMessagePanel
 @onready var _save_button: Button = $SaveButton
+@onready var _settings_button: Button = $SettingsButton
 
 
 func _ready() -> void:
@@ -75,6 +80,7 @@ func _ready() -> void:
 	}
 	_system_message_panel.visible = false
 	_save_button.pressed.connect(_on_save_button_pressed)
+	_settings_button.pressed.connect(_on_settings_button_pressed)
 	_show_view_internal(VIEW_STUDIO, true)
 
 
@@ -144,6 +150,9 @@ func bind_runtime(story_engine: RefCounted, phone_system: RefCounted, game_clock
 	var work_state_result: Dictionary = _sync_work_state_and_time_rate()
 	if not bool(work_state_result.get("ok", false)):
 		return work_state_result
+	var settings_result: Dictionary = apply_current_settings()
+	if not bool(settings_result.get("ok", false)):
+		return settings_result
 	return {"ok": true}
 
 
@@ -181,13 +190,80 @@ func set_motion_enabled(is_enabled: bool) -> Dictionary:
 	return {"ok": true, "motion_enabled": _is_motion_enabled}
 
 
+## 读取全局设置后由 Main 或场景初始化调用。该入口不写入设置、不接触
+## StoryEngine / GameClock / PhoneSystem，仅将公开快照映射为当前 UI 表现。
+func apply_current_settings() -> Dictionary:
+	var settings_manager: Node = get_tree().root.get_node_or_null(NodePath("SettingsManager")) as Node
+	if settings_manager == null or not settings_manager.has_method(&"get_settings_snapshot") or not settings_manager.has_method(&"is_settings_loaded"):
+		return _make_error("SettingsManager 不可用，无法应用当前设置。")
+	if not bool(settings_manager.call(&"is_settings_loaded")):
+		return _make_error("SettingsManager 未成功加载，不能把默认内存设置应用到夜班。")
+	var snapshot_value: Variant = settings_manager.call(&"get_settings_snapshot")
+	if not snapshot_value is Dictionary:
+		return _make_error("SettingsManager 未返回有效设置快照。")
+	return apply_settings_snapshot(snapshot_value as Dictionary)
+
+
+func apply_settings_snapshot(snapshot: Dictionary) -> Dictionary:
+	var validation: Dictionary = _validate_settings_snapshot(snapshot)
+	if not bool(validation.get("ok", false)):
+		return validation
+	var motion_result: Dictionary = set_motion_enabled(not bool(snapshot["reduce_flashing"]))
+	if not bool(motion_result.get("ok", false)):
+		return motion_result
+	if _computer_closeup == null or not _computer_closeup.has_method(&"set_crt_enabled"):
+		return _make_error("电脑近景缺少 set_crt_enabled() 接口。")
+	var crt_result: Variant = _computer_closeup.call(&"set_crt_enabled", bool(snapshot["crt_enabled"]))
+	if not _is_ok_result(crt_result):
+		return _make_error("应用 CRT 设置失败：%s" % str(crt_result))
+	if _phone_closeup == null or not _phone_closeup.has_method(&"set_text_speed_multiplier"):
+		return _make_error("电话近景缺少 set_text_speed_multiplier() 接口。")
+	var text_speed: float = float(snapshot["text_speed"])
+	var text_result: Variant = _phone_closeup.call(&"set_text_speed_multiplier", text_speed)
+	if not _is_ok_result(text_result):
+		return _make_error("应用逐字文字速度失败：%s" % str(text_result))
+	_text_speed_multiplier = text_speed
+	var font_size_percent: int = int(snapshot["font_size"])
+	var inherited_percent: int = int(get_meta(SettingsUiScale.META_APPLIED_PERCENT, font_size_percent))
+	var font_result: Dictionary = SettingsUiScale.apply_font_size(self, font_size_percent, inherited_percent)
+	if not bool(font_result.get("ok", false)):
+		return font_result
+	return {"ok": true}
+
+
+func get_text_speed_multiplier() -> float:
+	return _text_speed_multiplier
+
+
+func _validate_settings_snapshot(snapshot: Dictionary) -> Dictionary:
+	for field_name: String in ["text_speed", "font_size", "reduce_flashing", "crt_enabled"]:
+		if not snapshot.has(field_name):
+			return _make_error("设置快照缺少字段：%s。" % field_name)
+	if (typeof(snapshot["text_speed"]) != TYPE_FLOAT and typeof(snapshot["text_speed"]) != TYPE_INT) \
+		or typeof(snapshot["font_size"]) != TYPE_INT \
+		or typeof(snapshot["reduce_flashing"]) != TYPE_BOOL \
+		or typeof(snapshot["crt_enabled"]) != TYPE_BOOL:
+		return _make_error("设置快照字段类型无效。")
+	var text_speed: float = float(snapshot["text_speed"])
+	if is_nan(text_speed) or is_inf(text_speed) or text_speed < 0.25 or text_speed > 4.0:
+		return _make_error("设置快照 text_speed 超出 0.25 到 4.0。")
+	var font_size: int = int(snapshot["font_size"])
+	if font_size != 100 and font_size != 125:
+		return _make_error("设置快照 font_size 不是受支持的档位。")
+	return {"ok": true}
+
+
 ## 02:00 由 Main 传入 StoryEngine 已验证的权威播出记录。
 func show_ending(record: Dictionary) -> Dictionary:
 	if record.is_empty():
 		return _make_error("02:00 收束缺少权威未授权播出记录。")
 	_is_ending = true
 	_close_save_panel()
+	_close_settings_panel(false)
 	_save_button.visible = false
+	_settings_button.visible = false
+	if _phone_closeup.has_method(&"stop_text_presentation"):
+		_phone_closeup.call(&"stop_text_presentation")
 	# 02:00 具有最高优先级：先终止任何进行中的 Tween，再立即锁到电脑视图。
 	_cancel_view_transition()
 	var computer_result: Variant = _computer_closeup.call(&"show_unauthorized_broadcast", record)
@@ -328,11 +404,18 @@ func is_save_panel_open() -> bool:
 	return _save_slot_panel != null and is_instance_valid(_save_slot_panel)
 
 
+func is_settings_panel_open() -> bool:
+	return _settings_panel != null and is_instance_valid(_settings_panel)
+
+
 ## 由应用壳在替换本局 GameScreen 前调用。视图节点随后会被销毁；此处只清理
 ## 本控制器持有的运行时引用和自身回调，不能重置 StoryEngine 或 PhoneSystem。
 func release_runtime() -> Dictionary:
 	_cancel_view_transition()
 	_close_save_panel()
+	_close_settings_panel(false)
+	if _phone_closeup != null and _phone_closeup.has_method(&"stop_text_presentation"):
+		_phone_closeup.call(&"stop_text_presentation")
 	_disconnect_view_signals()
 	_disconnect_work_state_signals()
 	_story_engine = null
@@ -480,6 +563,8 @@ func _sync_work_state_and_time_rate() -> Dictionary:
 			return _make_error("PhoneSystem 返回未知状态：%s。" % phone_state_name)
 	if _current_view_id == VIEW_COMPUTER:
 		next_reason_ids.append(WORK_REASON_COMPUTER_OPEN)
+	if is_settings_panel_open():
+		next_reason_ids.append(WORK_REASON_SETTINGS_OPEN)
 	var pending_result: Dictionary = _has_pending_player_broadcast()
 	if not bool(pending_result.get("ok", false)):
 		return pending_result
@@ -715,6 +800,52 @@ func _on_save_button_pressed() -> void:
 	add_child(_save_slot_panel)
 	_refresh_save_panel_availability()
 	save_panel_opened.emit()
+
+
+func _on_settings_button_pressed() -> void:
+	if _is_ending:
+		show_system_error("02:00 强制收束中不能打开设置。")
+		return
+	if is_settings_panel_open():
+		_close_settings_panel()
+		return
+	var settings_manager: Node = get_tree().root.get_node_or_null(NodePath("SettingsManager")) as Node
+	if settings_manager == null:
+		show_system_error("SettingsManager 不可用，无法打开设置。")
+		return
+	_settings_panel = SETTINGS_PANEL_SCENE.instantiate() as SettingsPanel
+	if _settings_panel == null:
+		show_system_error("无法实例化设置界面。")
+		return
+	var bind_result: Dictionary = _settings_panel.bind_settings_manager(settings_manager)
+	if not bool(bind_result.get("ok", false)):
+		_settings_panel.queue_free()
+		_settings_panel = null
+		show_system_error("无法绑定设置界面：%s" % String(bind_result.get("message", "未知原因。")))
+		return
+	_settings_panel.z_index = 60
+	_settings_panel.closed.connect(_on_settings_panel_closed)
+	add_child(_settings_panel)
+	var snapshot_value: Variant = settings_manager.call(&"get_settings_snapshot")
+	var font_size_percent: int = int((snapshot_value as Dictionary).get("font_size", 100)) if snapshot_value is Dictionary else 100
+	var font_result: Dictionary = SettingsUiScale.apply_font_size(_settings_panel, font_size_percent, font_size_percent)
+	if not bool(font_result.get("ok", false)):
+		show_system_error("应用设置界面字体失败：%s" % String(font_result.get("message", "未知原因。")))
+	_sync_work_state_or_show_error()
+
+
+func _on_settings_panel_closed() -> void:
+	_close_settings_panel()
+
+
+func _close_settings_panel(sync_work_state: bool = true) -> void:
+	if _settings_panel == null or not is_instance_valid(_settings_panel):
+		_settings_panel = null
+		return
+	_settings_panel.queue_free()
+	_settings_panel = null
+	if sync_work_state and _game_clock != null and is_instance_valid(_game_clock) and not _is_ending:
+		_sync_work_state_or_show_error()
 
 
 func _on_save_slot_requested(slot_id: String) -> void:

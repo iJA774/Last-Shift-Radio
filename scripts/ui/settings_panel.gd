@@ -1,0 +1,312 @@
+class_name SettingsPanel
+extends Control
+## 设置面板只展示并提交 SettingsManager 的全局设置。
+##
+## 它不缓存可写设置，也不把选项放进剧情存档；任何控件变更均直接调用
+## SettingsManager 的 typed setter，随后从其公开快照回填显示。
+
+signal closed
+
+const SETTING_IDS: PackedStringArray = [
+	"master_volume",
+	"ambience_volume",
+	"ui_phone_volume",
+	"window_mode",
+	"text_speed",
+	"font_size",
+	"reduce_flashing",
+	"crt_enabled",
+]
+
+var _settings_manager: Node = null
+var _is_refreshing: bool = false
+var _is_manager_connected: bool = false
+
+@onready var _master_slider: HSlider = %MasterSlider
+@onready var _master_value: Label = %MasterValue
+@onready var _ambience_slider: HSlider = %AmbienceSlider
+@onready var _ambience_value: Label = %AmbienceValue
+@onready var _ui_phone_slider: HSlider = %UiPhoneSlider
+@onready var _ui_phone_value: Label = %UiPhoneValue
+@onready var _window_mode_option: OptionButton = %WindowModeOption
+@onready var _text_speed_slider: HSlider = %TextSpeedSlider
+@onready var _text_speed_value: Label = %TextSpeedValue
+@onready var _font_size_option: OptionButton = %FontSizeOption
+@onready var _reduce_flashing_check: CheckBox = %ReduceFlashingCheck
+@onready var _crt_enabled_check: CheckBox = %CrtEnabledCheck
+@onready var _message_label: Label = %MessageLabel
+@onready var _close_button: Button = %CloseButton
+@onready var _reset_button: Button = %ResetButton
+
+
+func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS
+	_configure_options()
+	_connect_controls()
+	_refresh_from_manager()
+
+
+func _exit_tree() -> void:
+	_disconnect_manager()
+
+
+func bind_settings_manager(settings_manager: Node) -> Dictionary:
+	var validation: Dictionary = _validate_settings_manager(settings_manager)
+	if not bool(validation.get("ok", false)):
+		return validation
+	_disconnect_manager()
+	_settings_manager = settings_manager
+	_connect_manager()
+	_refresh_from_manager()
+	return {"ok": true}
+
+
+func get_settings_manager() -> Node:
+	return _settings_manager
+
+
+func _configure_options() -> void:
+	_window_mode_option.clear()
+	_window_mode_option.add_item("窗口", 0)
+	_window_mode_option.set_item_metadata(0, "windowed")
+	_window_mode_option.add_item("全屏", 1)
+	_window_mode_option.set_item_metadata(1, "fullscreen")
+	_font_size_option.clear()
+	_font_size_option.add_item("标准（100%）", 0)
+	_font_size_option.set_item_metadata(0, 100)
+	_font_size_option.add_item("放大（125%）", 1)
+	_font_size_option.set_item_metadata(1, 125)
+	_message_label.visible = false
+
+
+func _connect_controls() -> void:
+	_master_slider.value_changed.connect(_on_master_volume_changed)
+	_ambience_slider.value_changed.connect(_on_ambience_volume_changed)
+	_ui_phone_slider.value_changed.connect(_on_ui_phone_volume_changed)
+	_window_mode_option.item_selected.connect(_on_window_mode_selected)
+	_text_speed_slider.value_changed.connect(_on_text_speed_changed)
+	_font_size_option.item_selected.connect(_on_font_size_selected)
+	_reduce_flashing_check.toggled.connect(_on_reduce_flashing_toggled)
+	_crt_enabled_check.toggled.connect(_on_crt_enabled_toggled)
+	_close_button.pressed.connect(_on_close_pressed)
+	_reset_button.pressed.connect(_on_reset_pressed)
+
+
+func _connect_manager() -> void:
+	if _settings_manager == null or not is_instance_valid(_settings_manager) or _is_manager_connected:
+		return
+	var callback: Callable = Callable(self, "_on_settings_applied")
+	if not _settings_manager.is_connected(&"settings_applied", callback):
+		var connect_result: Error = _settings_manager.connect(&"settings_applied", callback)
+		if connect_result != OK:
+			_show_message("无法监听设置变更（错误码=%d）。" % connect_result, true)
+			return
+	_is_manager_connected = true
+
+
+func _disconnect_manager() -> void:
+	if _settings_manager != null and is_instance_valid(_settings_manager) and _is_manager_connected:
+		var callback: Callable = Callable(self, "_on_settings_applied")
+		if _settings_manager.is_connected(&"settings_applied", callback):
+			_settings_manager.disconnect(&"settings_applied", callback)
+	_is_manager_connected = false
+
+
+func _validate_settings_manager(settings_manager: Node) -> Dictionary:
+	if settings_manager == null or not is_instance_valid(settings_manager):
+		return _make_error("SettingsManager 自动加载节点不可用。")
+	var required_methods: PackedStringArray = [
+		"get_settings_snapshot",
+		"is_settings_loaded",
+		"get_last_load_result",
+		"reset_to_defaults",
+		"set_master_volume",
+		"set_ambience_volume",
+		"set_ui_phone_volume",
+		"set_window_mode",
+		"set_text_speed",
+		"set_font_size",
+		"set_reduce_flashing_enabled",
+		"set_crt_enabled",
+	]
+	for method_name: String in required_methods:
+		if not settings_manager.has_method(method_name):
+			return _make_error("SettingsManager 缺少 %s() 接口。" % method_name)
+	if not settings_manager.has_signal(&"settings_applied"):
+		return _make_error("SettingsManager 缺少 settings_applied 信号。")
+	return {"ok": true}
+
+
+func _refresh_from_manager() -> void:
+	if not is_node_ready():
+		return
+	if _settings_manager == null or not is_instance_valid(_settings_manager):
+		_set_controls_enabled(false)
+		_show_message("设置系统不可用。", true)
+		return
+	var snapshot_value: Variant = _settings_manager.call(&"get_settings_snapshot")
+	if not snapshot_value is Dictionary:
+		_set_controls_enabled(false)
+		_show_message("设置系统未返回有效设置快照。", true)
+		return
+	var snapshot: Dictionary = snapshot_value as Dictionary
+	var validation: Dictionary = _validate_snapshot(snapshot)
+	if not bool(validation.get("ok", false)):
+		_set_controls_enabled(false)
+		_show_message(String(validation.get("message", "设置快照无效。")), true)
+		return
+	_is_refreshing = true
+	_master_slider.value = float(snapshot["master_volume"])
+	_ambience_slider.value = float(snapshot["ambience_volume"])
+	_ui_phone_slider.value = float(snapshot["ui_phone_volume"])
+	_select_option_by_metadata(_window_mode_option, String(snapshot["window_mode"]))
+	_text_speed_slider.value = float(snapshot["text_speed"])
+	_select_option_by_metadata(_font_size_option, int(snapshot["font_size"]))
+	_reduce_flashing_check.button_pressed = bool(snapshot["reduce_flashing"])
+	_crt_enabled_check.button_pressed = bool(snapshot["crt_enabled"])
+	_update_value_labels()
+	_is_refreshing = false
+	if not bool(_settings_manager.call(&"is_settings_loaded")):
+		_set_controls_enabled(false, true)
+		var load_result: Variant = _settings_manager.call(&"get_last_load_result")
+		var reason: String = String((load_result as Dictionary).get("message", "设置文件损坏或不可读取。")) if load_result is Dictionary else "设置文件损坏或不可读取。"
+		_show_message("设置文件读取失败：%s\n普通设置已禁用。请点击“恢复默认设置”创建新的设置文件。" % reason, true)
+		return
+	_set_controls_enabled(true)
+	_message_label.visible = false
+
+
+func _validate_snapshot(snapshot: Dictionary) -> Dictionary:
+	for setting_id: String in SETTING_IDS:
+		if not snapshot.has(setting_id):
+			return _make_error("设置快照缺少字段：%s。" % setting_id)
+	if typeof(snapshot["master_volume"]) not in [TYPE_FLOAT, TYPE_INT] \
+		or typeof(snapshot["ambience_volume"]) not in [TYPE_FLOAT, TYPE_INT] \
+		or typeof(snapshot["ui_phone_volume"]) not in [TYPE_FLOAT, TYPE_INT] \
+		or typeof(snapshot["text_speed"]) not in [TYPE_FLOAT, TYPE_INT] \
+		or typeof(snapshot["window_mode"]) != TYPE_STRING \
+		or typeof(snapshot["font_size"]) != TYPE_INT \
+		or typeof(snapshot["reduce_flashing"]) != TYPE_BOOL \
+		or typeof(snapshot["crt_enabled"]) != TYPE_BOOL:
+		return _make_error("设置快照字段类型无效。")
+	return {"ok": true}
+
+
+func _set_controls_enabled(is_enabled: bool, keep_reset_enabled: bool = false) -> void:
+	for control: Control in [
+		_master_slider,
+		_ambience_slider,
+		_ui_phone_slider,
+		_window_mode_option,
+		_text_speed_slider,
+		_font_size_option,
+		_reduce_flashing_check,
+		_crt_enabled_check,
+	]:
+		if control is Range:
+			(control as Range).editable = is_enabled
+		elif control is BaseButton:
+			(control as BaseButton).disabled = not is_enabled
+		if not is_enabled:
+			control.tooltip_text = "不可用：设置系统未准备完成。"
+	_reset_button.disabled = not is_enabled and not keep_reset_enabled
+	_reset_button.tooltip_text = "恢复默认设置并重建设置文件。" if keep_reset_enabled else ("不可用：设置系统未准备完成。" if not is_enabled else "恢复默认设置。")
+
+
+func _select_option_by_metadata(option: OptionButton, value: Variant) -> void:
+	for index: int in option.item_count:
+		if option.get_item_metadata(index) == value:
+			option.select(index)
+			return
+	push_error("[设置界面][option_metadata_missing] 选项缺少值：%s。" % str(value))
+
+
+func _update_value_labels() -> void:
+	_master_value.text = _format_percent(_master_slider.value)
+	_ambience_value.text = _format_percent(_ambience_slider.value)
+	_ui_phone_value.text = _format_percent(_ui_phone_slider.value)
+	_text_speed_value.text = "%.2f×" % _text_speed_slider.value
+
+
+func _format_percent(value: float) -> String:
+	return "%d%%" % roundi(clampf(value, 0.0, 1.0) * 100.0)
+
+
+func _submit_setter(method_name: StringName, arguments: Array) -> void:
+	if _is_refreshing:
+		return
+	if _settings_manager == null or not is_instance_valid(_settings_manager):
+		_show_message("设置系统不可用，无法保存变更。", true)
+		return
+	var result: Variant = _settings_manager.callv(method_name, arguments)
+	if not result is Dictionary or not bool((result as Dictionary).get("ok", false)):
+		var reason: String = String((result as Dictionary).get("message", "SettingsManager 未返回成功结果。")) if result is Dictionary else "SettingsManager 未返回 Dictionary 结果。"
+		_show_message("应用设置失败：%s" % reason, true)
+		_refresh_from_manager()
+		return
+	_refresh_from_manager()
+
+
+func _show_message(message: String, is_error: bool) -> void:
+	if not is_node_ready():
+		return
+	_message_label.text = message
+	_message_label.modulate = Color(1.0, 0.72, 0.68, 1.0) if is_error else Color(0.70, 0.93, 0.82, 1.0)
+	_message_label.visible = not message.strip_edges().is_empty()
+
+
+func _on_settings_applied(_snapshot: Dictionary) -> void:
+	_refresh_from_manager()
+
+
+func _on_master_volume_changed(value: float) -> void:
+	_update_value_labels()
+	_submit_setter(&"set_master_volume", [value])
+
+
+func _on_ambience_volume_changed(value: float) -> void:
+	_update_value_labels()
+	_submit_setter(&"set_ambience_volume", [value])
+
+
+func _on_ui_phone_volume_changed(value: float) -> void:
+	_update_value_labels()
+	_submit_setter(&"set_ui_phone_volume", [value])
+
+
+func _on_window_mode_selected(index: int) -> void:
+	if index < 0:
+		return
+	_submit_setter(&"set_window_mode", [String(_window_mode_option.get_item_metadata(index))])
+
+
+func _on_text_speed_changed(value: float) -> void:
+	_update_value_labels()
+	_submit_setter(&"set_text_speed", [value])
+
+
+func _on_font_size_selected(index: int) -> void:
+	if index < 0:
+		return
+	_submit_setter(&"set_font_size", [int(_font_size_option.get_item_metadata(index))])
+
+
+func _on_reduce_flashing_toggled(is_enabled: bool) -> void:
+	_submit_setter(&"set_reduce_flashing_enabled", [is_enabled])
+
+
+func _on_crt_enabled_toggled(is_enabled: bool) -> void:
+	_submit_setter(&"set_crt_enabled", [is_enabled])
+
+
+func _on_reset_pressed() -> void:
+	_submit_setter(&"reset_to_defaults", [])
+
+
+func _on_close_pressed() -> void:
+	closed.emit()
+
+
+func _make_error(message: String) -> Dictionary:
+	push_error("[设置界面][settings_panel_error] %s" % message)
+	return {"ok": false, "message": message}
