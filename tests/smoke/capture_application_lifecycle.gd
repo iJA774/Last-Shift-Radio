@@ -51,6 +51,20 @@ func _capture() -> void:
 	if not await _capture_large_font_page(main, "large_font_ending.png", "结束页"):
 		quit(1)
 		return
+	# 夜班返回主界面复用相同加载画面，但目标必须是 MAIN_MENU，不能启动新班次。
+	main.call(&"return_to_main_menu")
+	await _wait_frames(2)
+	main.call(&"request_start_shift")
+	await _wait_frames(2)
+	main.call(&"finish_loading_for_verification")
+	await _wait_frames(2)
+	main.call(&"return_to_main_menu")
+	await create_timer(0.60).timeout
+	if not _save_viewport("return_to_menu_loading_1920x1080.png"):
+		quit(1)
+		return
+	main.call(&"finish_loading_for_verification")
+	await _wait_frames(2)
 	print("[测试][ApplicationLifecycleCapture] 已生成第四阶段默认与放大字体 1920×1080 应用页面截图。")
 	quit(0)
 

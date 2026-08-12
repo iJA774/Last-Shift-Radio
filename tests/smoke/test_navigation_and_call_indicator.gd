@@ -120,13 +120,13 @@ func _run() -> void:
 		game_screen.call(&"_close_save_panel")
 		_assert_true(bool(game_screen.toggle_control_bar().get("ok", false)), "关闭存档后必须能再次打开 ESC 控制栏。")
 		control_bar = game_screen.get_node("ShiftControlBar") as Control
-		var main_exit_callback: Callable = Callable(app, "_on_exit_requested")
+		var main_exit_callback: Callable = Callable(app, "_on_shift_return_to_menu_requested")
 		if game_screen.is_connected(&"exit_requested", main_exit_callback):
 			game_screen.disconnect(&"exit_requested", main_exit_callback)
 		game_screen.connect(&"exit_requested", Callable(self, "_on_game_exit_requested"))
 		(control_bar.get_node("Backdrop/MenuArt/ActionHotspots/ExitButton") as Button).emit_signal(&"pressed")
-		_assert_equal(_exit_signal_count, 1, "退出按钮必须由 GameScreen 发出退出意图，而非返回主菜单。")
-		_assert_equal(String(app.call(&"get_application_state_name")), "SHIFT", "截获退出意图时不应伪造返回主菜单。")
+		_assert_equal(_exit_signal_count, 1, "返回主界面按钮必须先由 GameScreen 发出意图。")
+		_assert_equal(String(app.call(&"get_application_state_name")), "SHIFT", "截获返回意图时不应由 GameScreen 自行切换应用页面。")
 	_press_escape(game_screen)
 	_assert_true(game_screen.is_control_bar_open(), "退出意图后仍必须能用 ESC 打开控制栏。")
 	_press_escape(game_screen)

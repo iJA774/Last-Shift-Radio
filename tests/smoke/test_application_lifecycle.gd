@@ -8,6 +8,8 @@ const MAIN_SCENE: PackedScene = preload("res://scenes/app/main.tscn")
 var _has_failed: bool = false
 var _app: Control = null
 var _shift_started_count: int = 0
+var _main_menu_exit_intent_count: int = 0
+var _observe_primary_shift_started: bool = true
 
 
 func _init() -> void:
@@ -135,8 +137,60 @@ func _run() -> void:
 	_assert_equal(app.call(&"get_application_state_name"), "MAIN_MENU", "ENDING 必须可返回主菜单。")
 	_assert_true(not bool(app.call(&"has_active_runtime")), "返回主菜单必须清理本局运行时。")
 	_assert_true(not bool(game_clock.call(&"is_running")), "返回主菜单后 GameClock 必须保持不运行。")
+	_observe_primary_shift_started = false
+	await _test_shift_return_to_main_menu(game_clock)
 
 	_finish()
+
+
+func _test_shift_return_to_main_menu(game_clock: Node) -> void:
+	var return_app: Control = MAIN_SCENE.instantiate() as Control
+	_assert_true(return_app != null, "夜班返回验证必须能实例化独立 Main。")
+	if return_app == null:
+		return
+	root.add_child(return_app)
+	await process_frame
+	return_app.call(&"request_start_shift")
+	await process_frame
+	return_app.call(&"finish_loading_for_verification")
+	await process_frame
+	var return_screen: GameScreen = return_app.call(&"get_current_game_screen") as GameScreen
+	_assert_true(return_screen != null and String(return_app.call(&"get_application_state_name")) == "SHIFT", "返回验证必须先进入正常夜班。")
+	if return_screen == null:
+		return_app.queue_free()
+		return
+	return_screen.toggle_control_bar()
+	var control_bar: Control = return_screen.get_node_or_null(NodePath("ShiftControlBar")) as Control
+	var exit_button: Button = control_bar.get_node_or_null(NodePath("Backdrop/MenuArt/ActionHotspots/ExitButton")) as Button if control_bar != null else null
+	_assert_true(exit_button != null, "夜班 ESC 菜单必须保留返回主界面热点。")
+	if exit_button != null:
+		exit_button.emit_signal(&"pressed")
+	await process_frame
+	_assert_equal(return_app.call(&"get_application_state_name"), "LOADING", "夜班退出必须先进入 LOADING，而非直接退出程序。")
+	_assert_true(not bool(return_app.call(&"has_active_runtime")), "夜班返回加载期间必须销毁本局运行时。")
+	_assert_true(not bool(game_clock.call(&"is_running")), "夜班返回加载期间 GameClock 必须停止。")
+	return_app.call(&"finish_loading_for_verification")
+	await process_frame
+	_assert_equal(return_app.call(&"get_application_state_name"), "MAIN_MENU", "夜班返回加载完成后必须到达 MAIN_MENU。")
+	_assert_true(not bool(return_app.call(&"has_active_runtime")) and not bool(game_clock.call(&"is_running")), "夜班返回主菜单后不得遗留运行时或时钟。")
+	var main_menu: Control = return_app.get_node_or_null(NodePath("ScreenHost/MainMenu")) as Control
+	var main_exit: Button = main_menu.get_node_or_null(NodePath("Content/MenuPanel/Margin/Layout/ExitButton")) as Button if main_menu != null else null
+	var quit_callback: Callable = Callable(return_app, "_on_exit_requested")
+	if main_menu != null and main_menu.is_connected(&"exit_requested", quit_callback):
+		main_menu.disconnect(&"exit_requested", quit_callback)
+		main_menu.connect(&"exit_requested", Callable(self, "_on_main_menu_exit_intent"))
+	_assert_true(main_exit != null, "主菜单必须保留真正退出程序的独立按钮。")
+	if main_exit != null:
+		main_exit.emit_signal(&"pressed")
+		# bong_001.wav 约 0.132 秒，主菜单退出会保留听觉反馈后再提交退出意图。
+		await create_timer(0.16).timeout
+	_assert_equal(_main_menu_exit_intent_count, 1, "替换测试接收者后，主菜单退出按钮必须仍发出退出意图。")
+	root.remove_child(return_app)
+	return_app.queue_free()
+
+
+func _on_main_menu_exit_intent() -> void:
+	_main_menu_exit_intent_count += 1
 
 
 func assert_application_ending(app: Control) -> void:
@@ -146,6 +200,8 @@ func assert_application_ending(app: Control) -> void:
 
 
 func _on_shift_started(start_tick: int) -> void:
+	if not _observe_primary_shift_started:
+		return
 	_shift_started_count += 1
 	_assert_equal(start_tick, 0, "shift_started 必须从 01:00 的 tick 0 发出。")
 	if _app == null:

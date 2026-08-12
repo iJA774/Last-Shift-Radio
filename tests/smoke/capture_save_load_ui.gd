@@ -24,9 +24,13 @@ func _capture() -> void:
 		quit(1)
 		return
 	main.call(&"request_load_game")
-	await process_frame
-	await process_frame
+	await create_timer(0.30).timeout
 	if not _save_viewport("phase7_load_slots_1920x1080.png"):
+		quit(1)
+		return
+	_apply_font_scale(main, 1.25)
+	await process_frame
+	if not _save_viewport("phase7_load_slots_125pct_1920x1080.png"):
 		quit(1)
 		return
 	main.call(&"return_to_main_menu")
@@ -41,8 +45,8 @@ func _capture() -> void:
 		quit(1)
 		return
 	screen.call(&"_open_save_panel")
-	await process_frame
-	await process_frame
+	# 存档页自身有 0.25 秒渐入；等待其完成，避免视觉留档把底层值班画面误认为旧版 UI。
+	await create_timer(0.30).timeout
 	if not _save_viewport("phase7_save_slots_1920x1080.png"):
 		quit(1)
 		return

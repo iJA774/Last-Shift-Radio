@@ -25,6 +25,9 @@ default_bus_layout="res://default_bus_layout.tres"
 GameClock="*res://scripts/core/game_clock.gd"
 SettingsManager="*res://scripts/systems/settings_manager.gd"
 AudioManager="*res://scripts/systems/audio_manager.gd"
+UiSoundPlayer="*res://scripts/systems/ui_sound_player.gd"
+BgmPlayer="*res://scripts/systems/bgm_player.gd"
+PhoneAudioPlayer="*res://scripts/systems/phone_audio_player.gd"
 
 [display]
 

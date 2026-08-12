@@ -27,6 +27,12 @@ enum AppState {
 	ENDING,
 }
 
+## 同一张加载页面服务于两个已确认目的；完成时不得一律启动新夜班。
+enum LoadingTarget {
+	START_SHIFT,
+	MAIN_MENU,
+}
+
 @export_file("*.json") var content_source_path: String = TEST_NIGHT_STORY_PATH
 @export_range(0.05, 3.0, 0.05) var ending_transition_delay_seconds: float = DEFAULT_ENDING_TRANSITION_DELAY_SECONDS
 
@@ -42,6 +48,7 @@ var _load_slot_panel: SaveSlotPanel = null
 var _settings_manager: Node = null
 var _settings_panel: SettingsPanel = null
 var _loading_screen: Control = null
+var _loading_target: LoadingTarget = LoadingTarget.START_SHIFT
 var _is_settings_signal_connected: bool = false
 var _has_settings_load_error: bool = false
 var _is_shift_started: bool = false
@@ -217,7 +224,7 @@ func _close_settings_panel() -> void:
 func request_start_shift() -> void:
 	if _app_state != AppState.MAIN_MENU:
 		return
-	_show_loading_screen()
+	_show_loading_screen(LoadingTarget.START_SHIFT)
 
 
 ## 仅供自动化测试跳过视觉等待；玩家流程不会暴露确认按钮。
@@ -228,9 +235,11 @@ func finish_loading_for_verification() -> void:
 
 
 func return_to_main_menu() -> void:
-	if _app_state != AppState.LOADING and _app_state != AppState.ENDING and _app_state != AppState.LOAD_SLOTS:
+	if _app_state == AppState.SHIFT:
+		_show_loading_screen(LoadingTarget.MAIN_MENU)
 		return
-	_show_main_menu()
+	if _app_state == AppState.LOADING or _app_state == AppState.ENDING or _app_state == AppState.LOAD_SLOTS:
+		_show_main_menu()
 
 
 func restart_shift() -> void:
@@ -256,7 +265,7 @@ func _show_main_menu() -> void:
 	print("[应用][state] 已进入 MAIN_MENU；GameClock 不运行且本局运行时已清理。")
 
 
-func _show_loading_screen() -> void:
+func _show_loading_screen(target: LoadingTarget) -> void:
 	_cancel_pending_ending_transition()
 	_close_settings_panel()
 	_dispose_runtime()
@@ -266,15 +275,20 @@ func _show_loading_screen() -> void:
 		return
 	loading.transition_finished.connect(_on_loading_transition_finished)
 	_loading_screen = loading
+	_loading_target = target
 	_replace_screen(loading)
 	_app_state = AppState.LOADING
-	print("[应用][state] 已进入 LOADING；本局运行时与 GameClock 尚未启动。")
+	print("[应用][state] 已进入 LOADING；target=%s，本局运行时已清理且 GameClock 已停止。" % LoadingTarget.keys()[target])
 
 
 func _on_loading_transition_finished() -> void:
 	if _app_state != AppState.LOADING:
 		return
+	var target: LoadingTarget = _loading_target
 	_loading_screen = null
+	if target == LoadingTarget.MAIN_MENU:
+		_show_main_menu()
+		return
 	_start_new_shift()
 
 
@@ -501,6 +515,7 @@ func _restore_loaded_shift(document: Dictionary) -> Dictionary:
 	_app_state = AppState.SHIFT
 	_is_shift_started = true
 	_commit_staged_game_screen()
+	_bind_phone_audio(phone)
 	var resume_result: Variant = _game_clock.call(&"resume_restored_clock")
 	if not _is_ok_result(resume_result):
 		_is_creating_shift = false
@@ -590,6 +605,7 @@ func _start_new_shift() -> void:
 		return
 	if not _connect_ending_signal():
 		return
+	_bind_phone_audio(_phone_system)
 	# 现在 StoryEngine、PhoneSystem、GameScreen 与 02:00 回调均完整绑定，
 	# 所有成功路径才在此处发送一次正式 shift_started。
 	_app_state = AppState.SHIFT
@@ -609,7 +625,7 @@ func _connect_game_screen_save_signals() -> void:
 	var open_callback: Callable = Callable(self, "_on_shift_save_panel_opened")
 	if not _game_screen.is_connected(&"save_panel_opened", open_callback):
 		_game_screen.connect(&"save_panel_opened", open_callback)
-	var exit_callback: Callable = Callable(self, "_on_exit_requested")
+	var exit_callback: Callable = Callable(self, "_on_shift_return_to_menu_requested")
 	if not _game_screen.is_connected(&"exit_requested", exit_callback):
 		_game_screen.connect(&"exit_requested", exit_callback)
 
@@ -741,6 +757,7 @@ func _remove_game_screen() -> void:
 
 func _dispose_runtime() -> void:
 	_cancel_pending_ending_transition()
+	_unbind_phone_audio()
 	_remove_game_screen()
 	if _story_engine != null:
 		var ending_callback: Callable = Callable(self, "_on_ending_forced")
@@ -758,6 +775,25 @@ func _dispose_runtime() -> void:
 			var stop_result: Variant = _game_clock.call(&"stop_for_runtime_disposal")
 			if not _is_ok_result(stop_result):
 				push_error("[应用][clock_dispose_failed] %s" % _describe_result(stop_result))
+
+
+## 电话音效绑定在本局运行时正式提交后才发生：隐藏的读取 staging 即使恢复为
+## RINGING，也绝不能在校验失败或玩家仍停在槽位页时发出声音。
+func _bind_phone_audio(phone_system: RefCounted) -> void:
+	var player: Node = get_tree().root.get_node_or_null(NodePath("PhoneAudioPlayer")) as Node
+	if player == null or not player.has_method(&"bind_phone_system"):
+		push_error("[音频][phone_audio_player_missing] 未找到 PhoneAudioPlayer，电话音效不可用。")
+		return
+	var result: Variant = player.call(&"bind_phone_system", phone_system)
+	if not _is_ok_result(result):
+		push_error("[音频][phone_audio_bind_failed] %s" % _describe_result(result))
+
+
+func _unbind_phone_audio() -> void:
+	var player: Node = get_tree().root.get_node_or_null(NodePath("PhoneAudioPlayer")) as Node
+	if player == null or not player.has_method(&"unbind_phone_system"):
+		return
+	player.call(&"unbind_phone_system")
 
 
 func _cancel_pending_ending_transition() -> void:
@@ -784,8 +820,16 @@ func _show_shell_error(message: String) -> void:
 	push_error("[应用][lifecycle_error] %s" % message)
 
 
+func _on_shift_return_to_menu_requested() -> void:
+	if _app_state != AppState.SHIFT:
+		return
+	print("[应用][shift_return_requested] 玩家请求从夜班返回主界面。")
+	_show_loading_screen(LoadingTarget.MAIN_MENU)
+
+
+## 仅主菜单的“退出游戏”调用 SceneTree.quit；夜班菜单不会连接到此路由。
 func _on_exit_requested() -> void:
-	print("[应用][exit_requested] 玩家请求退出游戏。")
+	print("[应用][main_menu_exit_requested] 玩家请求退出程序。")
 	get_tree().quit()
 
 

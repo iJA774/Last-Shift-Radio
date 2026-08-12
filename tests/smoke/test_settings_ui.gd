@@ -39,7 +39,7 @@ func _run() -> void:
 	_cleanup_test_files()
 	_assert_ok(settings_manager.call(&"set_settings_path_for_verification", SETTINGS_PATH), "必须能切换到隔离设置文件。")
 
-	# 损坏文件不能被 Main 当作正常默认加载；设置页必须保留“恢复默认”修复路径。
+	# 损坏文件不能被 Main 当作正常默认加载；仅在故障时显示底部修复入口，不能覆盖模型栏。
 	var damaged_file: FileAccess = FileAccess.open(SETTINGS_PATH, FileAccess.WRITE)
 	_assert_true(damaged_file != null, "必须能写入隔离损坏设置夹具。")
 	if damaged_file != null:
@@ -67,17 +67,40 @@ func _run() -> void:
 	var recovery_panel: SettingsPanel = recovery_app.get_node_or_null(NodePath("OverlayHost/SettingsPanel")) as SettingsPanel
 	_assert_true(recovery_panel != null, "损坏设置时必须仍显示设置覆盖层。")
 	if recovery_panel != null:
-		var master_slider: HSlider = recovery_panel.get_node_or_null(NodePath("Center/Panel/Margin/Layout/ContentScroll/SettingsRows/MasterRow/ControlRow/MasterSlider")) as HSlider
-		var reset_button: Button = recovery_panel.get_node_or_null(NodePath("Center/Panel/Margin/Layout/Actions/ResetButton")) as Button
+		var master_slider: HSlider = recovery_panel.get_node_or_null(NodePath("Controls/MasterSlider")) as HSlider
+		var reset_button: Button = recovery_panel.get_node_or_null(NodePath("Controls/RecoveryResetButton")) as Button
+		var setting_art: TextureRect = recovery_panel.get_node_or_null(NodePath("Background")) as TextureRect
 		_assert_true(master_slider != null and not master_slider.editable, "损坏设置时普通控件必须禁用。")
-		_assert_true(reset_button != null and not reset_button.disabled, "损坏设置时“恢复默认设置”必须保留可用。")
+		_assert_true(reset_button != null and reset_button.visible and not reset_button.disabled, "损坏设置时底部“修复设置”必须保留可用。")
+		_assert_true(setting_art != null and setting_art.texture != null and setting_art.texture.resource_path == "res://UI美术/设置页面.png", "设置页必须使用完整设置页面美术。")
+		_assert_true(recovery_panel.get_node_or_null(NodePath("Controls/AdvancedShade")) == null and recovery_panel.get_node_or_null(NodePath("Controls/AdvancedPanel")) == null, "设置页不得覆盖素材模型栏。")
 		if reset_button != null:
 			reset_button.emit_signal(&"pressed")
 	await process_frame
 	_assert_true(bool(settings_manager.call(&"is_settings_loaded")), "恢复默认设置后必须重新得到已加载的设置文件。")
 	if recovery_panel != null:
-		var recovered_slider: HSlider = recovery_panel.get_node_or_null(NodePath("Center/Panel/Margin/Layout/ContentScroll/SettingsRows/MasterRow/ControlRow/MasterSlider")) as HSlider
+		var recovered_slider: HSlider = recovery_panel.get_node_or_null(NodePath("Controls/MasterSlider")) as HSlider
 		_assert_true(recovered_slider != null and recovered_slider.editable, "恢复默认后普通设置控件必须重新启用。")
+		var hidden_recovery: Button = recovery_panel.get_node_or_null(NodePath("Controls/RecoveryResetButton")) as Button
+		_assert_true(hidden_recovery != null and not hidden_recovery.visible, "恢复成功后修复入口必须隐藏，不能常态占用页面。")
+		_assert_true(recovery_panel.get_node_or_null(NodePath("Controls/DisableCrtState")) == null and recovery_panel.get_node_or_null(NodePath("Controls/ReduceFlashingState")) == null, "显示开关不得叠加“开/关”文字。")
+		for value: float in [0.0, 0.5, 1.0]:
+			recovered_slider.value = value
+			await process_frame
+			var visual: Dictionary = recovery_panel.call(&"get_visual_snapshot") as Dictionary
+			var master_visual: Dictionary = visual.get("master", {}) as Dictionary
+			_assert_true(is_equal_approx(float(master_visual.get("normalized_value", -1.0)), value), "主音量可视条必须反映 0/0.5/1 的归一化值。")
+			_assert_true(is_equal_approx(float(master_visual.get("visible_width", -1.0)), 737.0 * value), "主音量可视条宽度必须按音量裁切。")
+		var crt_button: Button = recovery_panel.get_node_or_null(NodePath("Controls/DisableCrtButton")) as Button
+		var flash_button: Button = recovery_panel.get_node_or_null(NodePath("Controls/ReduceFlashingButton")) as Button
+		if crt_button != null:
+			crt_button.emit_signal(&"pressed")
+			await process_frame
+			_assert_true(not bool((settings_manager.call(&"get_settings_snapshot") as Dictionary).get("crt_enabled", true)), "“关闭 CRT 效果”打开时必须反向写入 crt_enabled=false。")
+		if flash_button != null:
+			flash_button.emit_signal(&"pressed")
+			await process_frame
+			_assert_true(bool((settings_manager.call(&"get_settings_snapshot") as Dictionary).get("reduce_flashing", false)), "减少闪烁开关必须正向写入 reduce_flashing=true。")
 	root.remove_child(recovery_app)
 	recovery_app.queue_free()
 	await process_frame
@@ -198,7 +221,14 @@ func _run() -> void:
 	# 关闭覆盖层后电话对白以真实 StoryEngine 快照逐字展示；调速不改变线路状态。
 	var shift_panel: SettingsPanel = screen.get_node_or_null(NodePath("SettingsPanel")) as SettingsPanel
 	if shift_panel != null:
-		shift_panel.emit_signal(&"closed")
+		# 用可变容器记录异步信号，确保关闭流程不会重复派发。
+		var closed_count: Array[int] = [0]
+		shift_panel.closed.connect(func() -> void: closed_count[0] += 1)
+		(shift_panel.get_node(NodePath("Controls/CloseButton")) as Button).emit_signal(&"pressed")
+		shift_panel.call(&"finish_fade_for_verification")
+		await process_frame
+		_assert_equal(closed_count[0], 1, "设置面板的渐出完成只能发出一次 closed 信号。")
+		_assert_true(not screen.is_settings_panel_open(), "设置面板渐出完成后必须只关闭一次。")
 	await process_frame
 	_assert_ok(screen.show_view(GameScreen.VIEW_PHONE), "电话响铃时必须能进入电话近景。")
 	_assert_true(bool(phone.call(&"answer_call", int(game_clock.call(&"get_current_game_tick")))), "必须通过 PhoneSystem 接听真实来电。")

@@ -87,13 +87,30 @@ func _run() -> void:
 	screen.call(&"_open_save_panel")
 	await process_frame
 	_assert_true(screen.is_save_panel_open(), "点击存档入口必须显示覆盖式三槽页。")
+	var save_panel: SaveSlotPanel = screen.get_node_or_null(NodePath("SaveSlotPanel")) as SaveSlotPanel
+	_assert_true(save_panel != null, "夜班存档必须实例化 SaveSlotPanel。")
+	if save_panel != null:
+		var save_background: TextureRect = save_panel.get_node_or_null(NodePath("LoadMemory/Background")) as TextureRect
+		_assert_true(save_background != null and save_background.texture != null and save_background.texture.resource_path == "res://UI美术/读取记忆.png", "夜班存档必须复用读取记忆三黑屏美术。")
+		_assert_true(save_panel.get_node_or_null(NodePath("SaveLegacy")) == null, "夜班存档不得保留 SaveLegacy 旧面板。")
+		var title: Label = save_panel.get_node_or_null(NodePath("LoadMemory/ModeTitleLabel")) as Label
+		_assert_true(title != null and title.text == "保存班次", "保存页必须明确显示保存语义。")
+		var availability: Dictionary = save_panel.set_save_availability(false, "通话已接通，不能保存。")
+		_assert_true(bool(availability.get("ok", false)), "保存页必须能接收不可保存中文原因。")
+		var message: Label = save_panel.get_node_or_null(NodePath("LoadMemory/MessageLabel")) as Label
+		_assert_true(message != null and message.visible and message.text.contains("通话已接通"), "当前不可保存原因必须在页面内可见。")
+		save_panel.set_save_availability(true)
+		screen.show_save_result({"ok": false, "message": "临时文件替换失败。"})
+		_assert_true(screen.is_save_panel_open() and message != null and message.text.contains("保存失败"), "保存失败必须保留页面并显示错误。")
+		screen.show_save_result({"ok": true})
+		_assert_true(bool(save_panel.get_fade_snapshot().get("is_fading_out", false)), "保存成功后必须先渐出而非立即关闭。")
+		save_panel.finish_fade_for_verification()
+		await process_frame
+		_assert_true(not screen.is_save_panel_open(), "保存成功的渐出完成后必须单次关闭存档页。")
 	var tick_before_overlay_advance: int = int(game_clock.call(&"get_current_game_tick"))
 	_assert_true(tick_before_overlay_advance >= saved_tick, "保存覆盖层打开期间时钟不得倒退。")
 	_assert_true(bool(game_clock.call(&"advance_ticks_for_verification", 1)), "存档覆盖层打开时仍必须可推进故事时间。")
 	_assert_equal(int(game_clock.call(&"get_current_game_tick")), tick_before_overlay_advance + 1, "存档覆盖层不得暂停游戏时间。")
-	screen.call(&"_close_save_panel")
-	await process_frame
-	_assert_true(not screen.is_save_panel_open(), "再次点击存档入口必须关闭覆盖层。")
 
 	# 临时替换失败必须恢复旧档，而非覆盖已有的完整槽位。
 	save_manager.set_replace_failure_for_verification(true)
@@ -145,7 +162,30 @@ func _run() -> void:
 	loaded_app.call(&"request_load_game")
 	await process_frame
 	_assert_equal(String(loaded_app.call(&"get_application_state_name")), "LOAD_SLOTS", "主菜单读取必须先进入三槽页。")
-	loaded_app.call(&"_on_load_slot_requested", "slot_1")
+	var load_panel: SaveSlotPanel = loaded_app.get_node_or_null(NodePath("ScreenHost/SaveSlotPanel")) as SaveSlotPanel
+	_assert_true(load_panel != null, "读取记忆页面必须存在。")
+	if load_panel != null:
+		# GDScript 闭包对标量局部变量的写回不稳定，使用可变容器记录异步信号。
+		var emitted_load_count: Array[int] = [0]
+		var main_load_callback: Callable = Callable(loaded_app, "_on_load_slot_requested")
+		if load_panel.is_connected(&"slot_load_requested", main_load_callback):
+			load_panel.disconnect(&"slot_load_requested", main_load_callback)
+		load_panel.slot_load_requested.connect(func(_slot_id: String) -> void: emitted_load_count[0] += 1)
+		var memory_art: TextureRect = load_panel.get_node_or_null(NodePath("LoadMemory/Background")) as TextureRect
+		_assert_true(memory_art != null and memory_art.texture != null and memory_art.texture.resource_path == "res://UI美术/读取记忆.png", "LOAD 模式必须使用读取记忆美术。")
+		var load_title: Label = load_panel.get_node_or_null(NodePath("LoadMemory/ModeTitleLabel")) as Label
+		var load_hint: Label = load_panel.get_node_or_null(NodePath("LoadMemory/ModeHintLabel")) as Label
+		var load_back_button: Button = load_panel.get_node_or_null(NodePath("LoadMemory/BackButton")) as Button
+		_assert_true(load_title != null and not load_title.visible, "LOAD 模式不得显示顶部“读取记忆”标题。")
+		_assert_true(load_hint != null and not load_hint.visible, "LOAD 模式不得显示读取标题下方的小字。")
+		_assert_true(load_back_button != null and not load_back_button.visible, "LOAD 模式不得显示右侧返回主菜单按钮及文字。")
+		(load_panel.get_node(NodePath("LoadMemory/Slot1Button")) as Button).emit_signal(&"pressed")
+		(load_panel.get_node(NodePath("LoadMemory/Slot1Button")) as Button).emit_signal(&"pressed")
+		await process_frame
+		_assert_equal(emitted_load_count[0], 0, "读取有效槽位必须先完成 0.25 秒渐出，不能立即路由。")
+		load_panel.call(&"finish_fade_for_verification")
+		_assert_equal(emitted_load_count[0], 1, "读取渐出完成后必须只发出一次槽位意图。")
+		loaded_app.call(&"_on_load_slot_requested", "slot_1")
 	await process_frame
 	_assert_equal(String(loaded_app.call(&"get_application_state_name")), "SHIFT", "严格校验成功后必须创建并恢复新运行时。")
 	var restored_phone: RefCounted = loaded_app.get("_phone_system") as RefCounted
@@ -161,6 +201,41 @@ func _run() -> void:
 	_assert_true(not (restored_story.call(&"get_revealed_statements") as Array).is_empty(), "读取后必须保留已取得的来源陈述。")
 	_assert_true(not (restored_story.call(&"get_confirmed_facts") as Array).is_empty(), "读取后必须保留已确认事实。")
 	_assert_equal((restored_story.call(&"get_player_broadcast_records") as Array).size(), 2, "读取后不得重复或丢失玩家广播记录。")
+
+	# LOAD 的返回仍可使用 Esc，并须经过 0.25 秒渐出；页面不再显示右侧返回主菜单按钮。
+	restored_screen.call(&"_close_save_panel")
+	loaded_app.call(&"_show_main_menu")
+	await process_frame
+	loaded_app.call(&"request_load_game")
+	await process_frame
+	var return_panel: SaveSlotPanel = loaded_app.get_node_or_null(NodePath("ScreenHost/SaveSlotPanel")) as SaveSlotPanel
+	_assert_true(return_panel != null, "返回渐出验证必须重新打开读取记忆页面。")
+	if return_panel != null:
+		var returned_count: Array[int] = [0]
+		var main_return_callback: Callable = Callable(loaded_app, "_on_load_slots_return_requested")
+		if return_panel.is_connected(&"return_requested", main_return_callback):
+			return_panel.disconnect(&"return_requested", main_return_callback)
+		return_panel.return_requested.connect(func() -> void: returned_count[0] += 1)
+		var fade_snapshot: Dictionary = return_panel.call(&"get_fade_snapshot") as Dictionary
+		_assert_true(is_equal_approx(float(fade_snapshot.get("fade_seconds", 0.0)), 0.25), "读取记忆页入出场必须配置为 0.25 秒。")
+		_assert_true(not (return_panel.get_node(NodePath("LoadMemory/BackButton")) as Button).visible, "读取页右侧返回按钮必须保持隐藏。")
+		return_panel.call(&"_on_back_pressed")
+		return_panel.call(&"_on_back_pressed")
+		await process_frame
+		_assert_equal(returned_count[0], 0, "返回主菜单必须等待读取页渐出完成。")
+		return_panel.call(&"finish_fade_for_verification")
+		_assert_equal(returned_count[0], 1, "读取页返回渐出完成只能发出一次 return_requested。")
+		loaded_app.call(&"_on_load_slots_return_requested")
+		await process_frame
+		_assert_equal(String(loaded_app.call(&"get_application_state_name")), "MAIN_MENU", "读取页返回路由后必须回到主菜单。")
+		loaded_app.call(&"request_load_game")
+		await process_frame
+		loaded_app.call(&"_on_load_slot_requested", "slot_1")
+		await process_frame
+		restored_phone = loaded_app.get("_phone_system") as RefCounted
+		restored_story = loaded_app.get("_story_engine") as RefCounted
+		restored_screen = loaded_app.get("_game_screen") as GameScreen
+		_assert_equal(String(loaded_app.call(&"get_application_state_name")), "SHIFT", "返回验证后仍必须能从同一槽位重新读取。")
 
 	# 读取后的保存覆盖层也不能挡住 02:00；收束会立即关闭它且不重复电话/广播/事实。
 	restored_screen.call(&"_open_save_panel")

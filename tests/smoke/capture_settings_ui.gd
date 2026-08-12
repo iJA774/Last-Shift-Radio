@@ -28,7 +28,7 @@ func _capture() -> void:
 		_fail("无法准备隔离设置文件。")
 		return
 	for result: Variant in [
-		_settings_manager.call(&"set_font_size", 125),
+		_settings_manager.call(&"set_font_size", 100),
 		_settings_manager.call(&"set_text_speed", 1.0),
 		_settings_manager.call(&"set_reduce_flashing_enabled", false),
 		_settings_manager.call(&"set_crt_enabled", true),
@@ -47,12 +47,29 @@ func _capture() -> void:
 		_fail("主菜单缺少设置按钮。")
 		return
 	menu_settings.emit_signal(&"pressed")
-	await _wait_frames(3)
-	if not _save_viewport("settings_menu_125_1920x1080.png"):
+	await create_timer(0.30).timeout
+	if not _save_viewport("settings_menu_100_1920x1080.png"):
 		return
 	var menu_panel: SettingsPanel = app.get_node_or_null(NodePath("OverlayHost/SettingsPanel")) as SettingsPanel
 	if menu_panel != null:
-		menu_panel.emit_signal(&"closed")
+		var master: HSlider = menu_panel.get_node_or_null(NodePath("Controls/MasterSlider")) as HSlider
+		for volume: float in [0.0, 0.5, 1.0]:
+			master.value = volume
+			await _wait_frames(2)
+			if not _save_viewport("settings_volume_%d_1920x1080.png" % roundi(volume * 100.0)):
+				return
+		(menu_panel.get_node(NodePath("Controls/DisableCrtButton")) as Button).emit_signal(&"pressed")
+		(menu_panel.get_node(NodePath("Controls/ReduceFlashingButton")) as Button).emit_signal(&"pressed")
+		await _wait_frames(2)
+		if not _save_viewport("settings_toggle_on_1920x1080.png"):
+			return
+		_settings_manager.call(&"set_font_size", 125)
+		await _wait_frames(3)
+		if not _save_viewport("settings_menu_125_1920x1080.png"):
+			return
+	if menu_panel != null:
+		(menu_panel.get_node(NodePath("Controls/CloseButton")) as Button).emit_signal(&"pressed")
+		menu_panel.call(&"finish_fade_for_verification")
 	await _wait_frames(2)
 
 	app.call(&"request_start_shift")
@@ -70,7 +87,8 @@ func _capture() -> void:
 		return
 	var shift_panel: SettingsPanel = screen.get_node_or_null(NodePath("SettingsPanel")) as SettingsPanel
 	if shift_panel != null:
-		shift_panel.emit_signal(&"closed")
+		(shift_panel.get_node(NodePath("Controls/CloseButton")) as Button).emit_signal(&"pressed")
+		shift_panel.call(&"finish_fade_for_verification")
 	await _wait_frames(2)
 
 	if not _is_ok(screen.show_view(GameScreen.VIEW_COMPUTER)):

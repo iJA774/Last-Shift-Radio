@@ -1,0 +1,19 @@
+[remap]
+
+importer="oggvorbisstr"
+type="AudioStreamOggVorbis"
+uid="uid://mi3hvg3e83x1"
+path="res://.godot/imported/Juhani Junkala - Post Apocalyptic Wastelands [Loop Ready].ogg-d8ef2e58dfb5c4754ce921c3f7cfca40.oggvorbisstr"
+
+[deps]
+
+source_file="res://音效/BGM/Juhani Junkala - Post Apocalyptic Wastelands [Loop Ready].ogg"
+dest_files=["res://.godot/imported/Juhani Junkala - Post Apocalyptic Wastelands [Loop Ready].ogg-d8ef2e58dfb5c4754ce921c3f7cfca40.oggvorbisstr"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

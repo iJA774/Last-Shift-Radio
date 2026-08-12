@@ -17,10 +17,14 @@ const SETTING_IDS: PackedStringArray = [
 	"reduce_flashing",
 	"crt_enabled",
 ]
+const FADE_SECONDS: float = 0.25
 
 var _settings_manager: Node = null
 var _is_refreshing: bool = false
 var _is_manager_connected: bool = false
+var _fade_tween: Tween = null
+var _is_closing: bool = false
+var _has_emitted_closed: bool = false
 
 @onready var _master_slider: HSlider = %MasterSlider
 @onready var _master_value: Label = %MasterValue
@@ -28,26 +32,55 @@ var _is_manager_connected: bool = false
 @onready var _ambience_value: Label = %AmbienceValue
 @onready var _ui_phone_slider: HSlider = %UiPhoneSlider
 @onready var _ui_phone_value: Label = %UiPhoneValue
-@onready var _window_mode_option: OptionButton = %WindowModeOption
-@onready var _text_speed_slider: HSlider = %TextSpeedSlider
-@onready var _text_speed_value: Label = %TextSpeedValue
-@onready var _font_size_option: OptionButton = %FontSizeOption
-@onready var _reduce_flashing_check: CheckBox = %ReduceFlashingCheck
-@onready var _crt_enabled_check: CheckBox = %CrtEnabledCheck
+@onready var _reduce_flashing_button: Button = %ReduceFlashingButton
+@onready var _disable_crt_button: Button = %DisableCrtButton
 @onready var _message_label: Label = %MessageLabel
 @onready var _close_button: Button = %CloseButton
-@onready var _reset_button: Button = %ResetButton
+@onready var _recovery_reset_button: Button = %RecoveryResetButton
+
+var _is_reduce_flashing_enabled: bool = false
+var _is_crt_enabled: bool = true
 
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
-	_configure_options()
 	_connect_controls()
 	_refresh_from_manager()
+	_start_fade_in()
 
 
 func _exit_tree() -> void:
 	_disconnect_manager()
+	_cancel_fade()
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed(&"ui_cancel") and not event.is_echo():
+		_on_close_pressed()
+		get_viewport().set_input_as_handled()
+
+
+func get_fade_snapshot() -> Dictionary:
+	return {"ok": true, "fade_seconds": FADE_SECONDS, "is_closing": _is_closing}
+
+
+func finish_fade_for_verification() -> Dictionary:
+	if not _is_closing:
+		return {"ok": true, "already_idle": true}
+	_cancel_fade()
+	_complete_close()
+	return {"ok": true}
+
+
+func get_visual_snapshot() -> Dictionary:
+	return {
+		"ok": true,
+		"master": _volume_visual_snapshot("Master", _master_slider.value),
+		"ambience": _volume_visual_snapshot("Ambience", _ambience_slider.value),
+		"ui_phone": _volume_visual_snapshot("UiPhone", _ui_phone_slider.value),
+		"disable_crt": not _crt_enabled_value(),
+		"reduce_flashing": _reduce_flashing_value(),
+	}
 
 
 func bind_settings_manager(settings_manager: Node) -> Dictionary:
@@ -65,31 +98,16 @@ func get_settings_manager() -> Node:
 	return _settings_manager
 
 
-func _configure_options() -> void:
-	_window_mode_option.clear()
-	_window_mode_option.add_item("窗口", 0)
-	_window_mode_option.set_item_metadata(0, "windowed")
-	_window_mode_option.add_item("全屏", 1)
-	_window_mode_option.set_item_metadata(1, "fullscreen")
-	_font_size_option.clear()
-	_font_size_option.add_item("标准（100%）", 0)
-	_font_size_option.set_item_metadata(0, 100)
-	_font_size_option.add_item("放大（125%）", 1)
-	_font_size_option.set_item_metadata(1, 125)
-	_message_label.visible = false
-
-
 func _connect_controls() -> void:
 	_master_slider.value_changed.connect(_on_master_volume_changed)
 	_ambience_slider.value_changed.connect(_on_ambience_volume_changed)
 	_ui_phone_slider.value_changed.connect(_on_ui_phone_volume_changed)
-	_window_mode_option.item_selected.connect(_on_window_mode_selected)
-	_text_speed_slider.value_changed.connect(_on_text_speed_changed)
-	_font_size_option.item_selected.connect(_on_font_size_selected)
-	_reduce_flashing_check.toggled.connect(_on_reduce_flashing_toggled)
-	_crt_enabled_check.toggled.connect(_on_crt_enabled_toggled)
+	_reduce_flashing_button.pressed.connect(_on_reduce_flashing_pressed)
+	_disable_crt_button.pressed.connect(_on_disable_crt_pressed)
 	_close_button.pressed.connect(_on_close_pressed)
-	_reset_button.pressed.connect(_on_reset_pressed)
+	_recovery_reset_button.pressed.connect(_on_recovery_reset_pressed)
+	_message_label.visible = false
+	_recovery_reset_button.visible = false
 
 
 func _connect_manager() -> void:
@@ -159,21 +177,20 @@ func _refresh_from_manager() -> void:
 	_master_slider.value = float(snapshot["master_volume"])
 	_ambience_slider.value = float(snapshot["ambience_volume"])
 	_ui_phone_slider.value = float(snapshot["ui_phone_volume"])
-	_select_option_by_metadata(_window_mode_option, String(snapshot["window_mode"]))
-	_text_speed_slider.value = float(snapshot["text_speed"])
-	_select_option_by_metadata(_font_size_option, int(snapshot["font_size"]))
-	_reduce_flashing_check.button_pressed = bool(snapshot["reduce_flashing"])
-	_crt_enabled_check.button_pressed = bool(snapshot["crt_enabled"])
+	_update_toggle_visuals(bool(snapshot["reduce_flashing"]), bool(snapshot["crt_enabled"]))
 	_update_value_labels()
 	_is_refreshing = false
 	if not bool(_settings_manager.call(&"is_settings_loaded")):
-		_set_controls_enabled(false, true)
+		_set_controls_enabled(false)
 		var load_result: Variant = _settings_manager.call(&"get_last_load_result")
 		var reason: String = String((load_result as Dictionary).get("message", "设置文件损坏或不可读取。")) if load_result is Dictionary else "设置文件损坏或不可读取。"
-		_show_message("设置文件读取失败：%s\n普通设置已禁用。请点击“恢复默认设置”创建新的设置文件。" % reason, true)
+		_show_message("设置文件读取失败：%s\n请点击右侧“修复设置”恢复默认。" % reason, true)
+		_recovery_reset_button.visible = true
+		_recovery_reset_button.disabled = false
 		return
 	_set_controls_enabled(true)
 	_message_label.visible = false
+	_recovery_reset_button.visible = false
 
 
 func _validate_snapshot(snapshot: Dictionary) -> Dictionary:
@@ -192,16 +209,13 @@ func _validate_snapshot(snapshot: Dictionary) -> Dictionary:
 	return {"ok": true}
 
 
-func _set_controls_enabled(is_enabled: bool, keep_reset_enabled: bool = false) -> void:
+func _set_controls_enabled(is_enabled: bool) -> void:
 	for control: Control in [
 		_master_slider,
 		_ambience_slider,
 		_ui_phone_slider,
-		_window_mode_option,
-		_text_speed_slider,
-		_font_size_option,
-		_reduce_flashing_check,
-		_crt_enabled_check,
+		_reduce_flashing_button,
+		_disable_crt_button,
 	]:
 		if control is Range:
 			(control as Range).editable = is_enabled
@@ -209,23 +223,44 @@ func _set_controls_enabled(is_enabled: bool, keep_reset_enabled: bool = false) -
 			(control as BaseButton).disabled = not is_enabled
 		if not is_enabled:
 			control.tooltip_text = "不可用：设置系统未准备完成。"
-	_reset_button.disabled = not is_enabled and not keep_reset_enabled
-	_reset_button.tooltip_text = "恢复默认设置并重建设置文件。" if keep_reset_enabled else ("不可用：设置系统未准备完成。" if not is_enabled else "恢复默认设置。")
-
-
-func _select_option_by_metadata(option: OptionButton, value: Variant) -> void:
-	for index: int in option.item_count:
-		if option.get_item_metadata(index) == value:
-			option.select(index)
-			return
-	push_error("[设置界面][option_metadata_missing] 选项缺少值：%s。" % str(value))
 
 
 func _update_value_labels() -> void:
 	_master_value.text = _format_percent(_master_slider.value)
 	_ambience_value.text = _format_percent(_ambience_slider.value)
 	_ui_phone_value.text = _format_percent(_ui_phone_slider.value)
-	_text_speed_value.text = "%.2f×" % _text_speed_slider.value
+	_update_volume_visual("Master", _master_slider.value)
+	_update_volume_visual("Ambience", _ambience_slider.value)
+	_update_volume_visual("UiPhone", _ui_phone_slider.value)
+
+
+func _update_volume_visual(prefix: String, normalized_value: float) -> void:
+	var clip: Control = get_node("VolumeVisuals/%sClip" % prefix) as Control
+	var available_width: float = 737.0
+	clip.size.x = available_width * clampf(normalized_value, 0.0, 1.0)
+
+
+func _update_toggle_visuals(reduce_flashing: bool, crt_enabled: bool) -> void:
+	_is_reduce_flashing_enabled = reduce_flashing
+	_is_crt_enabled = crt_enabled
+	var disable_crt: bool = not _is_crt_enabled
+	%DisableCrtStateBar.modulate.a = 1.0 if disable_crt else 0.22
+	%ReduceFlashingStateBar.modulate.a = 1.0 if reduce_flashing else 0.22
+	%DisableCrtOffOverlay.visible = not disable_crt
+	%ReduceFlashingOffOverlay.visible = not reduce_flashing
+
+
+func _volume_visual_snapshot(prefix: String, normalized_value: float) -> Dictionary:
+	var clip: Control = get_node("VolumeVisuals/%sClip" % prefix) as Control
+	return {"normalized_value": normalized_value, "visible_width": clip.size.x}
+
+
+func _reduce_flashing_value() -> bool:
+	return _is_reduce_flashing_enabled
+
+
+func _crt_enabled_value() -> bool:
+	return _is_crt_enabled
 
 
 func _format_percent(value: float) -> String:
@@ -274,37 +309,61 @@ func _on_ui_phone_volume_changed(value: float) -> void:
 	_submit_setter(&"set_ui_phone_volume", [value])
 
 
-func _on_window_mode_selected(index: int) -> void:
-	if index < 0:
-		return
-	_submit_setter(&"set_window_mode", [String(_window_mode_option.get_item_metadata(index))])
+func _on_reduce_flashing_pressed() -> void:
+	_submit_setter(&"set_reduce_flashing_enabled", [not _reduce_flashing_value()])
 
 
-func _on_text_speed_changed(value: float) -> void:
-	_update_value_labels()
-	_submit_setter(&"set_text_speed", [value])
+func _on_disable_crt_pressed() -> void:
+	# 素材文案是“关闭 CRT 效果”；开表示 SettingsManager.crt_enabled=false。
+	_submit_setter(&"set_crt_enabled", [not _crt_enabled_value()])
 
 
-func _on_font_size_selected(index: int) -> void:
-	if index < 0:
-		return
-	_submit_setter(&"set_font_size", [int(_font_size_option.get_item_metadata(index))])
-
-
-func _on_reduce_flashing_toggled(is_enabled: bool) -> void:
-	_submit_setter(&"set_reduce_flashing_enabled", [is_enabled])
-
-
-func _on_crt_enabled_toggled(is_enabled: bool) -> void:
-	_submit_setter(&"set_crt_enabled", [is_enabled])
-
-
-func _on_reset_pressed() -> void:
+func _on_recovery_reset_pressed() -> void:
 	_submit_setter(&"reset_to_defaults", [])
 
 
 func _on_close_pressed() -> void:
+	if _is_closing or _has_emitted_closed:
+		return
+	_play_button_click()
+	_is_closing = true
+	_cancel_fade()
+	_fade_tween = create_tween()
+	_fade_tween.set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
+	_fade_tween.tween_property(self, "modulate:a", 0.0, FADE_SECONDS)
+	_fade_tween.tween_callback(_complete_close)
+
+
+func _start_fade_in() -> void:
+	modulate.a = 0.0
+	_fade_tween = create_tween()
+	_fade_tween.set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
+	_fade_tween.tween_property(self, "modulate:a", 1.0, FADE_SECONDS)
+
+
+func _cancel_fade() -> void:
+	if _fade_tween != null and _fade_tween.is_valid():
+		_fade_tween.kill()
+	_fade_tween = null
+
+
+func _complete_close() -> void:
+	if _has_emitted_closed:
+		return
+	_has_emitted_closed = true
+	_is_closing = false
 	closed.emit()
+
+
+## 鼠标返回与 Esc 共用本方法；关闭状态先行拦截，避免同一输入在渐出期间重复发声。
+func _play_button_click() -> void:
+	var player: Node = get_tree().root.get_node_or_null(NodePath("UiSoundPlayer")) as Node
+	if player == null or not player.has_method(&"play_button_click"):
+		push_error("[音频][ui_sound_player_missing] 未找到 UiSoundPlayer，设置返回点击音未播放。")
+		return
+	var result: Variant = player.call(&"play_button_click")
+	if not result is Dictionary or not bool((result as Dictionary).get("ok", false)):
+		push_warning("[音频][ui_button_click_failed] 设置返回点击音播放失败：%s" % str(result))
 
 
 func _make_error(message: String) -> Dictionary:

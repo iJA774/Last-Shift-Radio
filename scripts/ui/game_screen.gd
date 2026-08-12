@@ -401,9 +401,9 @@ func set_save_slot_summaries(summaries: Array[Dictionary]) -> Dictionary:
 func show_save_result(result: Dictionary) -> void:
 	if _save_slot_panel == null or not is_instance_valid(_save_slot_panel):
 		return
-	var is_ok: bool = bool(result.get("ok", false))
-	var text_value: String = "保存完成。" if is_ok else "保存失败：%s" % String(result.get("message", "未知原因。"))
-	_save_slot_panel.show_message(text_value, not is_ok)
+	var panel_result: Dictionary = _save_slot_panel.handle_save_result(result)
+	if not bool(panel_result.get("ok", false)) and bool(result.get("ok", false)):
+		show_system_error("保存完成后无法关闭存档界面：%s" % String(panel_result.get("message", "未知原因。")))
 
 
 func is_save_panel_open() -> bool:
@@ -424,6 +424,7 @@ func toggle_control_bar() -> Dictionary:
 		return {"ok": false, "message": "02:00 强制收束中不能打开控制栏。"}
 	if is_control_bar_open():
 		_close_control_bar()
+		_play_button_click()
 		return {"ok": true, "is_open": false}
 	_shift_control_bar = SHIFT_CONTROL_BAR_SCENE.instantiate() as Control
 	if _shift_control_bar == null:
@@ -440,6 +441,7 @@ func toggle_control_bar() -> Dictionary:
 		return _make_error("应用 ESC 控制栏字体失败：%s" % String(font_result.get("message", "未知原因。")))
 	_refresh_control_bar_availability()
 	_shift_control_bar.call(&"focus_first_action")
+	_play_button_click()
 	return {"ok": true, "is_open": true}
 
 
@@ -841,6 +843,7 @@ func _open_save_panel() -> void:
 	_save_slot_panel.z_index = 50
 	_save_slot_panel.set_mode(SaveSlotPanel.Mode.SAVE)
 	_save_slot_panel.slot_save_requested.connect(_on_save_slot_requested)
+	_save_slot_panel.save_succeeded.connect(_on_save_panel_return_requested)
 	_save_slot_panel.return_requested.connect(_on_save_panel_return_requested)
 	add_child(_save_slot_panel)
 	_refresh_save_panel_availability()
@@ -923,6 +926,17 @@ func _close_control_bar() -> void:
 		return
 	_shift_control_bar.queue_free()
 	_shift_control_bar = null
+
+
+## ESC 开关控制栏与菜单按钮均经持久化服务播放，场景替换不会截断音效。
+func _play_button_click() -> void:
+	var player: Node = get_tree().root.get_node_or_null(NodePath("UiSoundPlayer")) as Node
+	if player == null or not player.has_method(&"play_button_click"):
+		push_error("[音频][ui_sound_player_missing] 未找到 UiSoundPlayer，ESC 点击音未播放。")
+		return
+	var result: Variant = player.call(&"play_button_click")
+	if not result is Dictionary or not bool((result as Dictionary).get("ok", false)):
+		push_warning("[音频][ui_button_click_failed] ESC 点击音播放失败：%s" % str(result))
 
 
 func _refresh_control_bar_availability() -> void:
