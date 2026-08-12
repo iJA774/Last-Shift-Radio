@@ -1,9 +1,17 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene format=3 uid="uid://cqfo4kbsmy1hd"]
 
-[ext_resource type="Script" path="res://scripts/app/main_menu.gd" id="1_script"]
-[ext_resource type="Theme" path="res://resources/app_ui_theme.tres" id="2_theme"]
+[ext_resource type="Script" uid="uid://dvedqt87dq366" path="res://scripts/app/main_menu.gd" id="1_script"]
+[ext_resource type="Theme" uid="uid://ciy61h8wp1630" path="res://resources/app_ui_theme.tres" id="2_theme"]
+[ext_resource type="Texture2D" uid="uid://c1o11warm4s0v" path="res://UI美术/UI参考图.png" id="3_reference"]
+[ext_resource type="Texture2D" uid="uid://bkmw4a7pp0wkq" path="res://UI美术/选择框.png" id="4_selection"]
 
-[node name="MainMenu" type="Control"]
+[sub_resource type="StyleBoxEmpty" id="StyleInvisible"]
+
+[sub_resource type="AtlasTexture" id="AtlasSelection"]
+atlas = ExtResource("4_selection")
+region = Rect2(50, 360, 1440, 320)
+
+[node name="MainMenu" type="Control" unique_id=152215798]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -13,7 +21,7 @@ grow_vertical = 2
 theme = ExtResource("2_theme")
 script = ExtResource("1_script")
 
-[node name="Backdrop" type="ColorRect" parent="."]
+[node name="Backdrop" type="TextureRect" parent="." unique_id=689177143]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -21,121 +29,132 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
-color = Color(0.012, 0.027, 0.043, 1)
+texture = ExtResource("3_reference")
+expand_mode = 1
 
-[node name="TopRule" type="ColorRect" parent="."]
-layout_mode = 1
-anchors_preset = 10
-anchor_right = 1.0
-offset_bottom = 5.0
-grow_horizontal = 2
-mouse_filter = 2
-color = Color(0.52, 0.38, 0.20, 0.68)
-
-[node name="Content" type="CenterContainer" parent="."]
+[node name="Content" type="Control" parent="." unique_id=2064829381]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = 188.0
-offset_top = 108.0
-offset_right = -188.0
-offset_bottom = -108.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="MenuPanel" type="PanelContainer" parent="Content"]
-custom_minimum_size = Vector2(680, 0)
-layout_mode = 2
+[node name="MenuPanel" type="Control" parent="Content" unique_id=1381555348]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 
-[node name="Margin" type="MarginContainer" parent="Content/MenuPanel"]
-layout_mode = 2
-theme_override_constants/margin_left = 34
-theme_override_constants/margin_top = 28
-theme_override_constants/margin_right = 34
-theme_override_constants/margin_bottom = 28
+[node name="Margin" type="Control" parent="Content/MenuPanel" unique_id=1532657957]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 
-[node name="Layout" type="VBoxContainer" parent="Content/MenuPanel/Margin"]
-layout_mode = 2
-theme_override_constants/separation = 14
+[node name="Layout" type="Control" parent="Content/MenuPanel/Margin" unique_id=500370251]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 
-[node name="Eyebrow" type="Label" parent="Content/MenuPanel/Margin/Layout"]
-layout_mode = 2
-theme_override_colors/font_color = Color(0.45, 0.78, 0.79, 1)
-theme_override_font_sizes/font_size = 18
-text = "WMLH 780 AM / 夜间新闻室"
-horizontal_alignment = 1
-autowrap_mode = 2
-
-[node name="Title" type="Label" parent="Content/MenuPanel/Margin/Layout"]
-layout_mode = 2
-theme_override_colors/font_color = Color(0.92, 0.97, 0.96, 1)
+[node name="Title" type="Label" parent="Content/MenuPanel/Margin/Layout" unique_id=735313482]
+visible = false
+layout_mode = 0
 theme_override_font_sizes/font_size = 42
 text = "末班电台"
-horizontal_alignment = 1
-autowrap_mode = 2
 
-[node name="Subtitle" type="Label" parent="Content/MenuPanel/Margin/Layout"]
-layout_mode = 2
-theme_override_colors/font_color = Color(0.62, 0.71, 0.73, 1)
-theme_override_font_sizes/font_size = 18
-text = "1999 年 · 午夜值守"
-horizontal_alignment = 1
-autowrap_mode = 2
-
-[node name="Rule" type="HSeparator" parent="Content/MenuPanel/Margin/Layout"]
-layout_mode = 2
-
-[node name="StartShiftButton" type="Button" parent="Content/MenuPanel/Margin/Layout"]
+[node name="StartShiftButton" type="Button" parent="Content/MenuPanel/Margin/Layout" unique_id=1606562879]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 54)
-layout_mode = 2
-text = "开始值班"
-autowrap_mode = 2
+layout_mode = 0
+offset_left = 164.0
+offset_top = 500.0
+offset_right = 490.0
+offset_bottom = 565.0
+tooltip_text = "开始新夜班"
+focus_neighbor_bottom = NodePath("../LoadGameButton")
+mouse_default_cursor_shape = 2
+theme_override_styles/normal = SubResource("StyleInvisible")
+theme_override_styles/pressed = SubResource("StyleInvisible")
+theme_override_styles/hover = SubResource("StyleInvisible")
+theme_override_styles/disabled = SubResource("StyleInvisible")
+theme_override_styles/focus = SubResource("StyleInvisible")
 
-[node name="LoadGameButton" type="Button" parent="Content/MenuPanel/Margin/Layout"]
+[node name="LoadGameButton" type="Button" parent="Content/MenuPanel/Margin/Layout" unique_id=1688158301]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 54)
-layout_mode = 2
-text = "读取存档"
-autowrap_mode = 2
+layout_mode = 0
+offset_left = 123.0
+offset_top = 575.0
+offset_right = 449.0
+offset_bottom = 640.0
+tooltip_text = "读取本地三槽存档"
+focus_neighbor_top = NodePath("../StartShiftButton")
+focus_neighbor_bottom = NodePath("../SettingsButton")
+mouse_default_cursor_shape = 2
+theme_override_styles/normal = SubResource("StyleInvisible")
+theme_override_styles/pressed = SubResource("StyleInvisible")
+theme_override_styles/hover = SubResource("StyleInvisible")
+theme_override_styles/disabled = SubResource("StyleInvisible")
+theme_override_styles/focus = SubResource("StyleInvisible")
 
-[node name="LoadDisabledReason" type="Label" parent="Content/MenuPanel/Margin/Layout"]
+[node name="LoadDisabledReason" type="Label" parent="Content/MenuPanel/Margin/Layout" unique_id=1854894564]
 unique_name_in_owner = true
-layout_mode = 2
-theme_override_colors/font_color = Color(0.61, 0.66, 0.67, 1)
-theme_override_font_sizes/font_size = 16
-text = "存档系统尚未建立"
-horizontal_alignment = 1
-autowrap_mode = 2
+self_modulate = Color(1, 1, 1, 0)
+layout_mode = 0
+text = "读取本地三槽存档"
 
-[node name="SettingsButton" type="Button" parent="Content/MenuPanel/Margin/Layout"]
+[node name="SettingsButton" type="Button" parent="Content/MenuPanel/Margin/Layout" unique_id=1043470246]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 54)
-layout_mode = 2
-text = "设置"
-autowrap_mode = 2
+layout_mode = 0
+offset_left = 129.0
+offset_top = 648.0
+offset_right = 455.0
+offset_bottom = 713.0
+tooltip_text = "打开设置"
+focus_neighbor_top = NodePath("../LoadGameButton")
+focus_neighbor_bottom = NodePath("../ExitButton")
+mouse_default_cursor_shape = 2
+theme_override_styles/normal = SubResource("StyleInvisible")
+theme_override_styles/pressed = SubResource("StyleInvisible")
+theme_override_styles/hover = SubResource("StyleInvisible")
+theme_override_styles/disabled = SubResource("StyleInvisible")
+theme_override_styles/focus = SubResource("StyleInvisible")
 
-[node name="SettingsDisabledReason" type="Label" parent="Content/MenuPanel/Margin/Layout"]
+[node name="SettingsDisabledReason" type="Label" parent="Content/MenuPanel/Margin/Layout" unique_id=1294800057]
 unique_name_in_owner = true
-layout_mode = 2
-theme_override_colors/font_color = Color(0.61, 0.66, 0.67, 1)
-theme_override_font_sizes/font_size = 16
-text = "设置系统尚未建立"
-horizontal_alignment = 1
-autowrap_mode = 2
+visible = false
+layout_mode = 0
 
-[node name="ExitButton" type="Button" parent="Content/MenuPanel/Margin/Layout"]
+[node name="ExitButton" type="Button" parent="Content/MenuPanel/Margin/Layout" unique_id=126943981]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 54)
-layout_mode = 2
-text = "退出"
-autowrap_mode = 2
+layout_mode = 0
+offset_left = 135.0
+offset_top = 727.0
+offset_right = 461.0
+offset_bottom = 792.0
+tooltip_text = "退出游戏"
+focus_neighbor_top = NodePath("../SettingsButton")
+mouse_default_cursor_shape = 2
+theme_override_styles/normal = SubResource("StyleInvisible")
+theme_override_styles/pressed = SubResource("StyleInvisible")
+theme_override_styles/hover = SubResource("StyleInvisible")
+theme_override_styles/disabled = SubResource("StyleInvisible")
+theme_override_styles/focus = SubResource("StyleInvisible")
 
-[node name="Footer" type="Label" parent="Content/MenuPanel/Margin/Layout"]
-layout_mode = 2
-theme_override_colors/font_color = Color(0.44, 0.56, 0.59, 1)
-theme_override_font_sizes/font_size = 15
-text = "内部体验验证版 / 所有必要操作均可使用鼠标完成"
-horizontal_alignment = 1
-autowrap_mode = 2
+[node name="SelectionFrame" type="TextureRect" parent="." unique_id=1302674798]
+unique_name_in_owner = true
+layout_mode = 0
+offset_left = -24.0
+offset_top = 489.0
+offset_right = 689.0
+offset_bottom = 578.0
+mouse_filter = 2
+texture = SubResource("AtlasSelection")
+expand_mode = 1
+stretch_mode = 5

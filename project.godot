@@ -16,15 +16,15 @@ run/main_scene="res://scenes/app/main.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 run/low_processor_mode_sleep_usec=0
 
+[audio]
+
+default_bus_layout="res://default_bus_layout.tres"
+
 [autoload]
 
 GameClock="*res://scripts/core/game_clock.gd"
 SettingsManager="*res://scripts/systems/settings_manager.gd"
 AudioManager="*res://scripts/systems/audio_manager.gd"
-
-[audio]
-
-default_bus_layout="res://default_bus_layout.tres"
 
 [display]
 

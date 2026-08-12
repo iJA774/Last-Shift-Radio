@@ -1,89 +1,76 @@
-[gd_resource type="Theme" load_steps=7 format=3]
+[gd_resource type="Theme" format=3 uid="uid://ciy61h8wp1630"]
 
-[ext_resource type="Texture2D" path="res://art/ui/aged_newsroom_v1/runtime/panel_backdrop.png" id="1_panel"]
-[ext_resource type="Texture2D" path="res://art/ui/aged_newsroom_v1/runtime/dialogue_backdrop.png" id="2_dialogue"]
-[ext_resource type="Texture2D" path="res://art/ui/aged_newsroom_v1/runtime/button_default.png" id="3_button_normal"]
-[ext_resource type="Texture2D" path="res://art/ui/aged_newsroom_v1/runtime/button_hover.png" id="4_button_hover"]
-[ext_resource type="Texture2D" path="res://art/ui/aged_newsroom_v1/runtime/button_pressed.png" id="5_button_pressed"]
-[ext_resource type="Texture2D" path="res://art/ui/aged_newsroom_v1/runtime/button_disabled.png" id="6_button_disabled"]
-
-[sub_resource type="StyleBoxTexture" id="StyleBoxPanel"]
-texture = ExtResource("1_panel")
-texture_margin_left = 96.0
-texture_margin_top = 80.0
-texture_margin_right = 96.0
-texture_margin_bottom = 80.0
-content_margin_left = 32.0
-content_margin_top = 28.0
-content_margin_right = 32.0
-content_margin_bottom = 28.0
-modulate_color = Color(0.62, 0.55, 0.39, 0.94)
-
-[sub_resource type="StyleBoxTexture" id="StyleBoxDialogue"]
-texture = ExtResource("2_dialogue")
-texture_margin_left = 160.0
-texture_margin_top = 120.0
-texture_margin_right = 160.0
-texture_margin_bottom = 120.0
-content_margin_left = 30.0
-content_margin_top = 24.0
-content_margin_right = 30.0
-content_margin_bottom = 24.0
-modulate_color = Color(0.60, 0.53, 0.38, 0.96)
-
-[sub_resource type="StyleBoxTexture" id="StyleBoxButtonNormal"]
-texture = ExtResource("3_button_normal")
-texture_margin_left = 64.0
-texture_margin_top = 32.0
-texture_margin_right = 64.0
-texture_margin_bottom = 32.0
-content_margin_top = 12.0
-content_margin_bottom = 12.0
-modulate_color = Color(0.66, 0.59, 0.43, 0.94)
-
-[sub_resource type="StyleBoxTexture" id="StyleBoxButtonHover"]
-texture = ExtResource("4_button_hover")
-texture_margin_left = 64.0
-texture_margin_top = 32.0
-texture_margin_right = 64.0
-texture_margin_bottom = 32.0
-content_margin_top = 12.0
-content_margin_bottom = 12.0
-modulate_color = Color(0.76, 0.67, 0.49, 1)
-
-[sub_resource type="StyleBoxTexture" id="StyleBoxButtonPressed"]
-texture = ExtResource("5_button_pressed")
-texture_margin_left = 64.0
-texture_margin_top = 32.0
-texture_margin_right = 64.0
-texture_margin_bottom = 32.0
-content_margin_top = 14.0
-content_margin_bottom = 10.0
-modulate_color = Color(0.54, 0.48, 0.36, 0.92)
+[ext_resource type="Texture2D" uid="uid://d3j64fkd6xfhb" path="res://art/ui/aged_newsroom_v1/runtime/panel_backdrop.png" id="1_panel"]
+[ext_resource type="Texture2D" uid="uid://ducjle0uucifi" path="res://art/ui/aged_newsroom_v1/runtime/button_default.png" id="3_button_normal"]
+[ext_resource type="Texture2D" uid="uid://icjmwtqoqb0d" path="res://art/ui/aged_newsroom_v1/runtime/button_hover.png" id="4_button_hover"]
+[ext_resource type="Texture2D" uid="uid://k71ulyfl2py5" path="res://art/ui/aged_newsroom_v1/runtime/button_pressed.png" id="5_button_pressed"]
+[ext_resource type="Texture2D" uid="uid://q87qlakgt5ax" path="res://art/ui/aged_newsroom_v1/runtime/button_disabled.png" id="6_button_disabled"]
 
 [sub_resource type="StyleBoxTexture" id="StyleBoxButtonDisabled"]
+content_margin_top = 12.0
+content_margin_bottom = 12.0
 texture = ExtResource("6_button_disabled")
 texture_margin_left = 64.0
 texture_margin_top = 32.0
 texture_margin_right = 64.0
 texture_margin_bottom = 32.0
+modulate_color = Color(0.4, 0.38, 0.31, 0.68)
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxButtonHover"]
 content_margin_top = 12.0
 content_margin_bottom = 12.0
-modulate_color = Color(0.40, 0.38, 0.31, 0.68)
+texture = ExtResource("4_button_hover")
+texture_margin_left = 64.0
+texture_margin_top = 32.0
+texture_margin_right = 64.0
+texture_margin_bottom = 32.0
+modulate_color = Color(0.76, 0.67, 0.49, 1)
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxButtonNormal"]
+content_margin_top = 12.0
+content_margin_bottom = 12.0
+texture = ExtResource("3_button_normal")
+texture_margin_left = 64.0
+texture_margin_top = 32.0
+texture_margin_right = 64.0
+texture_margin_bottom = 32.0
+modulate_color = Color(0.66, 0.59, 0.43, 0.94)
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxButtonPressed"]
+content_margin_top = 14.0
+content_margin_bottom = 10.0
+texture = ExtResource("5_button_pressed")
+texture_margin_left = 64.0
+texture_margin_top = 32.0
+texture_margin_right = 64.0
+texture_margin_bottom = 32.0
+modulate_color = Color(0.54, 0.48, 0.36, 0.92)
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxPanel"]
+content_margin_left = 32.0
+content_margin_top = 28.0
+content_margin_right = 32.0
+content_margin_bottom = 28.0
+texture = ExtResource("1_panel")
+texture_margin_left = 96.0
+texture_margin_top = 80.0
+texture_margin_right = 96.0
+texture_margin_bottom = 80.0
+modulate_color = Color(0.62, 0.55, 0.39, 0.94)
 
 [resource]
 default_font_size = 20
-PanelContainer/styles/panel = SubResource("StyleBoxPanel")
 Button/colors/font_color = Color(0.21, 0.19, 0.13, 1)
+Button/colors/font_disabled_color = Color(0.3, 0.29, 0.25, 0.85)
 Button/colors/font_hover_color = Color(0.15, 0.13, 0.09, 1)
 Button/colors/font_pressed_color = Color(0.12, 0.11, 0.08, 1)
-Button/colors/font_disabled_color = Color(0.30, 0.29, 0.25, 0.85)
-Button/styles/normal = SubResource("StyleBoxButtonNormal")
-Button/styles/hover = SubResource("StyleBoxButtonHover")
-Button/styles/pressed = SubResource("StyleBoxButtonPressed")
 Button/styles/disabled = SubResource("StyleBoxButtonDisabled")
-Label/colors/font_color = Color(0.86, 0.80, 0.66, 1)
+Button/styles/hover = SubResource("StyleBoxButtonHover")
+Button/styles/normal = SubResource("StyleBoxButtonNormal")
+Button/styles/pressed = SubResource("StyleBoxButtonPressed")
+Label/colors/font_color = Color(0.86, 0.8, 0.66, 1)
 Label/colors/font_shadow_color = Color(0.06, 0.045, 0.025, 0.72)
 Label/constants/shadow_offset_x = 1
 Label/constants/shadow_offset_y = 1
 PanelContainer/constants/separation = 16
+PanelContainer/styles/panel = SubResource("StyleBoxPanel")
