@@ -46,7 +46,7 @@ func _run() -> void:
 	await process_frame
 	main.call(&"request_start_shift")
 	await process_frame
-	main.call(&"confirm_content_notice")
+	main.call(&"finish_loading_for_verification")
 	for _index: int in 30:
 		await process_frame
 	var game_screen: Control = main.get("_game_screen") as Control

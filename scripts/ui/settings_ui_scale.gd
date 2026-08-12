@@ -34,10 +34,24 @@ static func apply_font_size(root: Node, font_size_percent: int, inherited_percen
 
 
 static func _collect_controls(node: Node, output: Array[Control]) -> void:
-	if node is Control:
+	if _is_text_control(node):
 		output.append(node as Control)
 	for child: Node in node.get_children():
 		_collect_controls(child, output)
+
+
+## 只有真实渲染文字的控件才支持 font_size 主题覆写。TextureRect、Panel、
+## Container 等布局控件也继承 Control；对它们写入覆写会污染后代布局与资源缩放。
+static func _is_text_control(node: Node) -> bool:
+	return node is Label \
+		or node is Button \
+		or node is RichTextLabel \
+		or node is LineEdit \
+		or node is TextEdit \
+		or node is OptionButton \
+		or node is CheckButton \
+		or node is CheckBox \
+		or node is SpinBox
 
 
 static func _capture_base_font_size(control: Control, previous_percent: int) -> void:

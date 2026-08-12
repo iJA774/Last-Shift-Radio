@@ -33,14 +33,14 @@ func _capture() -> void:
 	await process_frame
 	main.call(&"request_start_shift")
 	await process_frame
-	main.call(&"confirm_content_notice")
+	main.call(&"finish_loading_for_verification")
 	await process_frame
 	var screen: GameScreen = main.get("_game_screen") as GameScreen
 	if screen == null:
 		push_error("[测试][SaveCapture] 新班次没有 GameScreen。")
 		quit(1)
 		return
-	screen.get_node(NodePath("SaveButton")).emit_signal(&"pressed")
+	screen.call(&"_open_save_panel")
 	await process_frame
 	await process_frame
 	if not _save_viewport("phase7_save_slots_1920x1080.png"):

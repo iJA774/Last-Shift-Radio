@@ -25,14 +25,11 @@ func _run() -> void:
 	_assert_equal(invalid_app.call(&"get_application_state_name"), "MAIN_MENU", "启动时必须先停在主菜单。")
 	invalid_app.call(&"request_start_shift")
 	await process_frame
-	invalid_app.call(&"confirm_content_notice")
+	invalid_app.call(&"finish_loading_for_verification")
 	await process_frame
 	_assert_true(not bool(invalid_app.get("_is_shift_started")), "损坏 JSON 必须阻止 Main 启动夜班。")
 	_assert_true(not bool(game_clock.call(&"is_running")), "损坏 JSON 后不得启动 GameClock。")
-	var invalid_notice: Control = invalid_app.get_node_or_null(NodePath("ScreenHost/ContentNotice")) as Control
-	var startup_error_label: Label = null
-	if invalid_notice != null:
-		startup_error_label = invalid_notice.get_node("Content/NoticePanel/Margin/Layout/ErrorPanel/ErrorLabel") as Label
+	var startup_error_label: Label = invalid_app.get_node_or_null(NodePath("ShellErrorPanel/ErrorLabel")) as Label
 	_assert_true(
 		startup_error_label != null
 			and startup_error_label.text.contains("测试剧情数据")
@@ -49,7 +46,7 @@ func _run() -> void:
 	_assert_equal(app.call(&"get_application_state_name"), "MAIN_MENU", "有效数据时启动也必须先进入主菜单。")
 	app.call(&"request_start_shift")
 	await process_frame
-	app.call(&"confirm_content_notice")
+	app.call(&"finish_loading_for_verification")
 	await process_frame
 
 	var phone_system: RefCounted = app.get("_phone_system") as RefCounted

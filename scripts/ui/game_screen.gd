@@ -10,6 +10,7 @@ signal work_state_changed(previous_state: int, current_state: int, reason_ids: P
 signal save_slot_requested(slot_id: String)
 signal save_panel_opened
 signal save_panel_closed
+signal exit_requested
 
 enum WorkState {
 	IDLE,
@@ -40,6 +41,7 @@ const TRANSITION_DOOR_SECONDS: float = 0.32
 const TRANSITION_RETURN_TO_STUDIO_SECONDS: float = 0.24
 const SAVE_SLOT_PANEL_SCENE: PackedScene = preload("res://scenes/ui/save_slot_panel.tscn")
 const SETTINGS_PANEL_SCENE: PackedScene = preload("res://scenes/ui/settings_panel.tscn")
+const SHIFT_CONTROL_BAR_SCENE: PackedScene = preload("res://scenes/ui/shift_control_bar.tscn")
 
 var _story_engine: RefCounted = null
 var _phone_system: RefCounted = null
@@ -57,6 +59,7 @@ var _view_transition: Tween = null
 var _transition_serial: int = 0
 var _save_slot_panel: SaveSlotPanel = null
 var _settings_panel: SettingsPanel = null
+var _shift_control_bar: Control = null
 var _text_speed_multiplier: float = 1.0
 
 @onready var _studio_overview: Control = $ViewHost/StudioOverview
@@ -66,8 +69,6 @@ var _text_speed_multiplier: float = 1.0
 @onready var _global_status: GlobalStatus = $GlobalStatus
 @onready var _system_message: Label = $SystemMessagePanel/SystemMessage
 @onready var _system_message_panel: PanelContainer = $SystemMessagePanel
-@onready var _save_button: Button = $SaveButton
-@onready var _settings_button: Button = $SettingsButton
 
 
 func _ready() -> void:
@@ -79,9 +80,15 @@ func _ready() -> void:
 		VIEW_DOOR: _door_window_closeup,
 	}
 	_system_message_panel.visible = false
-	_save_button.pressed.connect(_on_save_button_pressed)
-	_settings_button.pressed.connect(_on_settings_button_pressed)
 	_show_view_internal(VIEW_STUDIO, true)
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if _is_ending or is_save_panel_open() or is_settings_panel_open():
+		return
+	if event.is_action_pressed(&"ui_cancel") and not event.is_echo():
+		toggle_control_bar()
+		get_viewport().set_input_as_handled()
 
 
 ## 由应用壳在内容数据校验通过后注入。这个方法不读取文件，也不启动时钟。
@@ -260,8 +267,7 @@ func show_ending(record: Dictionary) -> Dictionary:
 	_is_ending = true
 	_close_save_panel()
 	_close_settings_panel(false)
-	_save_button.visible = false
-	_settings_button.visible = false
+	_close_control_bar()
 	if _phone_closeup.has_method(&"stop_text_presentation"):
 		_phone_closeup.call(&"stop_text_presentation")
 	# 02:00 具有最高优先级：先终止任何进行中的 Tween，再立即锁到电脑视图。
@@ -408,12 +414,42 @@ func is_settings_panel_open() -> bool:
 	return _settings_panel != null and is_instance_valid(_settings_panel)
 
 
+func is_control_bar_open() -> bool:
+	return _shift_control_bar != null and is_instance_valid(_shift_control_bar)
+
+
+## ESC 调用的公开入口。控制栏本身不改变工作状态或游戏时间倍率。
+func toggle_control_bar() -> Dictionary:
+	if _is_ending:
+		return {"ok": false, "message": "02:00 强制收束中不能打开控制栏。"}
+	if is_control_bar_open():
+		_close_control_bar()
+		return {"ok": true, "is_open": false}
+	_shift_control_bar = SHIFT_CONTROL_BAR_SCENE.instantiate() as Control
+	if _shift_control_bar == null:
+		return _make_error("无法实例化 ESC 控制栏。")
+	_shift_control_bar.z_index = 40
+	_shift_control_bar.connect(&"settings_requested", Callable(self, "_on_control_bar_settings_requested"))
+	_shift_control_bar.connect(&"save_requested", Callable(self, "_on_control_bar_save_requested"))
+	_shift_control_bar.connect(&"exit_requested", Callable(self, "_on_control_bar_exit_requested"))
+	add_child(_shift_control_bar)
+	var font_size_percent: int = int(get_meta(SettingsUiScale.META_APPLIED_PERCENT, 100))
+	var font_result: Dictionary = SettingsUiScale.apply_font_size(_shift_control_bar, font_size_percent, 100)
+	if not bool(font_result.get("ok", false)):
+		_close_control_bar()
+		return _make_error("应用 ESC 控制栏字体失败：%s" % String(font_result.get("message", "未知原因。")))
+	_refresh_control_bar_availability()
+	_shift_control_bar.call(&"focus_first_action")
+	return {"ok": true, "is_open": true}
+
+
 ## 由应用壳在替换本局 GameScreen 前调用。视图节点随后会被销毁；此处只清理
 ## 本控制器持有的运行时引用和自身回调，不能重置 StoryEngine 或 PhoneSystem。
 func release_runtime() -> Dictionary:
 	_cancel_view_transition()
 	_close_save_panel()
 	_close_settings_panel(false)
+	_close_control_bar()
 	if _phone_closeup != null and _phone_closeup.has_method(&"stop_text_presentation"):
 		_phone_closeup.call(&"stop_text_presentation")
 	_disconnect_view_signals()
@@ -441,7 +477,6 @@ func _connect_view_signals() -> Dictionary:
 		{"source": _computer_closeup, "signal": &"broadcast_requested", "callback": Callable(self, "_on_broadcast_requested")},
 		{"source": _computer_closeup, "signal": &"computer_entry_open_requested", "callback": Callable(self, "_on_computer_entry_open_requested")},
 		{"source": _door_window_closeup, "signal": &"return_requested", "callback": Callable(self, "_on_closeup_return_requested")},
-		{"source": _global_status, "signal": &"phone_view_requested", "callback": Callable(self, "_on_phone_view_requested")},
 	]
 	for contract: Dictionary in contracts:
 		var source: Object = contract["source"] as Object
@@ -473,7 +508,6 @@ func _disconnect_view_signals() -> void:
 		{"source": _computer_closeup, "signal": &"broadcast_requested", "callback": Callable(self, "_on_broadcast_requested")},
 		{"source": _computer_closeup, "signal": &"computer_entry_open_requested", "callback": Callable(self, "_on_computer_entry_open_requested")},
 		{"source": _door_window_closeup, "signal": &"return_requested", "callback": Callable(self, "_on_closeup_return_requested")},
-		{"source": _global_status, "signal": &"phone_view_requested", "callback": Callable(self, "_on_phone_view_requested")},
 	]
 	for contract: Dictionary in contracts:
 		var source: Object = contract["source"] as Object
@@ -525,6 +559,7 @@ func _disconnect_work_state_signals() -> void:
 
 func _on_phone_state_changed(_previous_state: int, _current_state: int, _event_id: String) -> void:
 	_refresh_save_panel_availability()
+	_refresh_control_bar_availability()
 	_sync_work_state_or_show_error()
 
 
@@ -637,11 +672,6 @@ func _on_overview_view_requested(view_id: String) -> void:
 
 func _on_closeup_return_requested() -> void:
 	_handle_view_request(VIEW_STUDIO)
-
-
-func _on_phone_view_requested() -> void:
-	# 来电指示只导航，PhoneSystem 的 Ringing 状态保持不变。
-	_handle_view_request(VIEW_PHONE)
 
 
 func _handle_view_request(view_id: String) -> void:
@@ -782,7 +812,22 @@ func _on_finish_call_requested() -> void:
 	_call_phone_action(&"finish_call", "结束通话", true)
 
 
-func _on_save_button_pressed() -> void:
+func _on_control_bar_save_requested() -> void:
+	_close_control_bar()
+	_open_save_panel()
+
+
+func _on_control_bar_settings_requested() -> void:
+	_close_control_bar()
+	_open_settings_panel()
+
+
+func _on_control_bar_exit_requested() -> void:
+	_close_control_bar()
+	exit_requested.emit()
+
+
+func _open_save_panel() -> void:
 	if _is_ending:
 		show_system_error("02:00 强制收束中不能保存。")
 		return
@@ -802,7 +847,7 @@ func _on_save_button_pressed() -> void:
 	save_panel_opened.emit()
 
 
-func _on_settings_button_pressed() -> void:
+func _open_settings_panel() -> void:
 	if _is_ending:
 		show_system_error("02:00 强制收束中不能打开设置。")
 		return
@@ -870,6 +915,30 @@ func _close_save_panel() -> void:
 	_save_slot_panel.queue_free()
 	_save_slot_panel = null
 	save_panel_closed.emit()
+
+
+func _close_control_bar() -> void:
+	if _shift_control_bar == null or not is_instance_valid(_shift_control_bar):
+		_shift_control_bar = null
+		return
+	_shift_control_bar.queue_free()
+	_shift_control_bar = null
+
+
+func _refresh_control_bar_availability() -> void:
+	if _shift_control_bar == null or not is_instance_valid(_shift_control_bar):
+		return
+	var can_save: bool = _can_current_phone_save() and not _is_ending
+	var reason: String = _get_current_save_block_reason()
+	if _is_ending:
+		reason = "02:00 强制收束中不能保存。"
+	var result_value: Variant = _shift_control_bar.call(&"set_save_availability", can_save, reason)
+	if not result_value is Dictionary:
+		push_error("[游戏界面][control_bar_refresh_error] ESC 控制栏未返回 Dictionary。")
+		return
+	var result: Dictionary = result_value as Dictionary
+	if not bool(result.get("ok", false)):
+		push_error("[游戏界面][control_bar_refresh_error] %s" % String(result.get("message", "未知错误。")))
 
 
 func _refresh_save_panel_availability() -> void:

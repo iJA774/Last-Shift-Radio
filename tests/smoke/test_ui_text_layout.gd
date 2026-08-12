@@ -10,7 +10,7 @@ const DOOR_WINDOW_CLOSEUP_SCENE: PackedScene = preload("res://scenes/studio/door
 const STUDIO_OVERVIEW_SCENE: PackedScene = preload("res://scenes/studio/studio_overview.tscn")
 const GLOBAL_STATUS_SCENE: PackedScene = preload("res://scenes/ui/global_status.tscn")
 const MAIN_SCENE: PackedScene = preload("res://scenes/app/main.tscn")
-const CONTENT_NOTICE_SCENE: PackedScene = preload("res://scenes/app/content_notice.tscn")
+const LOADING_SCREEN_SCENE: PackedScene = preload("res://scenes/app/loading_screen.tscn")
 const ENDING_SCREEN_SCENE: PackedScene = preload("res://scenes/app/ending_screen.tscn")
 const SAVE_SLOT_PANEL_SCENE: PackedScene = preload("res://scenes/ui/save_slot_panel.tscn")
 const PHONE_SYSTEM_SCRIPT: GDScript = preload("res://scripts/systems/phone_system.gd")
@@ -136,17 +136,16 @@ func _test_application_pages() -> void:
 		main.queue_free()
 		await process_frame
 
-	var notice: Control = CONTENT_NOTICE_SCENE.instantiate() as Control
-	_assert_true(notice != null, "内容提示页必须能实例化。")
-	if notice != null:
-		root.add_child(notice)
+	var loading: Control = LOADING_SCREEN_SCENE.instantiate() as Control
+	_assert_true(loading != null, "加载页面必须能实例化。")
+	if loading != null:
+		root.add_child(loading)
 		await _wait_frames(3)
-		notice.call(&"show_error", LONG_ERROR_TEXT)
-		_apply_font_scale(notice, LARGE_FONT_SCALE)
+		_apply_font_scale(loading, LARGE_FONT_SCALE)
 		await _wait_frames(4)
-		_assert_layout(notice, "内容提示（长错误、125% 字号）")
+		_assert_layout(loading, "加载页面（125% 字号）")
 		_restore_font_scale()
-		notice.queue_free()
+		loading.queue_free()
 		await process_frame
 
 	var ending: Control = ENDING_SCREEN_SCENE.instantiate() as Control

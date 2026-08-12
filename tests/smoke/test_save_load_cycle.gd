@@ -84,14 +84,14 @@ func _run() -> void:
 	_assert_equal(String(((saved_document["phone_state"] as Dictionary)["active_call"] as Dictionary)["event_id"]), "call_04_dog_walker", "电话快照必须保存活动来电 ID。")
 
 	# 打开保存覆盖层时，GameClock 继续推进；覆盖层不会暂停剧情。
-	screen.get_node(NodePath("SaveButton")).emit_signal(&"pressed")
+	screen.call(&"_open_save_panel")
 	await process_frame
 	_assert_true(screen.is_save_panel_open(), "点击存档入口必须显示覆盖式三槽页。")
 	var tick_before_overlay_advance: int = int(game_clock.call(&"get_current_game_tick"))
 	_assert_true(tick_before_overlay_advance >= saved_tick, "保存覆盖层打开期间时钟不得倒退。")
 	_assert_true(bool(game_clock.call(&"advance_ticks_for_verification", 1)), "存档覆盖层打开时仍必须可推进故事时间。")
 	_assert_equal(int(game_clock.call(&"get_current_game_tick")), tick_before_overlay_advance + 1, "存档覆盖层不得暂停游戏时间。")
-	screen.get_node(NodePath("SaveButton")).emit_signal(&"pressed")
+	screen.call(&"_close_save_panel")
 	await process_frame
 	_assert_true(not screen.is_save_panel_open(), "再次点击存档入口必须关闭覆盖层。")
 
@@ -163,7 +163,7 @@ func _run() -> void:
 	_assert_equal((restored_story.call(&"get_player_broadcast_records") as Array).size(), 2, "读取后不得重复或丢失玩家广播记录。")
 
 	# 读取后的保存覆盖层也不能挡住 02:00；收束会立即关闭它且不重复电话/广播/事实。
-	restored_screen.get_node(NodePath("SaveButton")).emit_signal(&"pressed")
+	restored_screen.call(&"_open_save_panel")
 	await process_frame
 	_assert_true(restored_screen.is_save_panel_open(), "恢复后必须仍能打开保存覆盖层。")
 	_assert_true(bool(game_clock.call(&"advance_ticks_for_verification", int(game_clock.call(&"get_remaining_game_ticks")))), "恢复后必须可继续推进至 02:00。")
@@ -186,7 +186,7 @@ func _create_and_start_app() -> Control:
 	await process_frame
 	app.call(&"request_start_shift")
 	await process_frame
-	app.call(&"confirm_content_notice")
+	app.call(&"finish_loading_for_verification")
 	await process_frame
 	if String(app.call(&"get_application_state_name")) != "SHIFT":
 		_assert_true(false, "测试班次必须成功开始。")

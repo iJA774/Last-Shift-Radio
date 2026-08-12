@@ -1,62 +1,272 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene format=3 uid="uid://cdlmbb3nag1gl"]
 
-[ext_resource type="Script" path="res://scripts/ui/global_status.gd" id="1_script"]
-[ext_resource type="Texture2D" path="res://art/ui/low_saturation_v1/icons/runtime/icon_phone_ringing.png" id="2_ringing_icon"]
+[ext_resource type="Script" uid="uid://b23nushu70u2h" path="res://scripts/ui/global_status.gd" id="1_script"]
+[ext_resource type="Texture2D" uid="uid://dknataj56qfti" path="res://UI美术/时间框.png" id="2_time_frame"]
+[ext_resource type="Texture2D" uid="uid://d0qvk7630aj8m" path="res://UI美术/电话铃响.png" id="3_ringing_panel"]
+[ext_resource type="Texture2D" path="res://UI美术/电话铃响（灭）.png" id="5_ringing_panel_dim"]
+[ext_resource type="Texture2D" uid="uid://b6k2vfsnvfrbv" path="res://UI美术/时间UI.png" id="4_time_digits"]
 
-[node name="GlobalStatus" type="PanelContainer"]
-custom_minimum_size = Vector2(0, 86)
+[sub_resource type="AtlasTexture" id="AtlasTimeFrame"]
+atlas = ExtResource("2_time_frame")
+region = Rect2(40, 258, 1450, 500)
+
+[sub_resource type="AtlasTexture" id="AtlasDigit0"]
+atlas = ExtResource("4_time_digits")
+region = Rect2(0, 0, 307, 384)
+
+[sub_resource type="AtlasTexture" id="AtlasDigit1"]
+atlas = ExtResource("4_time_digits")
+region = Rect2(307, 0, 308, 384)
+
+[sub_resource type="AtlasTexture" id="AtlasAm"]
+atlas = ExtResource("4_time_digits")
+region = Rect2(205, 786, 430, 210)
+
+[sub_resource type="AtlasTexture" id="AtlasDigit2"]
+atlas = ExtResource("4_time_digits")
+region = Rect2(615, 0, 307, 384)
+
+[sub_resource type="AtlasTexture" id="AtlasDigit3"]
+atlas = ExtResource("4_time_digits")
+region = Rect2(922, 0, 307, 384)
+
+[sub_resource type="AtlasTexture" id="AtlasDigit4"]
+atlas = ExtResource("4_time_digits")
+region = Rect2(1229, 0, 307, 384)
+
+[sub_resource type="AtlasTexture" id="AtlasDigit5"]
+atlas = ExtResource("4_time_digits")
+region = Rect2(0, 384, 307, 384)
+
+[sub_resource type="AtlasTexture" id="AtlasDigit6"]
+atlas = ExtResource("4_time_digits")
+region = Rect2(307, 384, 308, 384)
+
+[sub_resource type="AtlasTexture" id="AtlasDigit7"]
+atlas = ExtResource("4_time_digits")
+region = Rect2(615, 384, 307, 384)
+
+[sub_resource type="AtlasTexture" id="AtlasDigit8"]
+atlas = ExtResource("4_time_digits")
+region = Rect2(922, 384, 307, 384)
+
+[sub_resource type="AtlasTexture" id="AtlasDigit9"]
+atlas = ExtResource("4_time_digits")
+region = Rect2(1229, 384, 307, 384)
+
+[sub_resource type="AtlasTexture" id="AtlasPm"]
+atlas = ExtResource("4_time_digits")
+region = Rect2(865, 786, 430, 210)
+
+[sub_resource type="AtlasTexture" id="AtlasRingingPanel"]
+atlas = ExtResource("3_ringing_panel")
+region = Rect2(28, 334, 1480, 380)
+
+[sub_resource type="AtlasTexture" id="AtlasRingingPanelDim"]
+atlas = ExtResource("5_ringing_panel_dim")
+region = Rect2(28, 334, 1480, 380)
+
+[node name="GlobalStatus" type="Control" unique_id=1070271288]
 layout_mode = 3
-anchors_preset = 10
+anchors_preset = 15
 anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -660.0
+offset_top = 17.0
+offset_right = -660.0
+offset_bottom = 17.0
 grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
 script = ExtResource("1_script")
 
-[node name="Content" type="HBoxContainer" parent="."]
-layout_mode = 2
-theme_override_constants/separation = 16
-
-[node name="TimeLabel" type="Label" parent="Content"]
-custom_minimum_size = Vector2(500, 0)
-layout_mode = 2
-size_flags_horizontal = 1
-theme_override_font_sizes/font_size = 26
-text = "1999 年 12 月 31 日 / 01:00"
-vertical_alignment = 1
-
-[node name="WorkStateLabel" type="Label" parent="Content"]
-custom_minimum_size = Vector2(390, 0)
-layout_mode = 2
-size_flags_horizontal = 3
-theme_override_font_sizes/font_size = 17
-text = "工作状态：空闲\n时间流速：现实 2 秒 = 游戏 1 分钟"
-autowrap_mode = 2
-vertical_alignment = 1
-
-[node name="RingingIndicator" type="HBoxContainer" parent="Content"]
-visible = false
-layout_mode = 2
-size_flags_horizontal = 3
-theme_override_constants/separation = 10
-
-[node name="RingingIcon" type="TextureRect" parent="Content/RingingIndicator"]
-custom_minimum_size = Vector2(42, 42)
-layout_mode = 2
-texture = ExtResource("2_ringing_icon")
+[node name="TimeFrame" type="TextureRect" parent="." unique_id=338582456]
+layout_mode = 0
+offset_left = 704.0
+offset_top = 18.0
+offset_right = 1214.0
+offset_bottom = 194.0
+mouse_filter = 2
+texture = SubResource("AtlasTimeFrame")
 expand_mode = 1
-stretch_mode = 5
+stretch_mode = 6
 
-[node name="RingingText" type="Label" parent="Content/RingingIndicator"]
-custom_minimum_size = Vector2(360, 0)
-layout_mode = 2
-size_flags_horizontal = 3
-theme_override_font_sizes/font_size = 18
-text = "电话正在响铃"
-autowrap_mode = 2
+[node name="Content" type="Control" parent="." unique_id=1536535808]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="TimeTitle" type="Label" parent="Content" unique_id=723927606]
+layout_mode = 0
+offset_left = 868.0
+offset_top = 40.0
+offset_right = 1145.0
+offset_bottom = 81.0
+theme_override_colors/font_color = Color(0.98, 0.82, 0.45, 1)
+theme_override_colors/font_shadow_color = Color(0.02, 0.01, 0, 1)
+theme_override_constants/shadow_offset_x = 2
+theme_override_constants/shadow_offset_y = 2
+theme_override_font_sizes/font_size = 16
+text = "1999年12月31日"
+horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="PhoneButton" type="Button" parent="Content/RingingIndicator"]
-custom_minimum_size = Vector2(144, 56)
-layout_mode = 2
-text = "前往电话"
-tooltip_text = "打开电话近景；不会自动接听。"
-autowrap_mode = 2
+[node name="ClockDigits" type="Control" parent="Content" unique_id=1623642326]
+anchors_preset = 0
+offset_left = 790.0
+offset_top = 87.0
+offset_right = 1131.0
+offset_bottom = 156.0
+mouse_filter = 2
+
+[node name="HourTens" type="TextureRect" parent="Content/ClockDigits" unique_id=362444089]
+layout_mode = 0
+offset_right = 46.0
+offset_bottom = 58.0
+mouse_filter = 2
+texture = SubResource("AtlasDigit0")
+expand_mode = 1
+stretch_mode = 6
+
+[node name="HourUnits" type="TextureRect" parent="Content/ClockDigits" unique_id=1463412463]
+layout_mode = 0
+offset_left = 47.0
+offset_right = 93.0
+offset_bottom = 58.0
+mouse_filter = 2
+texture = SubResource("AtlasDigit1")
+expand_mode = 1
+stretch_mode = 6
+
+[node name="Colon" type="Label" parent="Content/ClockDigits" unique_id=1007252904]
+layout_mode = 0
+offset_left = 96.0
+offset_top = 4.0
+offset_right = 111.0
+offset_bottom = 55.0
+theme_override_colors/font_color = Color(0.98, 0.82, 0.45, 1)
+theme_override_colors/font_shadow_color = Color(0.02, 0.01, 0, 1)
+theme_override_constants/shadow_offset_x = 1
+theme_override_constants/shadow_offset_y = 1
+theme_override_font_sizes/font_size = 34
+text = ":"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="MinuteTens" type="TextureRect" parent="Content/ClockDigits" unique_id=1996754430]
+layout_mode = 0
+offset_left = 115.0
+offset_right = 161.0
+offset_bottom = 58.0
+mouse_filter = 2
+texture = SubResource("AtlasDigit0")
+expand_mode = 1
+stretch_mode = 6
+
+[node name="MinuteUnits" type="TextureRect" parent="Content/ClockDigits" unique_id=576244579]
+layout_mode = 0
+offset_left = 162.0
+offset_right = 208.0
+offset_bottom = 58.0
+mouse_filter = 2
+texture = SubResource("AtlasDigit0")
+expand_mode = 1
+stretch_mode = 6
+
+[node name="Meridiem" type="TextureRect" parent="Content/ClockDigits" unique_id=1959337331]
+layout_mode = 0
+offset_left = 229.0
+offset_top = 15.0
+offset_right = 299.0
+offset_bottom = 49.0
+mouse_filter = 2
+texture = SubResource("AtlasAm")
+expand_mode = 1
+stretch_mode = 6
+
+[node name="ClockGlyphLibrary" type="Control" parent="Content" unique_id=2099456034]
+visible = false
+anchors_preset = 0
+mouse_filter = 2
+
+[node name="Digit0" type="TextureRect" parent="Content/ClockGlyphLibrary" unique_id=1146141853]
+layout_mode = 0
+texture = SubResource("AtlasDigit0")
+
+[node name="Digit1" type="TextureRect" parent="Content/ClockGlyphLibrary" unique_id=572641406]
+layout_mode = 0
+texture = SubResource("AtlasDigit1")
+
+[node name="Digit2" type="TextureRect" parent="Content/ClockGlyphLibrary" unique_id=918435267]
+layout_mode = 0
+texture = SubResource("AtlasDigit2")
+
+[node name="Digit3" type="TextureRect" parent="Content/ClockGlyphLibrary" unique_id=915200365]
+layout_mode = 0
+texture = SubResource("AtlasDigit3")
+
+[node name="Digit4" type="TextureRect" parent="Content/ClockGlyphLibrary" unique_id=959508666]
+layout_mode = 0
+texture = SubResource("AtlasDigit4")
+
+[node name="Digit5" type="TextureRect" parent="Content/ClockGlyphLibrary" unique_id=1388457990]
+layout_mode = 0
+texture = SubResource("AtlasDigit5")
+
+[node name="Digit6" type="TextureRect" parent="Content/ClockGlyphLibrary" unique_id=2666513]
+layout_mode = 0
+texture = SubResource("AtlasDigit6")
+
+[node name="Digit7" type="TextureRect" parent="Content/ClockGlyphLibrary" unique_id=1452555316]
+layout_mode = 0
+texture = SubResource("AtlasDigit7")
+
+[node name="Digit8" type="TextureRect" parent="Content/ClockGlyphLibrary" unique_id=1414893590]
+layout_mode = 0
+texture = SubResource("AtlasDigit8")
+
+[node name="Digit9" type="TextureRect" parent="Content/ClockGlyphLibrary" unique_id=1949243814]
+layout_mode = 0
+texture = SubResource("AtlasDigit9")
+
+[node name="Am" type="TextureRect" parent="Content/ClockGlyphLibrary" unique_id=383847676]
+layout_mode = 0
+texture = SubResource("AtlasAm")
+
+[node name="Pm" type="TextureRect" parent="Content/ClockGlyphLibrary" unique_id=1420864034]
+layout_mode = 0
+texture = SubResource("AtlasPm")
+
+[node name="RingingIndicator" type="Control" parent="Content" unique_id=1832384347]
+anchors_preset = 0
+offset_left = 1080.0
+offset_top = 216.0
+offset_right = 1570.0
+offset_bottom = 376.0
+mouse_filter = 2
+
+[node name="RingingIcon" type="TextureRect" parent="Content/RingingIndicator" unique_id=1142429799]
+layout_mode = 0
+offset_left = -368.0
+offset_top = 677.0
+offset_right = 122.0
+offset_bottom = 803.0
+mouse_filter = 2
+texture = SubResource("AtlasRingingPanel")
+expand_mode = 1
+stretch_mode = 6
+
+[node name="RingingDimTexture" type="TextureRect" parent="Content/RingingIndicator"]
+visible = false
+layout_mode = 0
+mouse_filter = 2
+texture = SubResource("AtlasRingingPanelDim")
+
+[node name="RingingBlinkTimer" type="Timer" parent="."]
+process_callback = 0
+wait_time = 1.0
+one_shot = false

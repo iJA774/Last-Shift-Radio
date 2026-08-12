@@ -54,9 +54,9 @@ func _run() -> void:
 	_assert_true(settings_button != null and not settings_button.disabled, "设置文件损坏时仍必须能打开设置页修复。")
 	recovery_app.call(&"request_start_shift")
 	await process_frame
-	recovery_app.call(&"confirm_content_notice")
+	recovery_app.call(&"finish_loading_for_verification")
 	await process_frame
-	_assert_equal(String(recovery_app.call(&"get_application_state_name")), "CONTENT_NOTICE", "损坏设置时不得创建并提交 GameScreen。")
+	_assert_equal(String(recovery_app.call(&"get_application_state_name")), "MAIN_MENU", "损坏设置时不得创建并提交 GameScreen，并应回到主菜单显示明确错误。")
 	_assert_true(not bool(recovery_app.call(&"has_active_runtime")), "损坏设置时 GameScreen 绑定失败后必须清理本局运行时。")
 	recovery_app.call(&"return_to_main_menu")
 	await process_frame
@@ -95,7 +95,7 @@ func _run() -> void:
 
 	app.call(&"request_start_shift")
 	await process_frame
-	app.call(&"confirm_content_notice")
+	app.call(&"finish_loading_for_verification")
 	await process_frame
 	var screen: GameScreen = app.get("_game_screen") as GameScreen
 	var phone: RefCounted = app.get("_phone_system") as RefCounted
@@ -184,7 +184,8 @@ func _run() -> void:
 	_assert_true(not screen.is_motion_enabled(), "读取后必须保持全局减少闪烁。")
 
 	# 夜班内设置覆盖层是 ACTIVE/慢速而非暂停；电话仍可在其上方真实响铃。
-	(screen.get_node(NodePath("SettingsButton")) as Button).emit_signal(&"pressed")
+	_assert_ok(screen.toggle_control_bar(), "必须能打开 ESC 控制栏以进入设置。")
+	(screen.get_node(NodePath("ShiftControlBar/Backdrop/MenuArt/ActionHotspots/SettingsButton")) as Button).emit_signal(&"pressed")
 	await process_frame
 	_assert_true(screen.is_settings_panel_open(), "夜班内必须能打开设置覆盖层。")
 	var work_snapshot: Dictionary = screen.get_work_state_snapshot()
@@ -212,7 +213,8 @@ func _run() -> void:
 	_assert_true(is_equal_approx(screen.get_text_speed_multiplier(), 0.25), "调整后 GameScreen 必须使用新的逐字速度。")
 
 	# 02:00 必须抢占设置页、停止逐字展示并执行固定收束。
-	(screen.get_node(NodePath("SettingsButton")) as Button).emit_signal(&"pressed")
+	_assert_ok(screen.toggle_control_bar(), "收束前必须能打开 ESC 控制栏。")
+	(screen.get_node(NodePath("ShiftControlBar/Backdrop/MenuArt/ActionHotspots/SettingsButton")) as Button).emit_signal(&"pressed")
 	await process_frame
 	_assert_true(screen.is_settings_panel_open(), "收束前必须可再次打开夜班设置覆盖层。")
 	_assert_true(bool(game_clock.call(&"advance_ticks_for_verification", int(game_clock.call(&"get_remaining_game_ticks")))), "设置覆盖层期间必须可推进到 02:00。")

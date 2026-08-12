@@ -1,6 +1,6 @@
 extends SceneTree
 
-## 第四阶段应用页面视觉验收：主菜单、内容提示和独立结束页均为 1920×1080。
+## 应用页面视觉验收：主菜单、加载页和独立结束页均为 1920×1080。
 ## 请使用带渲染设备的 Godot 控制台入口执行；Headless 不替代本脚本。
 
 const OUTPUT_DIRECTORY: String = "res://tests/artifacts/phase4"
@@ -28,15 +28,16 @@ func _capture() -> void:
 		return
 
 	main.call(&"request_start_shift")
-	await _wait_frames(3)
-	if not _save_viewport("content_notice_1920x1080.png"):
+	# 越过 0.5 秒渐入后再留档，确保截图记录完整可见的 3 秒停留阶段。
+	await create_timer(0.60).timeout
+	if not _save_viewport("loading_1920x1080.png"):
 		quit(1)
 		return
-	if not await _capture_large_font_page(main, "large_font_content_notice.png", "内容提示"):
+	if not await _capture_large_font_page(main, "large_font_loading.png", "加载页面"):
 		quit(1)
 		return
 
-	main.call(&"confirm_content_notice")
+	main.call(&"finish_loading_for_verification")
 	await _wait_frames(3)
 	var game_clock: Node = root.get_node_or_null(NodePath("GameClock")) as Node
 	if game_clock == null or not bool(game_clock.call(&"advance_ticks_for_verification", int(game_clock.call(&"get_remaining_game_ticks")))):
@@ -137,7 +138,10 @@ func _collect_large_font_layout_failures(node: Node, page_name: String, failures
 		if control.is_visible_in_tree() and control.size.x > 0.0 and control.size.y > 0.0:
 			var rect: Rect2 = control.get_global_rect()
 			var viewport_size: Vector2 = Vector2(root.size)
-			if rect.position.x < -1.0 or rect.position.y < -1.0 or rect.end.x > viewport_size.x + 1.0 or rect.end.y > viewport_size.y + 1.0:
+			# 主菜单的参考图选择框故意压住左侧画面边缘；它不是文字控件，
+			# 因而不属于放大字体裁切检查范围。
+			var is_decorative_menu_selection: bool = control.name == "SelectionFrame" and page_name == "主菜单"
+			if not is_decorative_menu_selection and (rect.position.x < -1.0 or rect.position.y < -1.0 or rect.end.x > viewport_size.x + 1.0 or rect.end.y > viewport_size.y + 1.0):
 				failures.append("放大字体%s存在越出视口的控件：%s，rect=%s。" % [page_name, control.get_path(), rect])
 			if control is Label or control is Button:
 				var minimum_size: Vector2 = control.get_combined_minimum_size()

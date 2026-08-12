@@ -57,13 +57,14 @@ func _capture() -> void:
 
 	app.call(&"request_start_shift")
 	await _wait_frames(2)
-	app.call(&"confirm_content_notice")
+	app.call(&"finish_loading_for_verification")
 	await _wait_frames(4)
 	var screen: GameScreen = app.get("_game_screen") as GameScreen
 	if screen == null:
 		_fail("无法取得 GameScreen。")
 		return
-	(screen.get_node(NodePath("SettingsButton")) as Button).emit_signal(&"pressed")
+	screen.toggle_control_bar()
+	(screen.get_node(NodePath("ShiftControlBar/Backdrop/MenuArt/ActionHotspots/SettingsButton")) as Button).emit_signal(&"pressed")
 	await _wait_frames(3)
 	if not _save_viewport("settings_shift_125_1920x1080.png"):
 		return

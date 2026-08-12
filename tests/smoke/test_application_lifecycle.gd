@@ -45,25 +45,23 @@ func _run() -> void:
 
 	app.call(&"request_start_shift")
 	await process_frame
-	_assert_equal(app.call(&"get_application_state_name"), "CONTENT_NOTICE", "开始值班后必须先进入内容提示。")
-	_assert_true(not bool(game_clock.call(&"is_running")), "内容提示期间 GameClock 不得运行。")
-	_assert_true(not bool(app.call(&"has_active_runtime")), "内容提示期间不得创建本局运行时。")
-	var notice: Control = app.get_node_or_null(NodePath("ScreenHost/ContentNotice")) as Control
-	_assert_true(notice != null and notice.visible, "内容提示页必须可见。")
-	if notice != null:
-		var notice_text: Label = notice.get_node_or_null(NodePath("Content/NoticePanel/Margin/Layout/NoticeText")) as Label
-		_assert_true(notice_text != null, "内容提示必须显示文本。")
-		if notice_text != null:
-			_assert_true(notice_text.text.contains("心理恐怖"), "内容提示必须正向说明心理恐怖。")
-			_assert_true(notice_text.text.contains("交通事故"), "内容提示必须正向说明交通事故暗示。")
-			_assert_true(notice_text.text.contains("失踪") or notice_text.text.contains("死亡"), "内容提示必须说明失踪或死亡暗示。")
-			_assert_true(notice_text.text.contains("突发声音") or notice_text.text.contains("视觉刺激"), "内容提示必须说明轻度突发声音或视觉刺激。")
-			_assert_true(not notice_text.text.contains("北桥") and not notice_text.text.contains("旅行车") and not notice_text.text.contains("播出"), "内容提示不得泄露地点、车辆或结尾细节。")
+	_assert_equal(app.call(&"get_application_state_name"), "LOADING", "开始值班后必须先进入加载页面。")
+	_assert_true(not bool(game_clock.call(&"is_running")), "加载页面期间 GameClock 不得运行。")
+	_assert_true(not bool(app.call(&"has_active_runtime")), "加载页面期间不得创建本局运行时。")
+	var loading: Control = app.get_node_or_null(NodePath("ScreenHost/LoadingScreen")) as Control
+	_assert_true(loading != null and loading.visible, "加载页面必须可见。")
+	if loading != null:
+		var timing: Dictionary = loading.call(&"get_timing_snapshot") as Dictionary
+		_assert_equal(float(timing.get("fade_in_seconds", 0.0)), 0.5, "加载页面必须使用 0.5 秒渐入。")
+		_assert_equal(float(timing.get("hold_seconds", 0.0)), 3.0, "加载页面必须完整显示 3 秒。")
+		_assert_equal(float(timing.get("fade_out_seconds", 0.0)), 0.5, "加载页面必须使用 0.5 秒渐出。")
+		var loading_art: TextureRect = loading.get_node_or_null(NodePath("LoadingArt")) as TextureRect
+		_assert_true(loading_art != null and loading_art.texture != null and loading_art.texture.resource_path == "res://UI美术/加载页面.png", "加载页面必须使用指定美术资源。")
 
-	app.call(&"confirm_content_notice")
+	app.call(&"finish_loading_for_verification")
 	await process_frame
-	_assert_equal(app.call(&"get_application_state_name"), "SHIFT", "确认内容提示后必须进入 SHIFT。")
-	_assert_true(bool(game_clock.call(&"is_running")), "确认后 GameClock 必须开始运行。")
+	_assert_equal(app.call(&"get_application_state_name"), "SHIFT", "加载页渐出完成后必须进入 SHIFT。")
+	_assert_true(bool(game_clock.call(&"is_running")), "加载页渐出完成后 GameClock 必须开始运行。")
 	_assert_equal(String(game_clock.call(&"get_display_time")), "01:00", "每局夜班必须从 01:00 开始。")
 	var first_engine: RefCounted = app.get("_story_engine") as RefCounted
 	var first_phone: RefCounted = app.get("_phone_system") as RefCounted

@@ -5,6 +5,17 @@ extends SceneTree
 const MAIN_SCENE: PackedScene = preload("res://scenes/app/main.tscn")
 
 var _has_failed: bool = false
+var _exit_signal_count: int = 0
+
+
+class ClockDisplayFake extends Node:
+	var display_time: String = "13:05"
+
+	func get_current_game_tick() -> int:
+		return 0
+
+	func get_display_time() -> String:
+		return display_time
 
 
 func _init() -> void:
@@ -18,7 +29,7 @@ func _run() -> void:
 	_assert_equal(app.call(&"get_application_state_name"), "MAIN_MENU", "导航测试启动后必须先进入主菜单。")
 	app.call(&"request_start_shift")
 	await process_frame
-	app.call(&"confirm_content_notice")
+	app.call(&"finish_loading_for_verification")
 	await process_frame
 
 	var game_screen: GameScreen = app.get("_game_screen") as GameScreen
@@ -39,8 +50,88 @@ func _run() -> void:
 	if studio == null or phone == null or computer == null or door == null or global_status == null:
 		_finish()
 		return
-	var time_label: Label = global_status.get_node("Content/TimeLabel") as Label
-	_assert_equal(time_label.text, "1999 年 12 月 31 日 / 01:00", "左上角必须从 1999 年 12 月 31 日凌晨一点开始。")
+	_assert_true(studio.get_node_or_null("ViewLabel") == null, "工作室总览不得保留左上角“A 号直播室／工作室总览”说明。")
+	_assert_true(studio.get_node_or_null("InteractionHint") == null, "工作室总览不得保留左上角“移动鼠标”操作提示。")
+	var time_frame: TextureRect = global_status.get_node("TimeFrame") as TextureRect
+	var time_title: Label = global_status.get_node("Content/TimeTitle") as Label
+	var clock_digits: Control = global_status.get_node("Content/ClockDigits") as Control
+	_assert_true(time_frame != null, "游戏内 HUD 必须提供独立时间牌，而非顶部横向状态条。")
+	if time_frame != null:
+		_assert_true(
+			time_frame.position.x >= 640.0 and time_frame.position.y >= 0.0 and time_frame.size.x <= 560.0,
+			"时间牌必须保持为顶部居中的独立仪表，不能退化为横跨屏幕的顶部栏。"
+		)
+	_assert_true(global_status.get_node_or_null("Content/WorkStateLabel") == null, "HUD 不得再显示工作状态或时间流速文字行。")
+	_assert_equal(time_title.text, "1999年12月31日", "时间牌必须在素材自带的“当前时间”右侧显示固定日期。")
+	_assert_true(clock_digits != null and clock_digits.visible, "时间牌必须显示由图集拼装的时钟。")
+	var clock_snapshot: Dictionary = global_status.get_display_clock_snapshot()
+	_assert_true(bool(clock_snapshot.get("ok", false)), "全局状态必须能提供有效的时钟显示快照。")
+	_assert_equal(clock_snapshot.get("time_12h"), "01:00", "夜班开始必须显示 12 小时制 01:00。")
+	_assert_equal(clock_snapshot.get("meridiem"), "AM", "夜班开始必须显示 AM。")
+	for glyph_path: String in [
+		"Content/ClockDigits/HourTens", "Content/ClockDigits/HourUnits", "Content/ClockDigits/MinuteTens", "Content/ClockDigits/MinuteUnits", "Content/ClockDigits/Meridiem",
+	]:
+		var glyph: TextureRect = global_status.get_node(glyph_path) as TextureRect
+		_assert_true(glyph != null and glyph.texture is AtlasTexture, "时钟图块 %s 必须使用 AtlasTexture。" % glyph_path)
+		if glyph != null and glyph.texture is AtlasTexture:
+			var atlas_texture: AtlasTexture = glyph.texture as AtlasTexture
+			_assert_true(atlas_texture.atlas != null and atlas_texture.atlas.resource_path == "res://UI美术/时间UI.png", "时钟图块必须来自 时间UI.png。")
+	_assert_true(game_screen.get_node_or_null("SaveButton") == null, "夜班内不得保留常驻存档按钮。")
+	_assert_true(game_screen.get_node_or_null("SettingsButton") == null, "夜班内不得保留常驻设置按钮。")
+	_assert_true(game_screen.get_node_or_null("DutyMenuLabel") == null, "夜班内不得保留常驻值班菜单标题。")
+	var game_clock: Node = root.get_node_or_null(NodePath("GameClock")) as Node
+	var rate_before_control_bar: Variant = game_clock.call(&"get_time_rate_mode") if game_clock != null else null
+	_press_escape(game_screen)
+	_assert_true(game_screen.is_control_bar_open(), "打开控制栏后必须有覆盖层。")
+	_assert_equal(game_clock.call(&"get_time_rate_mode"), rate_before_control_bar, "单独打开 ESC 控制栏不得改变时钟倍率。")
+	var control_bar: Control = game_screen.get_node_or_null("ShiftControlBar") as Control
+	_assert_true(control_bar != null, "控制栏必须实例化为覆盖层。")
+	if control_bar != null:
+		var menu_art: TextureRect = control_bar.get_node_or_null("Backdrop/MenuArt") as TextureRect
+		var selection_dot: Label = control_bar.get_node_or_null("Backdrop/MenuArt/ActionHotspots/SelectionDot") as Label
+		_assert_true(menu_art != null and menu_art.texture != null and menu_art.texture.resource_path == "res://UI美术/菜单UI.png", "控制栏必须完整使用菜单UI美术。")
+		_assert_true(selection_dot != null and selection_dot.text == "●", "控制栏必须只显示一个白色圆点作为选择提示。")
+		_assert_true(control_bar.get_node_or_null("Backdrop/Panel") == null, "控制栏不得保留旧选择框底板。")
+		_assert_true(control_bar.get_node_or_null("Backdrop/MenuArt/ActionHotspots/SettingsButton") is Button, "控制栏必须包含设置透明热点。")
+		_assert_true(control_bar.get_node_or_null("Backdrop/MenuArt/ActionHotspots/SaveButton") is Button, "控制栏必须包含存档透明热点。")
+		_assert_true(control_bar.get_node_or_null("Backdrop/MenuArt/ActionHotspots/ExitButton") is Button, "控制栏必须包含退出透明热点。")
+		var settings_hotspot: Button = control_bar.get_node("Backdrop/MenuArt/ActionHotspots/SettingsButton") as Button
+		var save_hotspot: Button = control_bar.get_node("Backdrop/MenuArt/ActionHotspots/SaveButton") as Button
+		_assert_equal(String(control_bar.call(&"get_selected_action_id")), "settings", "打开 ESC 菜单时白点必须默认指向设置。")
+		save_hotspot.emit_signal(&"mouse_entered")
+		_assert_equal(String(control_bar.call(&"get_selected_action_id")), "save", "鼠标悬停存档热点时白点必须同步到存档左侧。")
+		save_hotspot.emit_signal(&"button_down")
+		var visual_snapshot: Dictionary = control_bar.call(&"get_visual_contract_snapshot") as Dictionary
+		_assert_equal(String(visual_snapshot.get("pressed_action_id", "")), "save", "按下透明热点时白点必须保留按下反馈状态。")
+		save_hotspot.emit_signal(&"button_up")
+		# Headless 没有窗口焦点所有权；直接派发 Godot 的焦点变化信号验证同一回调。
+		settings_hotspot.emit_signal(&"focus_entered")
+		_assert_equal(String(control_bar.call(&"get_selected_action_id")), "settings", "键盘焦点回到设置时白点必须同步。")
+		settings_hotspot.emit_signal(&"pressed")
+		await process_frame
+		_assert_true(not game_screen.is_control_bar_open() and game_screen.is_settings_panel_open(), "设置按钮必须关闭控制栏并打开设置面板。")
+		(game_screen.get_node("SettingsPanel") as SettingsPanel).emit_signal(&"closed")
+		await process_frame
+		_assert_true(bool(game_screen.toggle_control_bar().get("ok", false)), "关闭设置后必须能再次打开 ESC 控制栏。")
+		control_bar = game_screen.get_node("ShiftControlBar") as Control
+		(control_bar.get_node("Backdrop/MenuArt/ActionHotspots/SaveButton") as Button).emit_signal(&"pressed")
+		await process_frame
+		_assert_true(not game_screen.is_control_bar_open() and game_screen.is_save_panel_open(), "存档按钮必须关闭控制栏并打开存档面板。")
+		game_screen.call(&"_close_save_panel")
+		_assert_true(bool(game_screen.toggle_control_bar().get("ok", false)), "关闭存档后必须能再次打开 ESC 控制栏。")
+		control_bar = game_screen.get_node("ShiftControlBar") as Control
+		var main_exit_callback: Callable = Callable(app, "_on_exit_requested")
+		if game_screen.is_connected(&"exit_requested", main_exit_callback):
+			game_screen.disconnect(&"exit_requested", main_exit_callback)
+		game_screen.connect(&"exit_requested", Callable(self, "_on_game_exit_requested"))
+		(control_bar.get_node("Backdrop/MenuArt/ActionHotspots/ExitButton") as Button).emit_signal(&"pressed")
+		_assert_equal(_exit_signal_count, 1, "退出按钮必须由 GameScreen 发出退出意图，而非返回主菜单。")
+		_assert_equal(String(app.call(&"get_application_state_name")), "SHIFT", "截获退出意图时不应伪造返回主菜单。")
+	_press_escape(game_screen)
+	_assert_true(game_screen.is_control_bar_open(), "退出意图后仍必须能用 ESC 打开控制栏。")
+	_press_escape(game_screen)
+	_assert_true(not game_screen.is_control_bar_open(), "再次 ESC 后控制栏必须关闭。")
+	_assert_equal(game_clock.call(&"get_time_rate_mode"), rate_before_control_bar, "单独关闭 ESC 控制栏不得改变时钟倍率。")
 
 	_assert_equal(game_screen.get_current_view_id(), "studio", "启动后必须停留在工作室总览。")
 	_assert_exactly_one_active_view(game_screen, "studio")
@@ -90,7 +181,6 @@ func _run() -> void:
 
 	# 测试剧情的首通电话窗口是 01:01；导航测试不能再假设 01:00 绑定运行时后
 	# 自动响铃。先通过确定性验证入口精确推到窗口，再验证响铃跨越四个视图。
-	var game_clock: Node = root.get_node_or_null(NodePath("GameClock")) as Node
 	_assert_true(game_clock != null, "导航测试必须能取得 GameClock。")
 	if game_clock != null:
 		var current_tick_value: Variant = game_clock.call(&"get_current_game_tick")
@@ -104,43 +194,55 @@ func _run() -> void:
 					"导航测试必须能精确推进到 01:01 首通来电窗口。"
 				)
 				await process_frame
+				var minute_snapshot: Dictionary = global_status.get_display_clock_snapshot()
+				_assert_equal(minute_snapshot.get("time_12h"), "01:01", "推进一分钟后图集时钟快照必须更新到 01:01。")
+
+		var clock_display_fake := ClockDisplayFake.new()
+		root.add_child(clock_display_fake)
+		var fake_bind_result: Dictionary = global_status.bind_runtime(phone_system, clock_display_fake)
+		_assert_true(bool(fake_bind_result.get("ok", false)), "图集时钟必须接受符合 GameClock 公开接口的验证时钟。")
+		await process_frame
+		var pm_snapshot: Dictionary = global_status.get_display_clock_snapshot()
+		_assert_equal(pm_snapshot.get("time_12h"), "01:05", "13:05 必须转换为 12 小时制 01:05。")
+		_assert_equal(pm_snapshot.get("meridiem"), "PM", "13:05 必须显示 PM 图块。")
+		var pm_texture: AtlasTexture = global_status.get_node("Content/ClockDigits/Meridiem").texture as AtlasTexture
+		_assert_true(pm_texture != null and pm_texture.region.position.x >= 800.0, "PM 必须切换至 时间UI.png 的 PM 图块。")
+		var restore_bind_result: Dictionary = global_status.bind_runtime(phone_system, game_clock)
+		_assert_true(bool(restore_bind_result.get("ok", false)), "PM 分支验证后必须恢复真实 GameClock。")
+		root.remove_child(clock_display_fake)
+		clock_display_fake.free()
 	_assert_equal(String(phone_system.call(&"get_state_name")), "RINGING", "01:01 首条剧情事件应在导航测试中保持响铃。")
 	_assert_true(global_status.is_ringing(), "全局状态条必须从 PhoneSystem 识别响铃。")
-	var ringing_text: Label = global_status.get_node("Content/RingingIndicator/RingingText") as Label
 	var ringing_icon: TextureRect = global_status.get_node("Content/RingingIndicator/RingingIcon") as TextureRect
-	var ringing_button: Button = global_status.get_node("Content/RingingIndicator/PhoneButton") as Button
-	_assert_true(ringing_text != null and ringing_text.text.contains("电话正在响铃"), "响铃提示必须有明确中文文字。")
+	_assert_true(global_status.get_node_or_null("Content/RingingIndicator/RingingText") == null, "红色响铃牌下方不得保留电话状态、人名或号码文字。")
 	_assert_true(ringing_icon != null and ringing_icon.visible, "响铃提示必须显示电话图标。")
-	_assert_true(ringing_button != null, "响铃提示必须提供仅导航到电话的点击控件。")
-	await process_frame
-	_assert_true(global_status.is_phone_pulse_active(), "响铃时全局提示必须启动克制的视觉脉冲。")
-	if ringing_button != null:
-		ringing_button.emit_signal(&"mouse_entered")
-		await _wait_for_seconds(0.12)
-		_assert_true(ringing_button.scale.x > 1.0, "响铃导航按钮悬停时必须有轻微视觉反馈。")
-		ringing_button.emit_signal(&"button_down")
-		await _wait_for_seconds(0.08)
-		_assert_true(ringing_button.scale.x < 1.0, "响铃导航按钮按下时必须有轻微视觉反馈。")
-		ringing_button.emit_signal(&"button_up")
-		ringing_button.emit_signal(&"mouse_exited")
-		await _wait_for_seconds(0.12)
-		_assert_equal(ringing_button.scale, Vector2.ONE, "按钮反馈结束后必须回到原始尺寸。")
+	_assert_true(global_status.get_node_or_null("Content/RingingIndicator/PhoneButton") == null, "来电提醒不得保留可点击电话按钮。")
+	_assert_true(not global_status.has_signal(&"phone_view_requested"), "来电提醒不得再发出电话跳转信号。")
+	_assert_equal(global_status.get_node("Content/RingingIndicator").mouse_filter, Control.MOUSE_FILTER_IGNORE, "来电提醒必须鼠标穿透。")
+	var blink_before: Dictionary = global_status.get_ringing_blink_snapshot()
+	_assert_equal(blink_before.get("interval_seconds"), 1.0, "来电亮灭图必须每秒切换一次。")
+	_assert_true(bool(blink_before.get("timer_active", false)), "响铃时必须启用唯一的亮灭计时器。")
+	phone_system.emit_signal(&"state_changed", 0, 0, "verification_repeat")
+	var repeated_blink: Dictionary = global_status.get_ringing_blink_snapshot()
+	_assert_equal(repeated_blink.get("start_count"), blink_before.get("start_count"), "重复电话状态通知不得创建重复来电计时器。")
+	_assert_true(bool(global_status.advance_ringing_blink_for_verification(1).get("ok", false)), "亮灭图必须提供确定性验证入口。")
+	var blink_after: Dictionary = global_status.get_ringing_blink_snapshot()
+	_assert_true(blink_after.get("is_bright") != blink_before.get("is_bright"), "一次闪烁必须切换亮灭素材。")
+	_assert_equal(int(blink_after.get("toggle_count")), int(blink_before.get("toggle_count")) + 1, "每次闪烁只能增加一次计数。")
 	for view_id: String in ["studio", "phone", "computer", "door"]:
 		var show_result: Dictionary = game_screen.show_view(view_id)
 		_assert_true(bool(show_result.get("ok", false)), "响铃期间必须能切换到固定视图 %s。" % view_id)
 		_assert_true(global_status.visible and global_status.is_ringing(), "视图 %s 下必须持续显示响铃状态。" % view_id)
-		_assert_true(ringing_text.text.contains("电话正在响铃"), "视图 %s 下响铃文字不得消失。" % view_id)
-	if ringing_button != null:
-		ringing_button.emit_signal(&"pressed")
-		_assert_equal(game_screen.get_current_view_id(), "phone", "点击全局响铃提示必须只前往电话近景。")
-		_assert_equal(String(phone_system.call(&"get_state_name")), "RINGING", "点击全局响铃提示不得自动接听电话。")
+		_assert_true(ringing_icon.visible, "视图 %s 下红色响铃牌不得消失。" % view_id)
+	_assert_equal(String(phone_system.call(&"get_state_name")), "RINGING", "纯提醒闪烁不得自动接听电话。")
 
 	var reduce_motion_result: Dictionary = game_screen.set_motion_enabled(false)
 	_assert_true(bool(reduce_motion_result.get("ok", false)), "GameScreen 必须能启用减少动态。")
 	_assert_true(not game_screen.is_motion_enabled(), "减少动态状态必须保存在导航控制器。")
 	_assert_true(not global_status.is_motion_enabled(), "减少动态必须传播到全局状态条。")
 	_assert_child_motion_state(game_screen, false)
-	_assert_true(not global_status.is_phone_pulse_active(), "减少动态时不得保留响铃脉冲。")
+	_assert_true(not bool(global_status.get_ringing_blink_snapshot().get("timer_active", true)), "减少动态时必须停止来电亮灭切换。")
+	_assert_true(bool(global_status.get_ringing_blink_snapshot().get("is_bright", false)), "减少动态时必须稳定显示亮图。")
 	var immediate_result: Dictionary = game_screen.show_view("computer")
 	_assert_true(bool(immediate_result.get("ok", false)), "减少动态时仍必须允许正常导航。")
 	_assert_true(not game_screen.is_view_transitioning(), "减少动态时视图切换必须立即完成。")
@@ -149,18 +251,21 @@ func _run() -> void:
 	var restore_motion_result: Dictionary = game_screen.set_motion_enabled(true)
 	_assert_true(bool(restore_motion_result.get("ok", false)), "GameScreen 必须能恢复动态。")
 	_assert_child_motion_state(game_screen, true)
-	_assert_true(global_status.is_phone_pulse_active(), "恢复动态且仍在响铃时必须恢复提示脉冲。")
+	_assert_true(bool(global_status.get_ringing_blink_snapshot().get("timer_active", false)), "恢复动态且仍在响铃时必须恢复来电亮灭切换。")
 	var door_transition_result: Dictionary = game_screen.show_view("door")
 	_assert_true(bool(door_transition_result.get("ok", false)) and game_screen.is_view_transitioning(), "恢复动态后必须重新使用异步视图过渡。")
 
 	if game_clock != null:
+		_assert_true(bool(game_screen.toggle_control_bar().get("ok", false)), "02:00 前必须能打开 ESC 控制栏。")
+		_assert_true(game_screen.is_control_bar_open(), "02:00 前控制栏必须确实打开。")
 		var remaining_ticks: Variant = game_clock.call(&"get_remaining_game_ticks")
 		_assert_true(bool(game_clock.call(&"advance_ticks_for_verification", int(remaining_ticks))), "导航测试必须能推进到 02:00。")
 		await process_frame
 		_assert_equal(game_screen.get_current_view_id(), "computer", "02:00 必须覆盖任意当前视图并切到电脑。")
+		_assert_true(not game_screen.is_control_bar_open(), "02:00 必须立即关闭 ESC 控制栏。")
 		_assert_true(not game_screen.is_view_transitioning(), "02:00 必须立即抢占并终止正在进行的视图过渡。")
 		_assert_all_view_visuals_rest(game_screen)
-		_assert_true(not global_status.is_phone_pulse_active(), "02:00 中断来电后不得保留全局响铃脉冲。")
+		_assert_true(not bool(global_status.get_ringing_blink_snapshot().get("timer_active", true)), "02:00 中断来电后不得保留来电亮灭计时器。")
 		var rejected_result: Dictionary = game_screen.show_view("door")
 		_assert_true(not bool(rejected_result.get("ok", false)), "02:00 后不得导航到门窗近景。")
 		_assert_equal(game_screen.get_current_view_id(), "computer", "被拒绝的收束后导航不得离开电脑。")
@@ -176,6 +281,13 @@ func _press(button: Button, message: String) -> void:
 	_assert_true(button != null, message)
 	if button != null:
 		button.emit_signal(&"pressed")
+
+
+func _press_escape(game_screen: GameScreen) -> void:
+	var event := InputEventKey.new()
+	event.keycode = KEY_ESCAPE
+	event.pressed = true
+	game_screen.call(&"_unhandled_input", event)
 
 
 func _wait_for_seconds(seconds: float) -> void:
@@ -237,6 +349,10 @@ func _finish() -> void:
 		return
 	print("[测试][NavigationAndCallIndicator] 通过：四视图导航、跨视图响铃提示与 02:00 锁定均符合契约。")
 	quit(0)
+
+
+func _on_game_exit_requested() -> void:
+	_exit_signal_count += 1
 
 
 func _assert_true(condition: bool, message: String) -> void:

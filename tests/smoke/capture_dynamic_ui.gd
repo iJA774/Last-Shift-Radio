@@ -26,7 +26,7 @@ func _capture_dynamic_ui() -> void:
 	await _wait_frames(4)
 	main.call(&"request_start_shift")
 	await _wait_frames(2)
-	main.call(&"confirm_content_notice")
+	main.call(&"finish_loading_for_verification")
 	await _wait_frames(3)
 
 	var game_screen: Control = main.get("_game_screen") as Control

@@ -179,34 +179,6 @@ minimum_burst_flickers = 3
 maximum_burst_flickers = 5
 random_seed = 19991231
 
-[node name="ViewLabel" type="Label" parent="."]
-layout_mode = 0
-offset_left = 42.0
-offset_top = 112.0
-offset_right = 590.0
-offset_bottom = 164.0
-theme_override_colors/font_color = Color(0.92, 0.9, 0.79, 1)
-theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
-theme_override_constants/shadow_offset_x = 2
-theme_override_constants/shadow_offset_y = 2
-theme_override_font_sizes/font_size = 28
-text = "A 号直播室／工作室总览"
-autowrap_mode = 2
-
-[node name="InteractionHint" type="Label" parent="."]
-layout_mode = 0
-offset_left = 42.0
-offset_top = 166.0
-offset_right = 670.0
-offset_bottom = 198.0
-theme_override_colors/font_color = Color(0.89, 0.87, 0.77, 1)
-theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
-theme_override_constants/shadow_offset_x = 1
-theme_override_constants/shadow_offset_y = 1
-theme_override_font_sizes/font_size = 18
-text = "移动鼠标，查看可操作设备。"
-autowrap_mode = 2
-
 [node name="PhoneHotspot" type="Button" parent="."]
 unique_name_in_owner = true
 layout_mode = 0

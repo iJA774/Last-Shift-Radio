@@ -1,37 +1,40 @@
 class_name GlobalStatus
-extends PanelContainer
-## 所有固定视图共用的状态条。
+extends Control
+## 所有固定视图共用的悬浮状态提示。
 ##
-## 它只读取整数游戏 tick 和 PhoneSystem 的只读状态；点击来电提示只请求
-## GameScreen 导航，绝不在这里接听或修改线路状态。工作状态由 GameScreen
-## 传入派生快照，本控件只显示与实际倍率一致的中文说明。
-
-signal phone_view_requested
+## 它只读取整数游戏 tick 和 PhoneSystem 的只读状态。来电牌纯粹是提醒，
+## 不接收鼠标输入，也不请求导航或修改电话线路状态。工作状态由 GameScreen
+## 传入派生快照；本控件保留其严格契约，但不再将它作为可见 HUD 文本。
 
 var _phone_system: RefCounted = null
 var _game_clock: Node = null
 var _is_phone_connected: bool = false
 var _is_ringing: bool = false
 var _is_motion_enabled: bool = true
-var _ringing_pulse_tween: Tween = null
-var _button_feedback_tween: Tween = null
+var _is_ringing_bright: bool = true
+var _ringing_blink_toggle_count: int = 0
+var _ringing_blink_start_count: int = 0
+var _last_work_state_snapshot: Dictionary = {}
 
-@onready var _time_label: Label = $Content/TimeLabel
-@onready var _work_state_label: Label = $Content/WorkStateLabel
-@onready var _ringing_indicator: HBoxContainer = $Content/RingingIndicator
-@onready var _ringing_text: Label = $Content/RingingIndicator/RingingText
-@onready var _phone_button: Button = $Content/RingingIndicator/PhoneButton
+@onready var _time_title: Label = $Content/TimeTitle
+@onready var _clock_digits: Control = $Content/ClockDigits
+@onready var _hour_tens: TextureRect = $Content/ClockDigits/HourTens
+@onready var _hour_units: TextureRect = $Content/ClockDigits/HourUnits
+@onready var _minute_tens: TextureRect = $Content/ClockDigits/MinuteTens
+@onready var _minute_units: TextureRect = $Content/ClockDigits/MinuteUnits
+@onready var _meridiem: TextureRect = $Content/ClockDigits/Meridiem
+@onready var _clock_glyph_library: Control = $Content/ClockGlyphLibrary
+@onready var _ringing_indicator: Control = $Content/RingingIndicator
+@onready var _ringing_icon: TextureRect = $Content/RingingIndicator/RingingIcon
+@onready var _ringing_dim_texture: TextureRect = $Content/RingingIndicator/RingingDimTexture
+@onready var _ringing_blink_timer: Timer = $RingingBlinkTimer
+@onready var _ringing_bright_texture: Texture2D = _ringing_icon.texture
 
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
-	_phone_button.pressed.connect(_on_phone_button_pressed)
-	_phone_button.mouse_entered.connect(_on_phone_button_mouse_entered)
-	_phone_button.mouse_exited.connect(_on_phone_button_mouse_exited)
-	_phone_button.button_down.connect(_on_phone_button_down)
-	_phone_button.button_up.connect(_on_phone_button_up)
+	_ringing_blink_timer.timeout.connect(_on_ringing_blink_timeout)
 	_refresh_clock()
-	_show_idle_work_state()
 	_refresh_phone_indicator()
 
 
@@ -79,26 +82,48 @@ func show_work_state(snapshot: Dictionary) -> Dictionary:
 		return _make_error("工作状态快照字段类型无效。")
 	var state_name: String = String(snapshot["state_name"])
 	var uses_realtime_rate: bool = bool(snapshot["uses_realtime_rate"])
-	if state_name == "ACTIVE" and uses_realtime_rate:
-		_work_state_label.text = "工作状态：非空闲\n时间流速：现实 1 分钟 = 游戏 1 分钟"
-		var reason_ids: PackedStringArray = snapshot["reason_ids"]
-		_work_state_label.tooltip_text = _describe_active_reasons(reason_ids)
-		return {"ok": true}
-	if state_name == "IDLE" and not uses_realtime_rate:
-		_show_idle_work_state()
-		return {"ok": true}
-	return _make_error("工作状态与时间倍率标志不一致：%s。" % state_name)
+	if (state_name != "ACTIVE" or not uses_realtime_rate) and (state_name != "IDLE" or uses_realtime_rate):
+		return _make_error("工作状态与时间倍率标志不一致：%s。" % state_name)
+	_last_work_state_snapshot = {
+		"state_name": state_name,
+		"reason_ids": (snapshot["reason_ids"] as PackedStringArray).duplicate(),
+		"uses_realtime_rate": uses_realtime_rate,
+	}
+	return {"ok": true}
 
 
-## 仅控制提示脉冲和按钮微反馈；来电状态、布局与导航意图保持不变。
+func get_last_work_state_snapshot() -> Dictionary:
+	if _last_work_state_snapshot.is_empty():
+		return {}
+	return {
+		"state_name": String(_last_work_state_snapshot["state_name"]),
+		"reason_ids": (_last_work_state_snapshot["reason_ids"] as PackedStringArray).duplicate(),
+		"uses_realtime_rate": bool(_last_work_state_snapshot["uses_realtime_rate"]),
+	}
+
+
+func get_display_clock_snapshot() -> Dictionary:
+	var display_result: Dictionary = _get_clock_display_result()
+	if not bool(display_result.get("ok", false)):
+		return display_result
+	return {
+		"ok": true,
+		"date": "1999年12月31日",
+		"time_24h": String(display_result["time_24h"]),
+		"time_12h": String(display_result["time_12h"]),
+		"meridiem": String(display_result["meridiem"]),
+	}
+
+
+## 减少动态时保持亮图，并停止提示切换；来电状态和布局保持不变。
 func set_motion_enabled(is_enabled: bool) -> Dictionary:
 	_is_motion_enabled = is_enabled
 	if not _is_motion_enabled:
-		_stop_ringing_pulse()
-		_reset_phone_button_feedback()
+		_stop_ringing_blink()
+		_set_ringing_icon_bright(true)
 		return {"ok": true, "motion_enabled": false}
 	if _is_ringing:
-		_start_ringing_pulse()
+		_start_ringing_blink()
 	return {"ok": true, "motion_enabled": true}
 
 
@@ -106,13 +131,30 @@ func is_motion_enabled() -> bool:
 	return _is_motion_enabled
 
 
-func is_phone_pulse_active() -> bool:
-	return _ringing_pulse_tween != null and _ringing_pulse_tween.is_valid() and _ringing_pulse_tween.is_running()
+func get_ringing_blink_snapshot() -> Dictionary:
+	return {
+		"is_ringing": _is_ringing,
+		"is_bright": _is_ringing_bright,
+		"toggle_count": _ringing_blink_toggle_count,
+		"start_count": _ringing_blink_start_count,
+		"timer_active": not _ringing_blink_timer.is_stopped(),
+		"interval_seconds": _ringing_blink_timer.wait_time,
+	}
+
+
+## 专供冒烟测试确定性验证，不影响 PhoneSystem 权威状态或真实计时器配置。
+func advance_ringing_blink_for_verification(toggle_count: int = 1) -> Dictionary:
+	if toggle_count < 0:
+		return _make_error("来电闪烁验证次数不能为负数。")
+	if not _is_ringing or not _is_motion_enabled:
+		return {"ok": true, "toggle_count": 0, "is_bright": _is_ringing_bright}
+	for index: int in toggle_count:
+		_toggle_ringing_icon()
+	return {"ok": true, "toggle_count": toggle_count, "is_bright": _is_ringing_bright}
 
 
 func _exit_tree() -> void:
-	_stop_ringing_pulse()
-	_reset_phone_button_feedback()
+	_stop_ringing_blink()
 	_disconnect_phone_system()
 
 
@@ -120,77 +162,83 @@ func _on_phone_state_changed(_previous_state: int, _current_state: int, _event_i
 	_refresh_phone_indicator()
 
 
-func _on_phone_button_pressed() -> void:
-	if _is_ringing:
-		phone_view_requested.emit()
-
-
-func _on_phone_button_mouse_entered() -> void:
-	if _is_ringing:
-		_animate_phone_button_to(Vector2(1.035, 1.035), 0.10)
-
-
-func _on_phone_button_mouse_exited() -> void:
-	_animate_phone_button_to(Vector2.ONE, 0.10)
-
-
-func _on_phone_button_down() -> void:
-	if _is_ringing:
-		_animate_phone_button_to(Vector2(0.965, 0.965), 0.06)
-
-
-func _on_phone_button_up() -> void:
-	if not _is_ringing:
-		return
-	var target_scale: Vector2 = Vector2(1.035, 1.035) if _phone_button.is_hovered() else Vector2.ONE
-	_animate_phone_button_to(target_scale, 0.08)
-
-
 func _refresh_clock() -> void:
 	if _game_clock == null or not is_instance_valid(_game_clock):
-		_time_label.text = "时间：--:--"
+		_clock_digits.visible = false
 		return
 	var tick_result: Variant = _game_clock.call(&"get_current_game_tick")
 	if typeof(tick_result) != TYPE_INT:
-		_time_label.text = "时间：数据无效"
+		_clock_digits.visible = false
 		push_error("[全局状态][invalid_clock_tick] GameClock.get_current_game_tick() 必须返回整数 tick。")
 		return
 	if int(tick_result) < 0:
-		_time_label.text = "时间：数据无效"
+		_clock_digits.visible = false
 		push_error("[全局状态][invalid_clock_tick] GameClock 返回了负数 tick。")
 		return
-	var display_result: Variant = _game_clock.call(&"get_display_time")
-	if typeof(display_result) != TYPE_STRING or String(display_result).is_empty():
-		_time_label.text = "时间：数据无效"
-		push_error("[全局状态][invalid_clock_display] GameClock.get_display_time() 必须返回非空字符串。")
+	var display_result: Dictionary = _get_clock_display_result()
+	if not bool(display_result.get("ok", false)):
+		_clock_digits.visible = false
+		push_error("[全局状态][invalid_clock_display] %s" % String(display_result.get("message", "GameClock.get_display_time() 返回无效数据。")))
 		return
-	_time_label.text = "1999 年 12 月 31 日 / %s" % String(display_result)
+	var time_12h: String = String(display_result["time_12h"])
+	_set_digit_texture(_hour_tens, time_12h[0])
+	_set_digit_texture(_hour_units, time_12h[1])
+	_set_digit_texture(_minute_tens, time_12h[3])
+	_set_digit_texture(_minute_units, time_12h[4])
+	_meridiem.texture = _get_meridiem_texture(String(display_result["meridiem"]))
+	_time_title.text = "1999年12月31日"
+	_clock_digits.visible = true
 
 
-func _show_idle_work_state() -> void:
-	_work_state_label.text = "工作状态：空闲\n时间流速：现实 2 秒 = 游戏 1 分钟"
-	_work_state_label.tooltip_text = "当前没有来电、待播稿件，也未打开电脑。"
+func _get_clock_display_result() -> Dictionary:
+	if _game_clock == null or not is_instance_valid(_game_clock):
+		return _make_silent_error("GameClock 不可用。")
+	var display_value: Variant = _game_clock.call(&"get_display_time")
+	if typeof(display_value) != TYPE_STRING:
+		return _make_silent_error("GameClock.get_display_time() 必须返回字符串。")
+	var time_24h: String = String(display_value)
+	if time_24h.length() != 5 or time_24h[2] != ":":
+		return _make_silent_error("GameClock.get_display_time() 必须使用 HH:MM 格式。")
+	var hour_text: String = time_24h.left(2)
+	var minute_text: String = time_24h.right(2)
+	if not hour_text.is_valid_int() or not minute_text.is_valid_int():
+		return _make_silent_error("GameClock.get_display_time() 的小时或分钟不是整数。")
+	var hour_24h: int = int(hour_text)
+	var minute: int = int(minute_text)
+	if hour_24h < 0 or hour_24h > 23 or minute < 0 or minute > 59:
+		return _make_silent_error("GameClock.get_display_time() 超出 24 小时制范围。")
+	var meridiem: String = "AM" if hour_24h < 12 else "PM"
+	var hour_12h: int = hour_24h % 12
+	if hour_12h == 0:
+		hour_12h = 12
+	return {
+		"ok": true,
+		"time_24h": time_24h,
+		"time_12h": "%02d:%02d" % [hour_12h, minute],
+		"meridiem": meridiem,
+	}
 
 
-func _describe_active_reasons(reason_ids: PackedStringArray) -> String:
-	var labels: PackedStringArray = PackedStringArray()
-	for reason_id: String in reason_ids:
-		match reason_id:
-			"phone_ringing":
-				labels.append("有电话正在响铃")
-			"phone_connected":
-				labels.append("电话已接通")
-			"dialogue_choice":
-				labels.append("正在进行电话对话")
-			"broadcast_pending":
-				labels.append("存在需要处理的待播稿件")
-			"computer_open":
-				labels.append("正在查看电脑")
-			"settings_open":
-				labels.append("设置面板已打开（故事时间继续推进）")
-			_:
-				labels.append("未知原因：%s" % reason_id)
-	return "非空闲原因：%s。" % "、".join(labels)
+func _set_digit_texture(target: TextureRect, digit: String) -> void:
+	var glyph: TextureRect = _clock_glyph_library.get_node("Digit%s" % digit) as TextureRect
+	if glyph == null or glyph.texture == null:
+		push_error("[全局状态][missing_clock_glyph] 时间图集缺少数字图块：%s。" % digit)
+		_clock_digits.visible = false
+		return
+	target.texture = glyph.texture
+
+
+func _get_meridiem_texture(meridiem: String) -> AtlasTexture:
+	var glyph_name: String = "Am" if meridiem == "AM" else "Pm"
+	var glyph: TextureRect = _clock_glyph_library.get_node(glyph_name) as TextureRect
+	if glyph == null or not glyph.texture is AtlasTexture:
+		push_error("[全局状态][missing_clock_meridiem] 时间图集缺少 %s 图块。" % meridiem)
+		return null
+	return glyph.texture as AtlasTexture
+
+
+func _make_silent_error(message: String) -> Dictionary:
+	return {"ok": false, "message": message}
 
 
 func _refresh_phone_indicator() -> void:
@@ -206,66 +254,42 @@ func _refresh_phone_indicator() -> void:
 	_is_ringing = String(state_result) == "RINGING"
 	_ringing_indicator.visible = _is_ringing
 	if not _is_ringing:
-		_stop_ringing_pulse()
+		_stop_ringing_blink()
 		return
-
-	var caller_text: String = "未知来电"
-	var snapshot_result: Variant = _phone_system.call(&"get_active_call_snapshot")
-	if snapshot_result is Dictionary:
-		var snapshot: Dictionary = snapshot_result as Dictionary
-		var caller_name: String = String(snapshot.get("caller_name", "")).strip_edges()
-		var caller_number: String = String(snapshot.get("caller_number", "")).strip_edges()
-		if not caller_name.is_empty() and not caller_number.is_empty():
-			caller_text = "%s / %s" % [caller_name, caller_number]
-		elif not caller_name.is_empty():
-			caller_text = caller_name
-	_ringing_text.text = "电话正在响铃\n%s" % caller_text
-	_phone_button.tooltip_text = "打开电话近景；不会自动接听。"
-	_start_ringing_pulse()
+	_set_ringing_icon_bright(true)
+	_start_ringing_blink()
 
 
-func _start_ringing_pulse() -> void:
-	if not _is_motion_enabled or not _is_ringing:
+func _start_ringing_blink() -> void:
+	if not _is_motion_enabled or not _is_ringing or not _ringing_blink_timer.is_stopped():
 		return
-	if _ringing_pulse_tween != null and _ringing_pulse_tween.is_valid() and _ringing_pulse_tween.is_running():
+	_ringing_blink_timer.start()
+	_ringing_blink_start_count += 1
+
+
+func _stop_ringing_blink() -> void:
+	if is_instance_valid(_ringing_blink_timer):
+		_ringing_blink_timer.stop()
+
+
+func _on_ringing_blink_timeout() -> void:
+	if not _is_ringing or not _is_motion_enabled:
+		_stop_ringing_blink()
+		_set_ringing_icon_bright(true)
 		return
-	_stop_ringing_pulse()
-	_ringing_indicator.pivot_offset = _ringing_indicator.size * 0.5
-	_ringing_indicator.scale = Vector2.ONE
-	_ringing_indicator.self_modulate = Color.WHITE
-	_ringing_pulse_tween = create_tween().set_loops()
-	_ringing_pulse_tween.tween_property(_ringing_indicator, "scale", Vector2(1.025, 1.025), 0.62).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-	_ringing_pulse_tween.parallel().tween_property(_ringing_indicator, "self_modulate", Color(1.0, 1.0, 1.0, 0.88), 0.62).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-	_ringing_pulse_tween.tween_property(_ringing_indicator, "scale", Vector2.ONE, 0.62).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-	_ringing_pulse_tween.parallel().tween_property(_ringing_indicator, "self_modulate", Color.WHITE, 0.62).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	_toggle_ringing_icon()
 
 
-func _stop_ringing_pulse() -> void:
-	if _ringing_pulse_tween != null and _ringing_pulse_tween.is_valid():
-		_ringing_pulse_tween.kill()
-	_ringing_pulse_tween = null
-	if is_instance_valid(_ringing_indicator):
-		_ringing_indicator.scale = Vector2.ONE
-		_ringing_indicator.self_modulate = Color.WHITE
+func _toggle_ringing_icon() -> void:
+	_set_ringing_icon_bright(not _is_ringing_bright)
+	_ringing_blink_toggle_count += 1
 
 
-func _animate_phone_button_to(target_scale: Vector2, duration: float) -> void:
-	if not _is_motion_enabled:
-		_phone_button.scale = Vector2.ONE
+func _set_ringing_icon_bright(is_bright: bool) -> void:
+	_is_ringing_bright = is_bright
+	if not is_instance_valid(_ringing_icon):
 		return
-	if _button_feedback_tween != null and _button_feedback_tween.is_valid():
-		_button_feedback_tween.kill()
-	_phone_button.pivot_offset = _phone_button.size * 0.5
-	_button_feedback_tween = create_tween()
-	_button_feedback_tween.tween_property(_phone_button, "scale", target_scale, duration).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-
-
-func _reset_phone_button_feedback() -> void:
-	if _button_feedback_tween != null and _button_feedback_tween.is_valid():
-		_button_feedback_tween.kill()
-	_button_feedback_tween = null
-	if is_instance_valid(_phone_button):
-		_phone_button.scale = Vector2.ONE
+	_ringing_icon.texture = _ringing_bright_texture if is_bright else _ringing_dim_texture.texture
 
 
 func _disconnect_phone_system() -> void:

@@ -21,7 +21,7 @@ func _capture_main_ui() -> void:
 	await process_frame
 	main.call(&"request_start_shift")
 	await process_frame
-	main.call(&"confirm_content_notice")
+	main.call(&"finish_loading_for_verification")
 	await process_frame
 	await process_frame
 

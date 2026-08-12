@@ -1,0 +1,115 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/shift_control_bar.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://UI美术/菜单UI.png" id="2_menu"]
+
+[sub_resource type="StyleBoxEmpty" id="StyleInvisible"]
+
+[node name="ShiftControlBar" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+process_mode = 3
+script = ExtResource("1_script")
+
+[node name="Backdrop" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+color = Color(0.005, 0.008, 0.006, 0.7)
+
+[node name="MenuArt" type="TextureRect" parent="Backdrop"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -300.0
+offset_top = -450.0
+offset_right = 300.0
+offset_bottom = 450.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = ExtResource("2_menu")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="ActionHotspots" type="Control" parent="Backdrop/MenuArt"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="SelectionDot" type="Label" parent="Backdrop/MenuArt/ActionHotspots"]
+unique_name_in_owner = true
+layout_mode = 0
+offset_left = 38.0
+offset_top = 433.0
+offset_right = 98.0
+offset_bottom = 463.0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 28
+text = "●"
+horizontal_alignment = 1
+vertical_alignment = 1
+mouse_filter = 2
+
+[node name="SettingsButton" type="Button" parent="Backdrop/MenuArt/ActionHotspots"]
+unique_name_in_owner = true
+layout_mode = 0
+offset_left = 62.0
+offset_top = 365.0
+offset_right = 550.0
+offset_bottom = 515.0
+tooltip_text = "打开设置覆盖层；故事时间不会暂停。"
+mouse_default_cursor_shape = 2
+theme_override_styles/normal = SubResource("StyleInvisible")
+theme_override_styles/pressed = SubResource("StyleInvisible")
+theme_override_styles/hover = SubResource("StyleInvisible")
+theme_override_styles/disabled = SubResource("StyleInvisible")
+theme_override_styles/focus = SubResource("StyleInvisible")
+focus_neighbor_bottom = NodePath("../SaveButton")
+
+[node name="SaveButton" type="Button" parent="Backdrop/MenuArt/ActionHotspots"]
+unique_name_in_owner = true
+layout_mode = 0
+offset_left = 62.0
+offset_top = 515.0
+offset_right = 550.0
+offset_bottom = 665.0
+tooltip_text = "打开三槽存档界面；故事时间不会暂停。"
+mouse_default_cursor_shape = 2
+theme_override_styles/normal = SubResource("StyleInvisible")
+theme_override_styles/pressed = SubResource("StyleInvisible")
+theme_override_styles/hover = SubResource("StyleInvisible")
+theme_override_styles/disabled = SubResource("StyleInvisible")
+theme_override_styles/focus = SubResource("StyleInvisible")
+focus_neighbor_top = NodePath("../SettingsButton")
+focus_neighbor_bottom = NodePath("../ExitButton")
+
+[node name="ExitButton" type="Button" parent="Backdrop/MenuArt/ActionHotspots"]
+unique_name_in_owner = true
+layout_mode = 0
+offset_left = 62.0
+offset_top = 665.0
+offset_right = 550.0
+offset_bottom = 815.0
+tooltip_text = "退出游戏。"
+mouse_default_cursor_shape = 2
+theme_override_styles/normal = SubResource("StyleInvisible")
+theme_override_styles/pressed = SubResource("StyleInvisible")
+theme_override_styles/hover = SubResource("StyleInvisible")
+theme_override_styles/disabled = SubResource("StyleInvisible")
+theme_override_styles/focus = SubResource("StyleInvisible")
+focus_neighbor_top = NodePath("../SaveButton")

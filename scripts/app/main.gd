@@ -2,7 +2,7 @@ extends Control
 ## 应用级生命周期权威。
 ##
 ## Main 只管理页面状态、本局运行时的创建/销毁与 02:00 的短暂收束余韵。
-## StoryEngine 仍是剧情真相的唯一来源；菜单、内容提示和结束页均不保存剧情副本。
+## StoryEngine 仍是剧情真相的唯一来源；菜单、加载页和结束页均不保存剧情副本。
 
 const STORY_ENGINE_SCRIPT: GDScript = preload("res://scripts/core/story_engine.gd")
 const PHONE_SYSTEM_SCRIPT: GDScript = preload("res://scripts/systems/phone_system.gd")
@@ -13,7 +13,7 @@ const GAME_SCREEN_SCENE: PackedScene = preload("res://scenes/studio/game_screen.
 const MAIN_MENU_SCENE: PackedScene = preload("res://scenes/app/main_menu.tscn")
 const SAVE_SLOT_PANEL_SCENE: PackedScene = preload("res://scenes/ui/save_slot_panel.tscn")
 const SETTINGS_PANEL_SCENE: PackedScene = preload("res://scenes/ui/settings_panel.tscn")
-const CONTENT_NOTICE_SCENE: PackedScene = preload("res://scenes/app/content_notice.tscn")
+const LOADING_SCREEN_SCENE: PackedScene = preload("res://scenes/app/loading_screen.tscn")
 const ENDING_SCREEN_SCENE: PackedScene = preload("res://scenes/app/ending_screen.tscn")
 const TEST_NIGHT_STORY_PATH: String = "res://data/story/test_night_story.json"
 const DEFAULT_ENDING_TRANSITION_DELAY_SECONDS: float = 0.85
@@ -22,7 +22,7 @@ enum AppState {
 	BOOT,
 	MAIN_MENU,
 	LOAD_SLOTS,
-	CONTENT_NOTICE,
+	LOADING,
 	SHIFT,
 	ENDING,
 }
@@ -41,6 +41,7 @@ var _save_manager: SaveManager = null
 var _load_slot_panel: SaveSlotPanel = null
 var _settings_manager: Node = null
 var _settings_panel: SettingsPanel = null
+var _loading_screen: Control = null
 var _is_settings_signal_connected: bool = false
 var _has_settings_load_error: bool = false
 var _is_shift_started: bool = false
@@ -216,17 +217,18 @@ func _close_settings_panel() -> void:
 func request_start_shift() -> void:
 	if _app_state != AppState.MAIN_MENU:
 		return
-	_show_content_notice()
+	_show_loading_screen()
 
 
-func confirm_content_notice() -> void:
-	if _app_state != AppState.CONTENT_NOTICE:
+## 仅供自动化测试跳过视觉等待；玩家流程不会暴露确认按钮。
+func finish_loading_for_verification() -> void:
+	if _app_state != AppState.LOADING or _loading_screen == null or not is_instance_valid(_loading_screen):
 		return
-	_start_new_shift()
+	_loading_screen.call(&"finish_for_verification")
 
 
 func return_to_main_menu() -> void:
-	if _app_state != AppState.CONTENT_NOTICE and _app_state != AppState.ENDING and _app_state != AppState.LOAD_SLOTS:
+	if _app_state != AppState.LOADING and _app_state != AppState.ENDING and _app_state != AppState.LOAD_SLOTS:
 		return
 	_show_main_menu()
 
@@ -240,6 +242,7 @@ func restart_shift() -> void:
 func _show_main_menu() -> void:
 	_cancel_pending_ending_transition()
 	_close_settings_panel()
+	_loading_screen = null
 	_dispose_runtime()
 	_load_slot_panel = null
 	var menu: Control = MAIN_MENU_SCENE.instantiate() as Control
@@ -253,18 +256,26 @@ func _show_main_menu() -> void:
 	print("[应用][state] 已进入 MAIN_MENU；GameClock 不运行且本局运行时已清理。")
 
 
-func _show_content_notice(error_message: String = "") -> void:
+func _show_loading_screen() -> void:
 	_cancel_pending_ending_transition()
 	_close_settings_panel()
 	_dispose_runtime()
-	var notice: Control = CONTENT_NOTICE_SCENE.instantiate() as Control
-	notice.connect(&"shift_confirmed", Callable(self, "confirm_content_notice"))
-	notice.connect(&"return_to_menu_requested", Callable(self, "return_to_main_menu"))
-	_replace_screen(notice)
-	_app_state = AppState.CONTENT_NOTICE
-	if not error_message.is_empty():
-		notice.call(&"show_error", error_message)
-	print("[应用][state] 已进入 CONTENT_NOTICE；本局运行时尚未创建。")
+	var loading: Control = LOADING_SCREEN_SCENE.instantiate() as Control
+	if loading == null:
+		_show_shell_error("无法实例化加载页面，夜班未启动。")
+		return
+	loading.transition_finished.connect(_on_loading_transition_finished)
+	_loading_screen = loading
+	_replace_screen(loading)
+	_app_state = AppState.LOADING
+	print("[应用][state] 已进入 LOADING；本局运行时与 GameClock 尚未启动。")
+
+
+func _on_loading_transition_finished() -> void:
+	if _app_state != AppState.LOADING:
+		return
+	_loading_screen = null
+	_start_new_shift()
 
 
 func request_load_game() -> void:
@@ -285,6 +296,7 @@ func request_open_settings() -> void:
 func _show_load_slots() -> void:
 	_cancel_pending_ending_transition()
 	_close_settings_panel()
+	_loading_screen = null
 	_dispose_runtime()
 	var panel: SaveSlotPanel = SAVE_SLOT_PANEL_SCENE.instantiate() as SaveSlotPanel
 	if panel == null:
@@ -540,27 +552,22 @@ func _start_new_shift() -> void:
 	_dispose_runtime()
 	_game_clock = get_tree().root.get_node_or_null(NodePath("GameClock")) as Node
 	if _game_clock == null:
-		_is_creating_shift = false
-		_show_content_notice("找不到 GameClock 自动加载节点，夜班未启动。")
+		_fail_shift_creation("找不到 GameClock 自动加载节点，夜班未启动。")
 		return
 	if _game_clock.has_method(&"is_running") and bool(_game_clock.call(&"is_running")):
-		_is_creating_shift = false
-		_show_content_notice("GameClock 仍在运行，拒绝覆盖当前夜班。")
+		_fail_shift_creation("GameClock 仍在运行，拒绝覆盖当前夜班。")
 		return
 	if not _game_clock.has_method(&"prepare_new_shift"):
-		_is_creating_shift = false
-		_show_content_notice("GameClock 缺少 prepare_new_shift() 新局预备接口。")
+		_fail_shift_creation("GameClock 缺少 prepare_new_shift() 新局预备接口。")
 		return
 	var prepare_result: Variant = _game_clock.call(&"prepare_new_shift")
 	if not _is_ok_result(prepare_result):
-		_is_creating_shift = false
-		_show_content_notice("准备新夜班时钟失败：%s" % _describe_result(prepare_result))
+		_fail_shift_creation("准备新夜班时钟失败：%s" % _describe_result(prepare_result))
 		return
 
 	var story_content_result: Dictionary = _load_validated_test_story()
 	if not bool(story_content_result.get("ok", false)):
-		_is_creating_shift = false
-		_show_content_notice(String(story_content_result.get("message", "测试剧情数据加载失败。")))
+		_fail_shift_creation(String(story_content_result.get("message", "测试剧情数据加载失败。")))
 		return
 
 	_content_validation_result = story_content_result
@@ -602,6 +609,9 @@ func _connect_game_screen_save_signals() -> void:
 	var open_callback: Callable = Callable(self, "_on_shift_save_panel_opened")
 	if not _game_screen.is_connected(&"save_panel_opened", open_callback):
 		_game_screen.connect(&"save_panel_opened", open_callback)
+	var exit_callback: Callable = Callable(self, "_on_exit_requested")
+	if not _game_screen.is_connected(&"exit_requested", exit_callback):
+		_game_screen.connect(&"exit_requested", exit_callback)
 
 
 func _on_shift_save_panel_opened() -> void:
@@ -764,7 +774,8 @@ func _check_runtime_result(result: Variant, context: String) -> bool:
 func _fail_shift_creation(message: String) -> void:
 	_is_creating_shift = false
 	_dispose_runtime()
-	_show_content_notice(message)
+	_show_main_menu()
+	_show_shell_error("无法开始值班：%s" % message)
 
 
 func _show_shell_error(message: String) -> void:
@@ -774,7 +785,7 @@ func _show_shell_error(message: String) -> void:
 
 
 func _on_exit_requested() -> void:
-	print("[应用][exit_requested] 玩家从主菜单请求退出。")
+	print("[应用][exit_requested] 玩家请求退出游戏。")
 	get_tree().quit()
 
 

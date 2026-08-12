@@ -34,12 +34,12 @@ func _run() -> void:
 	_assert_true(bool(bind_result.get("ok", false)), "GameScreen 必须能绑定统一工作状态所需运行时。")
 	_assert_work_state(screen, GameScreen.WorkState.IDLE, "工作室总览且没有任务时必须处于 IDLE。")
 	_assert_rate(clock, GameClockService.TimeRate.FAST, "工作室总览且电话空闲时必须使用 FAST 倍率。")
-	_assert_work_state_text(screen, "工作状态：空闲", "状态栏必须显示空闲状态。")
+	_assert_status_work_state_contract(screen, "IDLE", false, "IDLE 快照必须继续传给 HUD，即使 HUD 不再显示工作状态文字。")
 
 	_assert_ok(screen.show_view(GameScreen.VIEW_COMPUTER), "必须能切换到电脑近景。")
 	_assert_work_state(screen, GameScreen.WorkState.ACTIVE, "查看电脑必须进入 ACTIVE。")
 	_assert_rate(clock, GameClockService.TimeRate.SLOW, "电脑近景必须使用 SLOW 倍率。")
-	_assert_work_state_text(screen, "现实 1 分钟 = 游戏 1 分钟", "ACTIVE 状态栏必须明确显示与现实一致。")
+	_assert_status_work_state_contract(screen, "ACTIVE", true, "ACTIVE 快照必须继续传给 HUD，以维持 show_work_state 合同。")
 	_assert_ok(screen.show_view(GameScreen.VIEW_STUDIO), "必须能从电脑返回工作室总览。")
 	_assert_work_state(screen, GameScreen.WorkState.IDLE, "离开电脑且无任务后必须恢复 IDLE。")
 	_assert_rate(clock, GameClockService.TimeRate.FAST, "离开电脑且电话空闲后必须恢复 FAST 倍率。")
@@ -134,9 +134,14 @@ func _assert_work_state(screen: GameScreen, expected_state: GameScreen.WorkState
 	_assert_equal(screen.get_work_state(), expected_state, message)
 
 
-func _assert_work_state_text(screen: GameScreen, expected_fragment: String, message: String) -> void:
-	var label: Label = screen.get_node("GlobalStatus/Content/WorkStateLabel") as Label
-	_assert_true(label != null and label.text.contains(expected_fragment), "%s 实际文本=%s。" % [message, label.text if label != null else "<missing>"])
+func _assert_status_work_state_contract(screen: GameScreen, expected_state_name: String, expected_uses_realtime_rate: bool, message: String) -> void:
+	var global_status: GlobalStatus = screen.get_node("GlobalStatus") as GlobalStatus
+	_assert_true(global_status != null, "%s（缺少 GlobalStatus）。" % message)
+	if global_status == null:
+		return
+	var snapshot: Dictionary = global_status.get_last_work_state_snapshot()
+	_assert_equal(snapshot.get("state_name"), expected_state_name, "%s state_name 不匹配。" % message)
+	_assert_equal(snapshot.get("uses_realtime_rate"), expected_uses_realtime_rate, "%s uses_realtime_rate 不匹配。" % message)
 
 
 func _assert_ok(result: Dictionary, message: String) -> void:
@@ -148,7 +153,7 @@ func _finish() -> void:
 		print("[测试][TimeRateRouting] 失败。")
 		quit(1)
 		return
-	print("[测试][TimeRateRouting] 通过：统一工作状态、现实 1:1 倍率与可见说明保持同步。")
+	print("[测试][TimeRateRouting] 通过：统一工作状态、现实 1:1 倍率与 HUD 内部快照合同保持同步。")
 	quit(0)
 
 
