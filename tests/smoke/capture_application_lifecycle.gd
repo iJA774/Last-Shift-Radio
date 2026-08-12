@@ -28,7 +28,7 @@ func _capture() -> void:
 		return
 
 	main.call(&"request_start_shift")
-	# 越过 0.5 秒渐入后再留档，确保截图记录完整可见的 3 秒停留阶段。
+	# 越过 0.5 秒渐入后再留档，确保截图记录完整可见的 2 秒停留阶段。
 	await create_timer(0.60).timeout
 	if not _save_viewport("loading_1920x1080.png"):
 		quit(1)

@@ -88,25 +88,25 @@ func _run() -> void:
 	_assert_true(control_bar != null, "控制栏必须实例化为覆盖层。")
 	if control_bar != null:
 		var menu_art: TextureRect = control_bar.get_node_or_null("Backdrop/MenuArt") as TextureRect
-		var selection_dot: Label = control_bar.get_node_or_null("Backdrop/MenuArt/ActionHotspots/SelectionDot") as Label
+		var selection_arrow: TextureRect = control_bar.get_node_or_null("Backdrop/MenuArt/ActionHotspots/SelectionArrow") as TextureRect
 		_assert_true(menu_art != null and menu_art.texture != null and menu_art.texture.resource_path == "res://UI美术/菜单UI.png", "控制栏必须完整使用菜单UI美术。")
-		_assert_true(selection_dot != null and selection_dot.text == "●", "控制栏必须只显示一个白色圆点作为选择提示。")
+		_assert_true(selection_arrow != null and selection_arrow.texture is AtlasTexture, "控制栏必须只显示一个裁切后的箭头素材作为选择提示。")
 		_assert_true(control_bar.get_node_or_null("Backdrop/Panel") == null, "控制栏不得保留旧选择框底板。")
 		_assert_true(control_bar.get_node_or_null("Backdrop/MenuArt/ActionHotspots/SettingsButton") is Button, "控制栏必须包含设置透明热点。")
 		_assert_true(control_bar.get_node_or_null("Backdrop/MenuArt/ActionHotspots/SaveButton") is Button, "控制栏必须包含存档透明热点。")
 		_assert_true(control_bar.get_node_or_null("Backdrop/MenuArt/ActionHotspots/ExitButton") is Button, "控制栏必须包含退出透明热点。")
 		var settings_hotspot: Button = control_bar.get_node("Backdrop/MenuArt/ActionHotspots/SettingsButton") as Button
 		var save_hotspot: Button = control_bar.get_node("Backdrop/MenuArt/ActionHotspots/SaveButton") as Button
-		_assert_equal(String(control_bar.call(&"get_selected_action_id")), "settings", "打开 ESC 菜单时白点必须默认指向设置。")
+		_assert_equal(String(control_bar.call(&"get_selected_action_id")), "settings", "打开 ESC 菜单时箭头必须默认指向设置。")
 		save_hotspot.emit_signal(&"mouse_entered")
-		_assert_equal(String(control_bar.call(&"get_selected_action_id")), "save", "鼠标悬停存档热点时白点必须同步到存档左侧。")
+		_assert_equal(String(control_bar.call(&"get_selected_action_id")), "save", "鼠标悬停存档热点时箭头必须同步到存档左侧。")
 		save_hotspot.emit_signal(&"button_down")
 		var visual_snapshot: Dictionary = control_bar.call(&"get_visual_contract_snapshot") as Dictionary
-		_assert_equal(String(visual_snapshot.get("pressed_action_id", "")), "save", "按下透明热点时白点必须保留按下反馈状态。")
+		_assert_equal(String(visual_snapshot.get("pressed_action_id", "")), "save", "按下透明热点时箭头必须保留按下反馈状态。")
 		save_hotspot.emit_signal(&"button_up")
 		# Headless 没有窗口焦点所有权；直接派发 Godot 的焦点变化信号验证同一回调。
 		settings_hotspot.emit_signal(&"focus_entered")
-		_assert_equal(String(control_bar.call(&"get_selected_action_id")), "settings", "键盘焦点回到设置时白点必须同步。")
+		_assert_equal(String(control_bar.call(&"get_selected_action_id")), "settings", "键盘焦点回到设置时箭头必须同步。")
 		settings_hotspot.emit_signal(&"pressed")
 		await process_frame
 		_assert_true(not game_screen.is_control_bar_open() and game_screen.is_settings_panel_open(), "设置按钮必须关闭控制栏并打开设置面板。")

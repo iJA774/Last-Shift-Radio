@@ -5,7 +5,7 @@ extends Control
 signal transition_finished
 
 const FADE_IN_SECONDS: float = 0.5
-const HOLD_SECONDS: float = 3.0
+const HOLD_SECONDS: float = 2.0
 const FADE_OUT_SECONDS: float = 0.5
 
 var _transition_tween: Tween = null
@@ -34,7 +34,7 @@ func get_timing_snapshot() -> Dictionary:
 	}
 
 
-## 仅用于确定性测试；真实流程始终经过上述 0.5 / 3.0 / 0.5 秒序列。
+## 仅用于确定性测试；真实流程始终经过上述 0.5 / 2.0 / 0.5 秒序列。
 func finish_for_verification() -> Dictionary:
 	if _is_finished:
 		return {"ok": true, "already_finished": true}

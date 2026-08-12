@@ -1,9 +1,14 @@
-[gd_scene load_steps=4 format=3]
+[gd_scene load_steps=5 format=3]
 
 [ext_resource type="Script" path="res://scripts/ui/shift_control_bar.gd" id="1_script"]
 [ext_resource type="Texture2D" path="res://UI美术/菜单UI.png" id="2_menu"]
+[ext_resource type="Texture2D" path="res://UI美术/箭头.png" id="3_arrow"]
 
 [sub_resource type="StyleBoxEmpty" id="StyleInvisible"]
+
+[sub_resource type="AtlasTexture" id="AtlasSelectionArrow"]
+atlas = ExtResource("3_arrow")
+region = Rect2(528, 110, 488, 802)
 
 [node name="ShiftControlBar" type="Control"]
 layout_mode = 3
@@ -51,19 +56,17 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="SelectionDot" type="Label" parent="Backdrop/MenuArt/ActionHotspots"]
+[node name="SelectionArrow" type="TextureRect" parent="Backdrop/MenuArt/ActionHotspots"]
 unique_name_in_owner = true
 layout_mode = 0
-offset_left = 38.0
-offset_top = 433.0
-offset_right = 98.0
-offset_bottom = 463.0
-theme_override_colors/font_color = Color(1, 1, 1, 1)
-theme_override_font_sizes/font_size = 28
-text = "●"
-horizontal_alignment = 1
-vertical_alignment = 1
+offset_left = 22.0
+offset_top = 422.0
+offset_right = 52.0
+offset_bottom = 472.0
 mouse_filter = 2
+texture = SubResource("AtlasSelectionArrow")
+expand_mode = 1
+stretch_mode = 5
 
 [node name="SettingsButton" type="Button" parent="Backdrop/MenuArt/ActionHotspots"]
 unique_name_in_owner = true

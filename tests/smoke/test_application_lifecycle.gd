@@ -53,7 +53,7 @@ func _run() -> void:
 	if loading != null:
 		var timing: Dictionary = loading.call(&"get_timing_snapshot") as Dictionary
 		_assert_equal(float(timing.get("fade_in_seconds", 0.0)), 0.5, "加载页面必须使用 0.5 秒渐入。")
-		_assert_equal(float(timing.get("hold_seconds", 0.0)), 3.0, "加载页面必须完整显示 3 秒。")
+		_assert_equal(float(timing.get("hold_seconds", 0.0)), 2.0, "加载页面必须完整显示 2 秒。")
 		_assert_equal(float(timing.get("fade_out_seconds", 0.0)), 0.5, "加载页面必须使用 0.5 秒渐出。")
 		var loading_art: TextureRect = loading.get_node_or_null(NodePath("LoadingArt")) as TextureRect
 		_assert_true(loading_art != null and loading_art.texture != null and loading_art.texture.resource_path == "res://UI美术/加载页面.png", "加载页面必须使用指定美术资源。")
