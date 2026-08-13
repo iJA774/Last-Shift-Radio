@@ -1,6 +1,6 @@
 extends SceneTree
 
-## 第八阶段 1920×1080 视觉验收：设置面板、125% 字体、CRT off、
+## 第八阶段 1920×1080 视觉验收：设置面板、CRT off、
 ## 减少闪烁与静音均在真实 SettingsManager 信号链上即时生效。
 ## 请使用带渲染设备的 Godot 控制台入口运行；Headless 不替代视觉检查。
 
@@ -28,7 +28,6 @@ func _capture() -> void:
 		_fail("无法准备隔离设置文件。")
 		return
 	for result: Variant in [
-		_settings_manager.call(&"set_font_size", 100),
 		_settings_manager.call(&"set_text_speed", 1.0),
 		_settings_manager.call(&"set_reduce_flashing_enabled", false),
 		_settings_manager.call(&"set_crt_enabled", true),
@@ -63,10 +62,6 @@ func _capture() -> void:
 		await _wait_frames(2)
 		if not _save_viewport("settings_toggle_on_1920x1080.png"):
 			return
-		_settings_manager.call(&"set_font_size", 125)
-		await _wait_frames(3)
-		if not _save_viewport("settings_menu_125_1920x1080.png"):
-			return
 	if menu_panel != null:
 		(menu_panel.get_node(NodePath("Controls/CloseButton")) as Button).emit_signal(&"pressed")
 		menu_panel.call(&"finish_fade_for_verification")
@@ -83,7 +78,7 @@ func _capture() -> void:
 	screen.toggle_control_bar()
 	(screen.get_node(NodePath("ShiftControlBar/Backdrop/MenuArt/ActionHotspots/SettingsButton")) as Button).emit_signal(&"pressed")
 	await _wait_frames(3)
-	if not _save_viewport("settings_shift_125_1920x1080.png"):
+	if not _save_viewport("settings_shift_1920x1080.png"):
 		return
 	var shift_panel: SettingsPanel = screen.get_node_or_null(NodePath("SettingsPanel")) as SettingsPanel
 	if shift_panel != null:
@@ -99,7 +94,7 @@ func _capture() -> void:
 		_fail("无法关闭 CRT。")
 		return
 	await _wait_frames(3)
-	if not _save_viewport("computer_crt_off_125_1920x1080.png"):
+	if not _save_viewport("computer_crt_off_1920x1080.png"):
 		return
 
 	if not _is_ok(screen.show_view(GameScreen.VIEW_PHONE)):
@@ -110,14 +105,14 @@ func _capture() -> void:
 		_fail("无法开启减少闪烁。")
 		return
 	await _wait_frames(3)
-	if not _save_viewport("phone_reduce_flashing_125_1920x1080.png"):
+	if not _save_viewport("phone_reduce_flashing_1920x1080.png"):
 		return
 
 	if not _is_ok(_settings_manager.call(&"set_master_volume", 0.0)):
 		_fail("无法设置主音量静音。")
 		return
 	await _wait_frames(2)
-	if not _save_viewport("phone_master_muted_125_1920x1080.png"):
+	if not _save_viewport("phone_master_muted_1920x1080.png"):
 		return
 
 	root.remove_child(app)

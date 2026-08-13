@@ -2,6 +2,7 @@
 
 [ext_resource type="Script" path="res://scripts/app/main.gd" id="1_main"]
 [ext_resource type="Theme" path="res://resources/app_ui_theme.tres" id="2_theme"]
+[ext_resource type="StyleBox" path="res://resources/black_banner_style.tres" id="3_black_banner"]
 
 [node name="Main" type="Control"]
 layout_mode = 3
@@ -40,12 +41,13 @@ offset_right = -32.0
 offset_bottom = 200.0
 grow_horizontal = 2
 theme_override_colors/font_color = Color(1, 0.78, 0.74, 1)
+theme_override_styles/panel = ExtResource("3_black_banner")
 z_index = 20
 clip_contents = true
 
 [node name="ErrorLabel" type="Label" parent="ShellErrorPanel"]
 layout_mode = 2
-theme_override_colors/font_color = Color(1, 0.78, 0.74, 1)
+theme_override_colors/font_color = Color(1, 0.84, 0.81, 1)
 theme_override_font_sizes/font_size = 16
 horizontal_alignment = 1
 vertical_alignment = 1

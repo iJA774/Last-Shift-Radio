@@ -77,8 +77,24 @@ func _run() -> void:
 	_assert_equal(String(first_phone.call(&"get_state_name")), "IDLE", "01:00 开场前一分钟不应提前触发来电。")
 	_assert_true(bool(game_clock.call(&"advance_ticks_for_verification", 60)), "第一局必须能推进到 01:01 的首通来电窗口。")
 	_assert_equal(String(first_phone.call(&"get_state_name")), "RINGING", "已校验的沃伦来电必须由 StoryEngine 真实触发。")
-	_assert_true(bool(first_phone.call(&"answer_call", int(game_clock.call(&"get_current_game_tick")))), "第一局必须能真实接听来电。")
-	_assert_true(bool(first_phone.call(&"finish_call", int(game_clock.call(&"get_current_game_tick")))), "第一局必须能真实结束来电。")
+	first_screen.call(&"_on_answer_requested")
+	await process_frame
+	_assert_equal(String(first_phone.call(&"get_state_name")), "DIALOGUE_CHOICE", "接通成功后必须立即进入首段权威对白。")
+	var phone_view: Control = first_screen.get_node_or_null(NodePath("ViewHost/PhoneCloseup")) as Control
+	var dialogue_overlay: Control = phone_view.get_node_or_null(NodePath("DialogueChoiceOverlay")) as Control if phone_view != null else null
+	var dialogue_scroll: ScrollContainer = phone_view.get_node_or_null(NodePath("DialogueScroll")) as ScrollContainer if phone_view != null else null
+	_assert_true(dialogue_overlay != null and not dialogue_overlay.visible, "接通后必须先展示发言，不能立刻显示回应选项。")
+	_assert_true(dialogue_scroll != null and dialogue_scroll.visible, "接通后的首段发言必须可见。")
+	first_screen.call(&"_on_dialogue_choice_requested")
+	await process_frame
+	_assert_true(dialogue_overlay != null and dialogue_overlay.visible, "第一次继续对话就应显示回应选项。")
+	_assert_true(dialogue_scroll != null and dialogue_scroll.visible, "回应选项出现后对方发言仍必须可读。")
+	first_screen.show_system_error("StoryEngine、PhoneSystem、Dictionary 与 option_id 都不应显示给玩家。")
+	var system_message: Label = first_screen.get_node_or_null(NodePath("SystemMessagePanel/SystemMessage")) as Label
+	_assert_player_text_is_natural(system_message, "运行时提示必须过滤开发术语。")
+	first_screen.call(&"_on_hang_up_requested")
+	await process_frame
+	_assert_equal(String(first_phone.call(&"get_state_name")), "IDLE", "正常挂断必须保持可操作。")
 	var first_records: Variant = first_phone.call(&"get_call_records")
 	_assert_true(first_records is Array and (first_records as Array).size() == 1, "第一局必须由 PhoneSystem 产生真实电话记录。")
 
@@ -95,43 +111,26 @@ func _run() -> void:
 		displayed_broadcast is Dictionary and String((displayed_broadcast as Dictionary).get("fact_id", "")) == "fact_unauthorized_broadcast",
 		"延时进入结束页前，电脑必须显示权威未授权播出记录。"
 	)
+	_assert_player_text_is_natural(system_message, "02:00 收束提示不得暴露内部实现。")
 	await create_timer(0.56).timeout
 	assert_application_ending(app)
 
 	var ending: Control = app.get_node_or_null(NodePath("ScreenHost/EndingScreen")) as Control
 	if ending != null:
-		var ending_load: Button = ending.get_node_or_null(NodePath("Content/EndingPanel/Margin/Layout/LoadGameButton")) as Button
-		var ending_reason: Label = ending.get_node_or_null(NodePath("Content/EndingPanel/Margin/Layout/LoadDisabledReason")) as Label
-		_assert_true(ending_load != null and not ending_load.disabled, "结束页必须允许进入已有的三槽读取页。")
-		_assert_true(ending_reason != null and not ending_reason.visible, "读取功能可用时不得残留过时的禁用原因。")
+		var ending_hotspot: Button = ending.get_node_or_null(NodePath("ReturnToMenuHotspot")) as Button
+		_assert_true(ending_hotspot != null, "结束页必须保留素材内返回主界面热点。")
+		_assert_true(ending.get_node_or_null(NodePath("ActionsPanel")) == null, "结束页不得保留额外操作面板。")
+		var success_art: Dictionary = ending.call(&"get_ending_art_snapshot") as Dictionary
+		_assert_equal(String(success_art.get("outcome", "")), "success", "02:00 固定收束必须明确映射值夜成功素材。")
+		_assert_equal(String(success_art.get("resource_path", "")), "res://UI美术/值夜成功.png", "02:00 结束页必须使用值夜成功.png。")
+		var failure_result: Dictionary = ending.call(&"set_result", EndingScreen.EndResult.FAILURE) as Dictionary
+		_assert_true(bool(failure_result.get("ok", false)), "结束页必须支持已声明的 failure 结果素材呈现。")
+		var failure_art: Dictionary = ending.call(&"get_ending_art_snapshot") as Dictionary
+		_assert_equal(String(failure_art.get("resource_path", "")), "res://UI美术/值夜失败.png", "failure 结果必须选择值夜失败.png。")
+		var unknown_result: Dictionary = ending.call(&"set_result", 99) as Dictionary
+		_assert_true(not bool(unknown_result.get("ok", true)) and String(unknown_result.get("error_code", "")) == "unknown_end_result", "结束页必须拒绝未知结果值。")
+		ending.call(&"set_result", EndingScreen.EndResult.SUCCESS)
 
-	app.call(&"restart_shift")
-	await process_frame
-	_assert_equal(app.call(&"get_application_state_name"), "SHIFT", "重新开始必须直接创建新一局 SHIFT。")
-	_assert_equal(String(game_clock.call(&"get_display_time")), "01:00", "重新开始后第二局必须回到 01:00。")
-	var second_engine: RefCounted = app.get("_story_engine") as RefCounted
-	var second_phone: RefCounted = app.get("_phone_system") as RefCounted
-	var second_screen: GameScreen = app.call(&"get_current_game_screen") as GameScreen
-	_assert_true(second_engine != first_engine and second_phone != first_phone and second_screen != first_screen, "重新开始必须使用全新的 StoryEngine、PhoneSystem 和 GameScreen。")
-	_assert_equal(_shift_started_count, 2, "重新开始后第二局必须只额外发送一次 shift_started。")
-	var old_time_callback: Callable = Callable(first_engine, "_on_game_time_advanced")
-	var old_ending_callback: Callable = Callable(first_engine, "_on_ending_time_reached")
-	var old_phone_idle_callback: Callable = Callable(first_engine, "_on_phone_became_idle")
-	_assert_true(not game_clock.is_connected(&"game_time_advanced", old_time_callback), "重开后旧 StoryEngine 不得继续监听 GameClock.game_time_advanced。")
-	_assert_true(not game_clock.is_connected(&"ending_time_reached", old_ending_callback), "重开后旧 StoryEngine 不得继续监听 GameClock.ending_time_reached。")
-	_assert_true(not first_phone.is_connected(&"call_became_idle", old_phone_idle_callback), "重开后旧 PhoneSystem 不得继续监听旧 StoryEngine 的空闲回调。")
-	var first_scheduler: RefCounted = first_engine.call(&"get_scheduler") as RefCounted
-	var second_scheduler: RefCounted = second_engine.call(&"get_scheduler") as RefCounted
-	_assert_true(second_scheduler != first_scheduler, "重新开始必须使用全新的 EventScheduler。")
-	_assert_true((second_phone.call(&"get_call_records") as Array).is_empty(), "第二局电话记录必须为空。")
-	_assert_true(not bool(second_scheduler.call(&"is_ending_forced")), "第二局调度器不得遗留强制收束状态。")
-	_assert_true(not bool(second_phone.call(&"is_forced_ended")), "第二局 PhoneSystem 不得遗留强制收束状态。")
-	_assert_true(not bool(second_engine.call(&"is_ending_forced")), "第二局 StoryEngine 不得遗留结尾状态。")
-	_assert_true((second_engine.call(&"get_unauthorized_broadcast_record") as Dictionary).is_empty(), "第二局不得遗留未授权播出记录。")
-
-	_assert_true(bool(game_clock.call(&"advance_ticks_for_verification", int(game_clock.call(&"get_remaining_game_ticks")))), "第二局必须可推进到结束页。")
-	await create_timer(0.56).timeout
-	_assert_equal(app.call(&"get_application_state_name"), "ENDING", "第二局收束后必须进入 ENDING。")
 	app.call(&"return_to_main_menu")
 	await process_frame
 	_assert_equal(app.call(&"get_application_state_name"), "MAIN_MENU", "ENDING 必须可返回主菜单。")
@@ -240,3 +239,12 @@ func _assert_true(condition: bool, message: String) -> void:
 
 func _assert_equal(actual: Variant, expected: Variant, message: String) -> void:
 	_assert_true(actual == expected, "%s 实际值=%s，期望值=%s。" % [message, str(actual), str(expected)])
+
+
+func _assert_player_text_is_natural(label: Label, context: String) -> void:
+	_assert_true(label != null, "%s 缺少提示文本。" % context)
+	if label == null:
+		return
+	var forbidden_terms: PackedStringArray = ["预制对话", "StoryEngine", "PhoneSystem", "System", "Dictionary", "option_id", "稳定 ID", "电话状态", "工作状态", "本轮对话结束"]
+	for term: String in forbidden_terms:
+		_assert_true(not label.text.contains(term), "%s 检测到禁词：%s。" % [context, term])

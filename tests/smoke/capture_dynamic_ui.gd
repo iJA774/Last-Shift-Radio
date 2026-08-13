@@ -8,8 +8,6 @@ extends SceneTree
 const OUTPUT_DIRECTORY: String = "res://tests/artifacts/phase3"
 const GAME_CLOCK_SCRIPT: GDScript = preload("res://scripts/core/game_clock.gd")
 
-var _font_restore_records: Array[Dictionary] = []
-
 
 func _init() -> void:
 	call_deferred("_capture_dynamic_ui")
@@ -125,16 +123,6 @@ func _capture_dynamic_ui() -> void:
 	if not _save_viewport("door_motion_disabled.png"):
 		return
 
-	Input.warp_mouse(Vector2(1910.0, 1070.0))
-	_apply_font_scale(game_screen, 1.25)
-	for large_font_view_id: String in ["studio", "phone", "computer", "door"]:
-		if not _show_view(game_screen, large_font_view_id):
-			return
-		await _wait_frames(3)
-		if not _save_viewport("large_font_%s.png" % large_font_view_id):
-			return
-	_restore_font_scale()
-
 	var restore_result: Variant = game_screen.call(&"set_motion_enabled", true)
 	if not _is_ok_result(restore_result):
 		_fail("无法恢复动态效果：%s。" % str(restore_result))
@@ -166,40 +154,6 @@ func _prepare_output_directory() -> bool:
 		return true
 	_fail("无法创建截图目录：%s，错误码=%d。" % [output_directory, directory_error])
 	return false
-
-
-func _apply_font_scale(node: Node, scale_factor: float) -> void:
-	_font_restore_records.clear()
-	_apply_font_scale_recursive(node, scale_factor)
-
-
-func _apply_font_scale_recursive(node: Node, scale_factor: float) -> void:
-	if node is Label or node is Button or node is RichTextLabel:
-		var control: Control = node as Control
-		var previous_size: int = control.get_theme_font_size(&"font_size")
-		_font_restore_records.append({
-			"control": control,
-			"had_override": control.has_theme_font_size_override(&"font_size"),
-			"previous_size": previous_size,
-		})
-		control.add_theme_font_size_override(
-			&"font_size",
-			maxi(previous_size + 1, roundi(float(previous_size) * scale_factor))
-		)
-	for child: Node in node.get_children():
-		_apply_font_scale_recursive(child, scale_factor)
-
-
-func _restore_font_scale() -> void:
-	for record: Dictionary in _font_restore_records:
-		var control: Control = record["control"] as Control
-		if not is_instance_valid(control):
-			continue
-		if bool(record["had_override"]):
-			control.add_theme_font_size_override(&"font_size", int(record["previous_size"]))
-		else:
-			control.remove_theme_font_size_override(&"font_size")
-	_font_restore_records.clear()
 
 
 func _show_view(game_screen: Control, view_id: String) -> bool:

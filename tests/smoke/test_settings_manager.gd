@@ -24,6 +24,7 @@ func _run_tests() -> void:
 	_cleanup_test_directory()
 	_test_autoload_contract()
 	_test_first_run_setters_and_restart_persistence()
+	_test_retired_font_size_cleanup_is_narrow()
 	_test_strict_rejections_keep_confirmed_state()
 	_test_startup_backup_recovery()
 	_test_atomic_replace_failure_keeps_old_file_and_memory()
@@ -71,15 +72,13 @@ func _test_first_run_setters_and_restart_persistence() -> void:
 	_assert_ok(manager.set_ui_phone_volume(0.75), "UI/电话音量边界内值必须可保存。")
 	_assert_ok(manager.set_fullscreen(true), "全屏开关必须映射为 fullscreen 模式。")
 	_assert_ok(manager.set_text_speed(2.5), "文字速度倍率必须可保存。")
-	_assert_ok(manager.set_font_size(125), "125% 字体档必须可保存。")
 	_assert_ok(manager.set_reduce_flashing_enabled(true), "减少闪烁开关必须可保存。")
 	_assert_ok(manager.set_crt_enabled(false), "CRT 开关必须可保存。")
-	_assert_equal(changed_ids, ["master_volume", "ambience_volume", "ui_phone_volume", "window_mode", "text_speed", "font_size", "reduce_flashing", "crt_enabled"], "每次变更必须按稳定字段 ID 发出信号。")
-	_assert_equal(applied_snapshots.size(), 9, "首次加载和八次成功变更必须各广播一次完整设置。")
+	_assert_equal(changed_ids, ["master_volume", "ambience_volume", "ui_phone_volume", "window_mode", "text_speed", "reduce_flashing", "crt_enabled"], "每次变更必须按稳定字段 ID 发出信号。")
+	_assert_equal(applied_snapshots.size(), 8, "首次加载和七次成功变更必须各广播一次完整设置。")
 	_assert_equal(manager.get_window_mode(), "fullscreen", "set_fullscreen(true) 必须设置 fullscreen。")
 	_assert_true(manager.is_fullscreen(), "fullscreen getter 必须返回 true。")
 	_assert_equal(manager.get_text_speed(), 2.5, "文字速度 getter 必须返回倍率。")
-	_assert_equal(manager.get_font_size(), 125, "字体 getter 必须返回百分比。")
 	_assert_true(manager.is_reduce_flashing_enabled(), "减少闪烁 getter 必须返回持久化值。")
 	_assert_true(not manager.is_crt_enabled(), "CRT getter 必须返回持久化值。")
 
@@ -100,7 +99,6 @@ func _test_strict_rejections_keep_confirmed_state() -> void:
 	var confirmed_snapshot: Dictionary = manager.get_settings_snapshot()
 	_assert_true(not bool(manager.set_master_volume(-0.01).get("ok", false)), "低于零的音量必须被拒绝。")
 	_assert_true(not bool(manager.set_text_speed(4.01).get("ok", false)), "超出上限的文字倍率必须被拒绝。")
-	_assert_true(not bool(manager.set_font_size(110).get("ok", false)), "未验证字体百分比必须被拒绝。")
 	_assert_equal(manager.get_settings_snapshot(), confirmed_snapshot, "setter 校验失败不得改变确认内存状态。")
 
 	var cases: Array[Dictionary] = [
@@ -108,6 +106,8 @@ func _test_strict_rejections_keep_confirmed_state() -> void:
 		{"name": "错误版本", "document": {"format_version": 2, "settings": _default_settings()}, "error_code": "unsupported_format_version"},
 		{"name": "缺少字段", "document": {"format_version": 1}, "error_code": "missing_field"},
 		{"name": "未知字段", "document": {"format_version": 1, "settings": _settings_with("extra", true)}, "error_code": "unknown_field"},
+		{"name": "非法旧字号", "document": {"format_version": 1, "settings": _settings_with("font_size", 110)}, "error_code": "unknown_field"},
+		{"name": "旧字号伴随其他未知字段", "document": {"format_version": 1, "settings": _settings_with_two("font_size", 125, "extra", true)}, "error_code": "unknown_field"},
 		{"name": "类型错误", "document": {"format_version": 1, "settings": _settings_with("reduce_flashing", "true")}, "error_code": "invalid_setting_type"},
 		{"name": "范围错误", "document": {"format_version": 1, "settings": _settings_with("ui_phone_volume", 1.01)}, "error_code": "setting_out_of_range"},
 	]
@@ -125,6 +125,21 @@ func _test_strict_rejections_keep_confirmed_state() -> void:
 	_assert_true(manager.is_settings_loaded(), "显式恢复默认值后必须回到已加载状态。")
 	_assert_equal(manager.get_settings_snapshot(), _default_settings(), "显式恢复必须使用完整默认设置。")
 	(manager as Node).free()
+
+
+func _test_retired_font_size_cleanup_is_narrow() -> void:
+	for legacy_font_size: int in [100, 125]:
+		var manager: Variant = SETTINGS_MANAGER_SCRIPT.new()
+		_assert_ok(manager.set_settings_path_for_verification(INSTANCE_SETTINGS_PATH), "退役字段测试必须使用隔离路径。")
+		var legacy_document: Dictionary = {"format_version": 1, "settings": _settings_with("font_size", legacy_font_size)}
+		_write_document_for_test(INSTANCE_SETTINGS_PATH, legacy_document)
+		var load_result: Dictionary = manager.load_settings()
+		_assert_ok(load_result, "旧字号 %d 必须自动清理并正常加载。" % legacy_font_size)
+		_assert_equal(String(load_result.get("retired_field_removed", "")), "font_size", "旧字号 %d 清理必须标记被退役字段。" % legacy_font_size)
+		_assert_equal(manager.get_settings_snapshot(), _default_settings(), "旧字号 %d 清理后内存设置必须完全符合当前 v1。" % legacy_font_size)
+		var persisted: Dictionary = _read_document_for_test(INSTANCE_SETTINGS_PATH)
+		_assert_true(not (persisted["settings"] as Dictionary).has("font_size"), "旧字号 %d 必须通过原子写入持久化清理。" % legacy_font_size)
+		(manager as Node).free()
 
 
 func _test_atomic_replace_failure_keeps_old_file_and_memory() -> void:
@@ -220,6 +235,22 @@ func _settings_with(setting_id: String, value: Variant) -> Dictionary:
 	return settings
 
 
+func _settings_with_two(first_id: String, first_value: Variant, second_id: String, second_value: Variant) -> Dictionary:
+	var settings: Dictionary = _settings_with(first_id, first_value)
+	settings[second_id] = second_value
+	return settings
+
+
+func _write_document_for_test(path: String, document: Dictionary) -> void:
+	var file: FileAccess = FileAccess.open(path, FileAccess.WRITE)
+	if file == null:
+		_assert_true(false, "无法写入隔离测试设置文档。")
+		return
+	file.store_string(JSON.stringify(document))
+	file.flush()
+	file.close()
+
+
 func _default_settings() -> Dictionary:
 	return {
 		"master_volume": 1.0,
@@ -227,7 +258,6 @@ func _default_settings() -> Dictionary:
 		"ui_phone_volume": 1.0,
 		"window_mode": "windowed",
 		"text_speed": 1.0,
-		"font_size": 100,
 		"reduce_flashing": false,
 		"crt_enabled": true,
 	}

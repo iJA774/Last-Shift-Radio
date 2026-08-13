@@ -93,6 +93,8 @@ func handle_save_result(result: Dictionary) -> Dictionary:
 		show_message("保存失败：%s" % String(result.get("message", "未知原因。")))
 		return {"ok": false, "panel_remains_open": true}
 	show_message("保存完成，正在返回控制栏。", false)
+	# 只有真实落盘成功才关闭页面并起声，避免失败点击伪造成功反馈。
+	_play_button_click()
 	_begin_fade_out("save_success", "")
 	return {"ok": true, "is_fading_out": true}
 
@@ -134,6 +136,8 @@ func _on_slot_pressed(slot_id: String) -> void:
 	if not bool(summary.get("is_valid", false)):
 		show_message("该槽位不可读取：%s" % String(summary.get("message", "空槽位或存档损坏。")))
 		return
+	# 读取有效槽位会在渐出后替换界面；无效槽位保持当前页面且不发声。
+	_play_button_click()
 	_begin_fade_out("load", slot_id)
 
 

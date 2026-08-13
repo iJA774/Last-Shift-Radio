@@ -230,11 +230,6 @@ func apply_settings_snapshot(snapshot: Dictionary) -> Dictionary:
 	if not _is_ok_result(text_result):
 		return _make_error("应用逐字文字速度失败：%s" % str(text_result))
 	_text_speed_multiplier = text_speed
-	var font_size_percent: int = int(snapshot["font_size"])
-	var inherited_percent: int = int(get_meta(SettingsUiScale.META_APPLIED_PERCENT, font_size_percent))
-	var font_result: Dictionary = SettingsUiScale.apply_font_size(self, font_size_percent, inherited_percent)
-	if not bool(font_result.get("ok", false)):
-		return font_result
 	return {"ok": true}
 
 
@@ -243,20 +238,16 @@ func get_text_speed_multiplier() -> float:
 
 
 func _validate_settings_snapshot(snapshot: Dictionary) -> Dictionary:
-	for field_name: String in ["text_speed", "font_size", "reduce_flashing", "crt_enabled"]:
+	for field_name: String in ["text_speed", "reduce_flashing", "crt_enabled"]:
 		if not snapshot.has(field_name):
 			return _make_error("设置快照缺少字段：%s。" % field_name)
 	if (typeof(snapshot["text_speed"]) != TYPE_FLOAT and typeof(snapshot["text_speed"]) != TYPE_INT) \
-		or typeof(snapshot["font_size"]) != TYPE_INT \
 		or typeof(snapshot["reduce_flashing"]) != TYPE_BOOL \
 		or typeof(snapshot["crt_enabled"]) != TYPE_BOOL:
 		return _make_error("设置快照字段类型无效。")
 	var text_speed: float = float(snapshot["text_speed"])
 	if is_nan(text_speed) or is_inf(text_speed) or text_speed < 0.25 or text_speed > 4.0:
 		return _make_error("设置快照 text_speed 超出 0.25 到 4.0。")
-	var font_size: int = int(snapshot["font_size"])
-	if font_size != 100 and font_size != 125:
-		return _make_error("设置快照 font_size 不是受支持的档位。")
 	return {"ok": true}
 
 
@@ -293,7 +284,7 @@ func show_ending(record: Dictionary) -> Dictionary:
 	if not _is_ok_result(computer_return_lock_result):
 		push_error("[游戏界面][computer_return_lock_error] %s" % str(computer_return_lock_result))
 	_set_overview_hotspots_enabled(false, "02:00 强制收束中，已切换到电脑播出记录。")
-	_system_message.text = "02:00 强制收束：线路与待触发事件已由 StoryEngine 终止。"
+	_system_message.text = "夜班已经结束，线路安静了下来。"
 	_system_message_panel.visible = true
 	_show_view_internal(VIEW_COMPUTER, true)
 	var work_state_result: Dictionary = _sync_work_state_and_time_rate()
@@ -303,8 +294,18 @@ func show_ending(record: Dictionary) -> Dictionary:
 
 
 func show_system_error(message: String) -> void:
-	_system_message.text = "系统错误：%s" % message
+	_system_message.text = "提示：%s" % _player_safe_message(message)
 	_system_message_panel.visible = true
+
+
+## 底层契约错误会包含实现名、数据类型和内部 ID；它们只进入日志，不能进入玩家提示。
+func _player_safe_message(message: String) -> String:
+	var forbidden_terms: PackedStringArray = ["预制对话", "StoryEngine", "PhoneSystem", "System", "system", "Dictionary", "option_id", "稳定 ID", "电话状态", "工作状态", "SettingsManager", "SaveManager", "GameClock", " JSON", " ID", "接口", "快照", "错误码"]
+	for term: String in forbidden_terms:
+		if message.contains(term):
+			print("[游戏界面][player_message_filtered] %s" % message)
+			return "暂时无法完成此操作，请稍后再试。"
+	return message
 
 
 func get_current_view_id() -> String:
@@ -434,11 +435,6 @@ func toggle_control_bar() -> Dictionary:
 	_shift_control_bar.connect(&"save_requested", Callable(self, "_on_control_bar_save_requested"))
 	_shift_control_bar.connect(&"exit_requested", Callable(self, "_on_control_bar_exit_requested"))
 	add_child(_shift_control_bar)
-	var font_size_percent: int = int(get_meta(SettingsUiScale.META_APPLIED_PERCENT, 100))
-	var font_result: Dictionary = SettingsUiScale.apply_font_size(_shift_control_bar, font_size_percent, 100)
-	if not bool(font_result.get("ok", false)):
-		_close_control_bar()
-		return _make_error("应用 ESC 控制栏字体失败：%s" % String(font_result.get("message", "未知原因。")))
 	_refresh_control_bar_availability()
 	_shift_control_bar.call(&"focus_first_action")
 	_play_button_click()
@@ -677,78 +673,85 @@ func _on_closeup_return_requested() -> void:
 
 
 func _handle_view_request(view_id: String) -> void:
+	var previous_view_id: String = _current_view_id
 	var result: Dictionary = show_view(view_id)
 	if not bool(result.get("ok", false)):
 		show_system_error(String(result.get("message", "视图切换失败。")))
+		return
+	# 只在点击确实打开或关闭一个固定视图后播放；拒绝和原地请求不响。
+	if previous_view_id != _current_view_id:
+		_play_button_click("fixed_view_switch")
 
 
 func _on_answer_requested() -> void:
-	_call_phone_action(&"answer_call", "接听", true)
+	if not _call_phone_action(&"answer_call", "接听", true):
+		return
+	_play_button_click("answer_call")
+	# 接听成功后立即进入首段权威对白；此时只展示对方发言，不展示回应选项。
+	if _is_ending or _phone_system == null or _story_engine == null:
+		show_system_error("这通电话暂时无法继续。")
+		return
+	if not _call_phone_action(&"enter_dialogue_choice", "继续通话", false):
+		return
+	var dialogue_result: Variant = _story_engine.call(&"begin_active_call_dialogue")
+	if _is_ok_result(dialogue_result):
+		_system_message_panel.visible = false
+		return
+	var restore_result: Variant = _phone_system.call(&"exit_dialogue_choice")
+	if typeof(restore_result) != TYPE_BOOL or not bool(restore_result):
+		push_error("[通话][answer_dialogue_restore_failed] 接听后无法恢复线路状态。")
+	show_system_error("线路暂时无法继续，请稍后再试。")
 
 
 func _on_dialogue_choice_requested() -> void:
 	if _is_ending:
-		show_system_error("对话选择失败：02:00 强制收束已执行。")
+		show_system_error("夜班已经结束。")
 		return
 	if _phone_system == null:
-		show_system_error("电话操作失败：PhoneSystem 不可用。")
+		show_system_error("线路暂时不可用。")
 		return
 	if _story_engine == null:
-		show_system_error("电话操作失败：StoryEngine 不可用。")
+		show_system_error("这通电话暂时无法继续。")
 		return
 	var state_result: Variant = _phone_system.call(&"get_state_name")
 	if typeof(state_result) != TYPE_STRING:
-		show_system_error("电话操作失败：PhoneSystem 未返回有效状态。")
+		show_system_error("线路暂时无法确认。")
 		return
 	var state_name: String = String(state_result)
-	if state_name == "CONNECTED":
-		if _is_active_dialogue_terminal():
-			show_system_error("本通电话的预制对话已经结束，请直接结束通话。")
-			return
-		if not _call_phone_action(&"enter_dialogue_choice", "进入对话选择", false):
-			return
-		var dialogue_result: Variant = _story_engine.call(&"begin_active_call_dialogue")
-		if _is_ok_result(dialogue_result):
-			_system_message.text = "预制对话已由 StoryEngine 开始。"
-			_system_message_panel.visible = true
-			return
-		var restore_result: Variant = _phone_system.call(&"exit_dialogue_choice")
-		var failure_reason: String = _describe_operation_failure(dialogue_result, "StoryEngine 未能开始预制对话。")
-		if typeof(restore_result) != TYPE_BOOL or not bool(restore_result):
-			failure_reason += "；同时无法将电话恢复为已接通状态。"
-		show_system_error("进入对话选择失败：%s" % failure_reason)
-	elif state_name == "DIALOGUE_CHOICE":
-		show_system_error("当前正在等待预制回应，请点击上方的对话选项。")
+	if state_name == "DIALOGUE_CHOICE":
+		var reveal_result: Variant = _phone_closeup.call(&"reveal_dialogue_options") if _phone_closeup.has_method(&"reveal_dialogue_options") else {"ok": false}
+		if _is_ok_result(reveal_result):
+			_play_button_click("dialogue_choice_reveal")
+		else:
+			show_system_error("现在还没有可回应的内容。")
 	else:
-		show_system_error("对话选择失败：当前电话状态 %s 不允许此操作。" % state_name)
+		show_system_error("现在还不能继续对话。")
 
 
 func _on_dialogue_option_requested(option_id: String) -> void:
 	if _is_ending:
-		show_system_error("提交对话回应失败：02:00 强制收束已执行。")
+		show_system_error("夜班已经结束。")
 		return
 	if option_id.strip_edges().is_empty():
-		show_system_error("提交对话回应失败：选项 ID 不能为空。")
+		show_system_error("这句回应暂时不可用。")
 		return
 	if _story_engine == null or _phone_system == null:
-		show_system_error("提交对话回应失败：StoryEngine 或 PhoneSystem 不可用。")
+		show_system_error("线路暂时无法回应，请稍后再试。")
 		return
 	var selection_result: Variant = _story_engine.call(&"select_dialogue_option", option_id)
 	if not _is_ok_result(selection_result):
-		show_system_error("提交对话回应失败：%s" % _describe_operation_failure(selection_result, "StoryEngine 拒绝了该选项。"))
+		show_system_error("这句回应没有送出，请再试一次。")
 		return
 	var selection: Dictionary = selection_result as Dictionary
+	# 只在 StoryEngine 接受稳定 option_id 后播放；02:00 等拒绝路径不产生假反馈。
+	_play_button_click("dialogue_option")
 	if not bool(selection.get("reached_terminal", false)):
 		return
 	var exit_result: Variant = _phone_system.call(&"exit_dialogue_choice")
 	if typeof(exit_result) != TYPE_BOOL or not bool(exit_result):
-		var reason: String = "PhoneSystem 拒绝将终止台词后的线路恢复为已接通。"
-		if _phone_system.has_method(&"get_last_error"):
-			reason = String(_phone_system.call(&"get_last_error"))
-		show_system_error("提交对话回应失败：%s" % reason)
+		show_system_error("线路暂时无法继续，请稍后再试。")
 		return
-	_system_message.text = "本轮预制对话结束，可结束通话。"
-	_system_message_panel.visible = true
+	_system_message_panel.visible = false
 
 
 func _is_active_dialogue_terminal() -> bool:
@@ -764,23 +767,24 @@ func _is_active_dialogue_terminal() -> bool:
 func _on_broadcast_requested(broadcast_id: String) -> void:
 	var broadcast_result: Dictionary = {}
 	if _is_ending:
-		broadcast_result = {"ok": false, "message": "02:00 强制收束已发生，不能发送玩家广播。"}
+		broadcast_result = {"ok": false, "message": "夜班已经结束，无法播出。"}
 	elif broadcast_id.strip_edges().is_empty():
-		broadcast_result = {"ok": false, "message": "广播稿 ID 不能为空。"}
+		broadcast_result = {"ok": false, "message": "这份稿件暂时无法播出。"}
 	elif _story_engine == null:
-		broadcast_result = {"ok": false, "message": "StoryEngine 不可用，不能发送玩家广播。"}
+		broadcast_result = {"ok": false, "message": "播出暂时不可用。"}
 	else:
 		var result_value: Variant = _story_engine.call(&"send_player_broadcast", broadcast_id)
 		if result_value is Dictionary:
 			broadcast_result = result_value as Dictionary
 		else:
-			broadcast_result = {"ok": false, "message": "StoryEngine.send_player_broadcast() 未返回 Dictionary。"}
+			broadcast_result = {"ok": false, "message": "播出暂时不可用。"}
 	var feedback_result: Variant = _computer_closeup.call(&"show_broadcast_feedback", broadcast_result)
 	if not _is_ok_result(feedback_result):
-		show_system_error("无法显示广播反馈：%s" % _describe_operation_failure(feedback_result, "电脑播出工作台不可用。"))
+		push_error("[播出][feedback_display_failed] %s" % _describe_operation_failure(feedback_result, "电脑播出工作台不可用。"))
+		show_system_error("播出结果暂时无法显示。")
 		return
 	if not bool(broadcast_result.get("ok", false)):
-		show_system_error("发送广播失败：%s" % String(broadcast_result.get("message", "未知原因。")))
+		show_system_error("播出没有成功，请稍后再试。")
 
 
 ## 电脑只报告“玩家打开了哪一条”；StoryEngine 才能将其标记已读并推进陈述/事实。
@@ -789,29 +793,33 @@ func _on_computer_entry_open_requested(category: String, entry_id: String) -> vo
 		show_system_error("打开电脑条目失败：02:00 强制收束已执行。")
 		return
 	if category.strip_edges().is_empty() or entry_id.strip_edges().is_empty():
-		show_system_error("打开电脑条目失败：分类和条目 ID 均不能为空。")
+		show_system_error("这条记录暂时无法打开。")
 		return
 	if _story_engine == null:
-		show_system_error("打开电脑条目失败：StoryEngine 不可用。")
+		show_system_error("这条记录暂时无法打开。")
 		return
 	var mark_result_value: Variant = _story_engine.call(&"mark_computer_entry_read", category, entry_id)
 	if not _is_ok_result(mark_result_value):
-		show_system_error("打开电脑条目失败：%s" % _describe_operation_failure(mark_result_value, "StoryEngine 拒绝了阅读意图。"))
+		push_error("[电脑][entry_read_failed] %s" % _describe_operation_failure(mark_result_value, "阅读操作被拒绝。"))
+		show_system_error("这条记录暂时无法打开。")
 		return
 	if _computer_closeup == null or not _computer_closeup.has_method(&"show_entry_content"):
-		show_system_error("打开电脑条目失败：电脑近景缺少 show_entry_content() 接口。")
+		show_system_error("这条记录暂时无法显示。")
 		return
 	var display_result: Variant = _computer_closeup.call(&"show_entry_content", category, entry_id)
 	if not _is_ok_result(display_result):
-		show_system_error("已标记阅读，但无法显示电脑条目：%s" % _describe_operation_failure(display_result, "电脑近景不可用。"))
+		push_error("[电脑][entry_display_failed] %s" % _describe_operation_failure(display_result, "电脑近景不可用。"))
+		show_system_error("这条记录暂时无法显示。")
 
 
 func _on_hang_up_requested() -> void:
-	_call_phone_action(&"hang_up", "主动挂断", true)
+	if _call_phone_action(&"hang_up", "主动挂断", true):
+		_play_button_click("hang_up")
 
 
 func _on_finish_call_requested() -> void:
-	_call_phone_action(&"finish_call", "结束通话", true)
+	if _call_phone_action(&"finish_call", "结束通话", true):
+		_play_button_click("finish_call")
 
 
 func _on_control_bar_save_requested() -> void:
@@ -859,7 +867,7 @@ func _open_settings_panel() -> void:
 		return
 	var settings_manager: Node = get_tree().root.get_node_or_null(NodePath("SettingsManager")) as Node
 	if settings_manager == null:
-		show_system_error("SettingsManager 不可用，无法打开设置。")
+		show_system_error("设置暂时不可用。")
 		return
 	_settings_panel = SETTINGS_PANEL_SCENE.instantiate() as SettingsPanel
 	if _settings_panel == null:
@@ -869,16 +877,12 @@ func _open_settings_panel() -> void:
 	if not bool(bind_result.get("ok", false)):
 		_settings_panel.queue_free()
 		_settings_panel = null
-		show_system_error("无法绑定设置界面：%s" % String(bind_result.get("message", "未知原因。")))
+		push_error("[设置][panel_bind_failed] %s" % String(bind_result.get("message", "未知原因。")))
+		show_system_error("设置暂时无法打开。")
 		return
 	_settings_panel.z_index = 60
 	_settings_panel.closed.connect(_on_settings_panel_closed)
 	add_child(_settings_panel)
-	var snapshot_value: Variant = settings_manager.call(&"get_settings_snapshot")
-	var font_size_percent: int = int((snapshot_value as Dictionary).get("font_size", 100)) if snapshot_value is Dictionary else 100
-	var font_result: Dictionary = SettingsUiScale.apply_font_size(_settings_panel, font_size_percent, font_size_percent)
-	if not bool(font_result.get("ok", false)):
-		show_system_error("应用设置界面字体失败：%s" % String(font_result.get("message", "未知原因。")))
 	_sync_work_state_or_show_error()
 
 
@@ -928,15 +932,15 @@ func _close_control_bar() -> void:
 	_shift_control_bar = null
 
 
-## ESC 开关控制栏与菜单按钮均经持久化服务播放，场景替换不会截断音效。
-func _play_button_click() -> void:
+## 所有已确认的打开/关闭入口共用持久化 UI 声道；失败或无状态变化的点击不调用此方法。
+func _play_button_click(context: String = "game_screen") -> void:
 	var player: Node = get_tree().root.get_node_or_null(NodePath("UiSoundPlayer")) as Node
 	if player == null or not player.has_method(&"play_button_click"):
-		push_error("[音频][ui_sound_player_missing] 未找到 UiSoundPlayer，ESC 点击音未播放。")
+		push_error("[音频][ui_sound_player_missing] 未找到 UiSoundPlayer，%s 点击音未播放。" % context)
 		return
 	var result: Variant = player.call(&"play_button_click")
 	if not result is Dictionary or not bool((result as Dictionary).get("ok", false)):
-		push_warning("[音频][ui_button_click_failed] ESC 点击音播放失败：%s" % str(result))
+		push_warning("[音频][ui_button_click_failed] %s 点击音播放失败：%s" % [context, str(result)])
 
 
 func _refresh_control_bar_availability() -> void:
@@ -998,10 +1002,10 @@ func _read_exact_integer(value: Variant) -> Dictionary:
 
 func _call_phone_action(method_name: StringName, action_name: String, needs_game_tick: bool) -> bool:
 	if _is_ending:
-		show_system_error("%s失败：02:00 强制收束已执行。" % action_name)
+		show_system_error("夜班已经结束。")
 		return false
 	if _phone_system == null:
-		show_system_error("%s失败：PhoneSystem 不可用。" % action_name)
+		show_system_error("线路暂时不可用。")
 		return false
 	var arguments: Array = []
 	if needs_game_tick:
@@ -1012,13 +1016,15 @@ func _call_phone_action(method_name: StringName, action_name: String, needs_game
 		arguments.append(int(tick_result["game_tick"]))
 	var result: Variant = _phone_system.callv(method_name, arguments)
 	if typeof(result) == TYPE_BOOL and bool(result):
-		_system_message.text = "%s意图已提交给 PhoneSystem。" % action_name
+		_system_message.text = "%s成功。" % action_name
 		_system_message_panel.visible = true
 		return true
-	var reason: String = "PhoneSystem 拒绝了该操作。"
+	var reason: String = "线路暂时无法响应。"
 	if _phone_system.has_method(&"get_last_error"):
-		reason = String(_phone_system.call(&"get_last_error"))
-	show_system_error("%s失败：%s" % [action_name, reason])
+		var raw_reason: String = String(_phone_system.call(&"get_last_error"))
+		if not raw_reason.strip_edges().is_empty():
+			push_error("[通话][phone_action_rejected] action=%s reason=%s" % [action_name, raw_reason])
+	show_system_error("%s没有成功，请稍后再试。" % action_name)
 	return false
 
 

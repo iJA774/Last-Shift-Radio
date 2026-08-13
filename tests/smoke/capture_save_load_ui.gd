@@ -28,11 +28,6 @@ func _capture() -> void:
 	if not _save_viewport("phase7_load_slots_1920x1080.png"):
 		quit(1)
 		return
-	_apply_font_scale(main, 1.25)
-	await process_frame
-	if not _save_viewport("phase7_load_slots_125pct_1920x1080.png"):
-		quit(1)
-		return
 	main.call(&"return_to_main_menu")
 	await process_frame
 	main.call(&"request_start_shift")
@@ -50,13 +45,7 @@ func _capture() -> void:
 	if not _save_viewport("phase7_save_slots_1920x1080.png"):
 		quit(1)
 		return
-	_apply_font_scale(main, 1.25)
-	await process_frame
-	await process_frame
-	if not _save_viewport("phase7_save_slots_125pct_1920x1080.png"):
-		quit(1)
-		return
-	print("[测试][SaveCapture] 已生成第七阶段主菜单读取入口、读取槽位页与默认/125% 保存覆盖层截图。")
+	print("[测试][SaveCapture] 已生成第七阶段主菜单读取入口、读取槽位页与班次内保存覆盖层截图。")
 	quit(0)
 
 
@@ -73,12 +62,3 @@ func _save_viewport(file_name: String) -> bool:
 		push_error("[测试][SaveCapture] 无法保存截图，错误码=%d。" % save_error)
 		return false
 	return true
-
-
-func _apply_font_scale(node: Node, scale_factor: float) -> void:
-	if node is Label or node is Button:
-		var control: Control = node as Control
-		var current_size: int = control.get_theme_font_size(&"font_size")
-		control.add_theme_font_size_override(&"font_size", maxi(current_size + 1, roundi(float(current_size) * scale_factor)))
-	for child: Node in node.get_children():
-		_apply_font_scale(child, scale_factor)

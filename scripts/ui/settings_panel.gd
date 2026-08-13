@@ -13,7 +13,6 @@ const SETTING_IDS: PackedStringArray = [
 	"ui_phone_volume",
 	"window_mode",
 	"text_speed",
-	"font_size",
 	"reduce_flashing",
 	"crt_enabled",
 ]
@@ -143,7 +142,6 @@ func _validate_settings_manager(settings_manager: Node) -> Dictionary:
 		"set_ui_phone_volume",
 		"set_window_mode",
 		"set_text_speed",
-		"set_font_size",
 		"set_reduce_flashing_enabled",
 		"set_crt_enabled",
 	]
@@ -160,12 +158,12 @@ func _refresh_from_manager() -> void:
 		return
 	if _settings_manager == null or not is_instance_valid(_settings_manager):
 		_set_controls_enabled(false)
-		_show_message("设置系统不可用。", true)
+		_show_message("设置暂时不可用。", true)
 		return
 	var snapshot_value: Variant = _settings_manager.call(&"get_settings_snapshot")
 	if not snapshot_value is Dictionary:
 		_set_controls_enabled(false)
-		_show_message("设置系统未返回有效设置快照。", true)
+		_show_message("设置暂时无法读取。", true)
 		return
 	var snapshot: Dictionary = snapshot_value as Dictionary
 	var validation: Dictionary = _validate_snapshot(snapshot)
@@ -202,7 +200,6 @@ func _validate_snapshot(snapshot: Dictionary) -> Dictionary:
 		or typeof(snapshot["ui_phone_volume"]) not in [TYPE_FLOAT, TYPE_INT] \
 		or typeof(snapshot["text_speed"]) not in [TYPE_FLOAT, TYPE_INT] \
 		or typeof(snapshot["window_mode"]) != TYPE_STRING \
-		or typeof(snapshot["font_size"]) != TYPE_INT \
 		or typeof(snapshot["reduce_flashing"]) != TYPE_BOOL \
 		or typeof(snapshot["crt_enabled"]) != TYPE_BOOL:
 		return _make_error("设置快照字段类型无效。")
@@ -222,7 +219,7 @@ func _set_controls_enabled(is_enabled: bool) -> void:
 		elif control is BaseButton:
 			(control as BaseButton).disabled = not is_enabled
 		if not is_enabled:
-			control.tooltip_text = "不可用：设置系统未准备完成。"
+			control.tooltip_text = "不可用：设置尚未准备完成。"
 
 
 func _update_value_labels() -> void:
@@ -271,7 +268,7 @@ func _submit_setter(method_name: StringName, arguments: Array) -> void:
 	if _is_refreshing:
 		return
 	if _settings_manager == null or not is_instance_valid(_settings_manager):
-		_show_message("设置系统不可用，无法保存变更。", true)
+		_show_message("设置暂时不可用，无法保存变更。", true)
 		return
 	var result: Variant = _settings_manager.callv(method_name, arguments)
 	if not result is Dictionary or not bool((result as Dictionary).get("ok", false)):

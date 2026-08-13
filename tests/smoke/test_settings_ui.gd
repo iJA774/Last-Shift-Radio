@@ -1,8 +1,8 @@
 extends SceneTree
 
 ## 第八阶段设置 UI / 生命周期集成验证。
-## 覆盖损坏设置恢复、已有 125% 设置的启动页、夜班覆盖层不暂停、电话仍响、
-## CRT/减少闪烁分离、逐字速度、动态电脑控件字号、读档重应用与 02:00 抢占。
+## 覆盖损坏设置恢复、夜班覆盖层不暂停、电话仍响、CRT/减少闪烁分离、
+## 逐字速度、读档重应用与 02:00 抢占。
 
 const MAIN_SCENE: PackedScene = preload("res://scenes/app/main.tscn")
 const SETTINGS_PATH: String = "user://phase8_settings_ui.json"
@@ -15,7 +15,6 @@ const FORBIDDEN_SAVE_SETTING_KEYS: PackedStringArray = [
 	"ui_phone_volume",
 	"window_mode",
 	"text_speed",
-	"font_size",
 	"reduce_flashing",
 	"crt_enabled",
 ]
@@ -105,15 +104,11 @@ func _run() -> void:
 	recovery_app.queue_free()
 	await process_frame
 
-	_assert_ok(settings_manager.call(&"set_font_size", 125), "必须能设置 125% 字体。")
 	_assert_ok(settings_manager.call(&"set_text_speed", 4.0), "必须能设置 4 倍逐字速度。")
 	_assert_ok(settings_manager.call(&"set_reduce_flashing_enabled", true), "必须能开启减少闪烁。")
 	_assert_ok(settings_manager.call(&"set_crt_enabled", false), "必须能关闭 CRT。")
 
-	# 已持久 125% 设置后，新进程/新 Main 的主菜单必须立即重排。
 	var app: Control = await _create_app()
-	var menu_title: Label = app.get_node_or_null(NodePath("ScreenHost/MainMenu/Content/MenuPanel/Margin/Layout/Title")) as Label
-	_assert_true(menu_title != null and menu_title.get_theme_font_size(&"font_size") == 53, "已有 125% 设置启动时主菜单标题必须立即变为 53px。")
 	_assert_equal(String(app.call(&"get_window_mode_observation")), "headless", "Headless 下窗口设置必须以可观测跳过状态执行。")
 
 	app.call(&"request_start_shift")
@@ -154,7 +149,6 @@ func _run() -> void:
 	_assert_true(not bool(app.call(&"has_active_runtime")), "设置应用失败时不得遗留已恢复的 SHIFT 运行时。")
 	_assert_true(not bool(game_clock.call(&"is_running")), "设置应用失败回滚后 GameClock 必须停止，不能保留 deferred restore。")
 	_assert_ok(settings_manager.call(&"reset_to_defaults"), "读档失败后必须能通过恢复默认设置修复。")
-	_assert_ok(settings_manager.call(&"set_font_size", 125), "修复后必须能恢复 125% 全局字体。")
 	_assert_ok(settings_manager.call(&"set_text_speed", 4.0), "修复后必须能恢复全局逐字速度。")
 	_assert_ok(settings_manager.call(&"set_reduce_flashing_enabled", true), "修复后必须能恢复减少闪烁。")
 	_assert_ok(settings_manager.call(&"set_crt_enabled", false), "修复后必须能恢复 CRT 关闭。")
@@ -170,7 +164,7 @@ func _run() -> void:
 		_cleanup_and_finish(settings_manager)
 		return
 
-	# 动态电脑页签内容在 125% 下新建时也必须继承字号。
+	# 动态电脑页签内容仍必须在当前设置下正常生成。
 	_assert_ok(screen.show_view(GameScreen.VIEW_COMPUTER), "必须能进入电脑视图。")
 	var computer: Control = screen.get_node_or_null(NodePath("ViewHost/ComputerCloseup")) as Control
 	_assert_true(computer != null and not bool(computer.get("_is_crt_enabled")), "CRT off 必须独立隐藏电脑 CRT 层。")
@@ -181,7 +175,7 @@ func _run() -> void:
 		await process_frame
 		var information_view: Control = computer.get_node_or_null(NodePath("TerminalSurface/InformationView")) as Control
 		var dynamic_label: Label = _find_label_with_text(information_view, "来源：")
-		_assert_true(dynamic_label != null and dynamic_label.get_theme_font_size(&"font_size") == 23, "125% 下运行时创建的电脑信息卡文本必须为 23px。")
+		_assert_true(dynamic_label != null, "运行时创建的电脑信息卡必须保留来源文字。")
 
 	# 读档不得恢复或覆盖设置槽内容，必须再次以当前全局快照应用视觉/文字参数。
 	app.call(&"_show_main_menu")
@@ -216,7 +210,7 @@ func _run() -> void:
 	_assert_true(bool(game_clock.call(&"advance_ticks_for_verification", 60)), "设置覆盖层打开时故事时间必须继续推进。")
 	_assert_equal(String(phone.call(&"get_state_name")), "RINGING", "设置覆盖层打开时第一通电话仍必须真实响铃。")
 	var phone_closeup: Control = screen.get_node_or_null(NodePath("ViewHost/PhoneCloseup")) as Control
-	_assert_true(phone_closeup != null and (phone_closeup.get("_indicator_timer") as Timer).is_stopped(), "减少闪烁必须停止电话指示灯闪烁计时器。")
+	_assert_true(phone_closeup != null and phone_closeup.get_node_or_null(NodePath("PhoneIndicatorLight")) == null, "新通话美术不再叠加旧电话指示灯；减少闪烁只影响环境效果。")
 
 	# 关闭覆盖层后电话对白以真实 StoryEngine 快照逐字展示；调速不改变线路状态。
 	var shift_panel: SettingsPanel = screen.get_node_or_null(NodePath("SettingsPanel")) as SettingsPanel

@@ -8,6 +8,7 @@ signal answer_requested()
 signal dialogue_choice_requested()
 signal dialogue_option_requested(option_id: String)
 signal hang_up_requested()
+# 挂断按键在终止台词后提交既有的正常结束意图，保留来电记录 outcome 语义。
 signal finish_call_requested()
 
 var _phone_system: RefCounted = null
@@ -19,33 +20,27 @@ var _are_actions_enabled: bool = true
 var _actions_disabled_reason: String = ""
 var _is_return_enabled: bool = true
 var _is_motion_enabled: bool = true
-var _indicator_timer: Timer = null
-var _is_indicator_lit: bool = false
 var _text_speed_multiplier: float = 1.0
 var _typewriter_tween: Tween = null
 var _typewriter_full_text: String = ""
+# 此标志只控制当前权威对白的呈现时机；不保存、不修改剧情或电话状态。
+var _are_dialogue_options_revealed: bool = false
 
 const DIALOGUE_CHARACTERS_PER_SECOND: float = 34.0
 
 @onready var _phone_state_label: Label = %PhoneStateLabel
 @onready var _caller_label: Label = %CallerLabel
 @onready var _dialogue_hint_label: Label = %DialogueHintLabel
-@onready var _dialogue_options: HFlowContainer = %DialogueOptions
-@onready var _action_availability_label: Label = %ActionAvailabilityLabel
+@onready var _dialogue_scroll: ScrollContainer = %DialogueScroll
+@onready var _dialogue_options: VBoxContainer = %DialogueOptions
+@onready var _dialogue_choice_overlay: Control = %DialogueChoiceOverlay
 @onready var _answer_button: Button = %AnswerButton
 @onready var _dialogue_choice_button: Button = %DialogueChoiceButton
 @onready var _hang_up_button: Button = %HangUpButton
-@onready var _finish_button: Button = %FinishButton
 @onready var _return_button: Button = %BackButton
-@onready var _phone_indicator_light: TextureRect = $PhoneIndicatorLight
 
 
 func _ready() -> void:
-	_indicator_timer = Timer.new()
-	_indicator_timer.one_shot = true
-	_indicator_timer.process_callback = Timer.TIMER_PROCESS_IDLE
-	_indicator_timer.timeout.connect(_on_indicator_timer_timeout)
-	add_child(_indicator_timer)
 	_connect_phone_system_if_possible()
 	_configure_ambient_fx()
 	_refresh()
@@ -72,9 +67,9 @@ func bind_phone_system(phone_system: RefCounted) -> Dictionary:
 ## 电话近景只读取当前预制对话快照；选项仍通过 GameScreen 交给 StoryEngine。
 func bind_story_engine(story_engine: RefCounted) -> Dictionary:
 	if story_engine == null:
-		return _make_error("StoryEngine 实例不能为空。")
+		return _make_error("对话内容暂时不可用。")
 	if not story_engine.has_method(&"get_active_dialogue_snapshot") or not story_engine.has_signal(&"dialogue_changed"):
-		return _make_error("StoryEngine 缺少预制对话展示所需接口。")
+		return _make_error("对话内容暂时不可用。")
 	_disconnect_story_engine()
 	_story_engine = story_engine
 	_connect_story_engine_if_possible()
@@ -109,7 +104,6 @@ func set_motion_enabled(is_enabled: bool) -> Dictionary:
 	if ambient_fx == null or not ambient_fx.has_method(&"set_motion_enabled"):
 		return _make_error("环境效果组件缺少 set_motion_enabled() 接口。")
 	ambient_fx.call(&"set_motion_enabled", is_enabled)
-	_refresh_phone_indicator()
 	return {"ok": true}
 
 
@@ -144,13 +138,13 @@ func stop_text_presentation() -> Dictionary:
 
 func _validate_phone_system(phone_system: RefCounted) -> Dictionary:
 	if phone_system == null:
-		return _make_error("电话系统实例不能为空。")
+		return _make_error("线路暂时不可用。")
 	var required_methods: PackedStringArray = ["get_state_name", "get_active_call_snapshot"]
 	for method_name: String in required_methods:
 		if not phone_system.has_method(method_name):
-			return _make_error("电话系统缺少 %s() 公开接口。" % method_name)
+			return _make_error("线路暂时不可用。")
 	if not phone_system.has_signal(&"state_changed"):
-		return _make_error("电话系统缺少 state_changed 信号。")
+		return _make_error("线路暂时不可用。")
 	return {"ok": true}
 
 
@@ -200,6 +194,7 @@ func _on_phone_state_changed(_previous_state: int, _current_state: int, _event_i
 
 func _on_dialogue_changed(snapshot: Dictionary) -> void:
 	_dialogue_snapshot = snapshot.duplicate(true)
+	_are_dialogue_options_revealed = false
 	_refresh()
 
 
@@ -207,70 +202,46 @@ func _refresh() -> void:
 	if not is_node_ready():
 		return
 	if _phone_system == null:
-		_phone_state_label.text = "电话状态：系统未连接"
-		_caller_label.text = "来显：等待电话系统提供活动线路。"
-		_set_dialogue_hint_text("对话：当前不能提交电话操作。")
+		_phone_state_label.text = "线路未接通"
+		_caller_label.text = "暂无来电"
+		_set_dialogue_hint_text("拿起听筒后，对方的声音会显示在这里。")
 		_set_action_availability("", false)
-		_refresh_phone_indicator()
 		return
 
 	var state_value: Variant = _phone_system.call(&"get_state_name")
 	if typeof(state_value) != TYPE_STRING:
-		_phone_state_label.text = "电话状态：数据无效"
-		_caller_label.text = "来显：电话系统未返回有效状态。"
-		_set_dialogue_hint_text("对话：状态数据无效，已禁用操作。")
+		_phone_state_label.text = "线路中断"
+		_caller_label.text = "来电信息暂不可用"
+		_set_dialogue_hint_text("线路暂时没有回应。")
 		push_error("[电话][invalid_state] PhoneSystem.get_state_name() 必须返回 String。")
 		_set_action_availability("", false)
-		_refresh_phone_indicator()
 		return
 
 	var state_name: String = state_value
-	_phone_state_label.text = "电话状态：%s" % _format_state(state_name)
+	_phone_state_label.text = _format_state(state_name)
 	_refresh_caller_snapshot()
 	_refresh_dialogue_hint(state_name)
 	_refresh_dialogue_options(state_name)
 	_set_action_availability(state_name, _are_actions_enabled)
-	_refresh_phone_indicator()
-	_apply_current_font_size()
-
-
-## 对话选项按钮由运行时快照创建；刷新后即时继承当前的 100% / 125% 档位。
-func _apply_current_font_size() -> void:
-	var settings_manager: Node = get_tree().root.get_node_or_null(NodePath("SettingsManager")) as Node
-	if settings_manager == null or not settings_manager.has_method(&"get_settings_snapshot"):
-		return
-	var snapshot_value: Variant = settings_manager.call(&"get_settings_snapshot")
-	if not snapshot_value is Dictionary:
-		return
-	var font_size_value: Variant = (snapshot_value as Dictionary).get("font_size", 100)
-	if typeof(font_size_value) != TYPE_INT:
-		return
-	var font_size_percent: int = int(font_size_value)
-	if font_size_percent != 100 and font_size_percent != 125:
-		return
-	var inherited_percent: int = int(get_meta(SettingsUiScale.META_APPLIED_PERCENT, font_size_percent))
-	var result: Dictionary = SettingsUiScale.apply_font_size(self, font_size_percent, inherited_percent)
-	if not bool(result.get("ok", false)):
-		push_error("[电话][dynamic_font_apply_failed] %s" % String(result.get("message", "未知原因。")))
 
 
 func _refresh_caller_snapshot() -> void:
 	var snapshot_value: Variant = _phone_system.call(&"get_active_call_snapshot")
 	if not snapshot_value is Dictionary:
-		_caller_label.text = "来显：电话系统未返回有效快照。"
+		_caller_label.text = "来电信息暂不可用"
 		push_error("[电话][invalid_snapshot] PhoneSystem.get_active_call_snapshot() 必须返回 Dictionary。")
 		return
 	var snapshot: Dictionary = snapshot_value as Dictionary
 	if snapshot.is_empty():
-		_caller_label.text = "来显：当前没有活动线路。"
+		_caller_label.text = "暂无来电"
 		return
 	var caller_name: Variant = snapshot.get("caller_name")
 	var caller_number: Variant = snapshot.get("caller_number")
 	if not caller_name is String or not caller_number is String:
-		_caller_label.text = "来显：活动线路数据不完整。"
+		_caller_label.text = "来电信息不完整"
 		push_error("[电话][invalid_snapshot_fields] 活动线路快照缺少字符串来显字段。")
 		return
-	_caller_label.text = "登记名：%s\n号码：%s" % [String(caller_name), String(caller_number)]
+	_caller_label.text = "登记名：%s    号码：%s" % [String(caller_name), String(caller_number)]
 
 
 func _refresh_dialogue_hint(state_name: String) -> void:
@@ -278,18 +249,15 @@ func _refresh_dialogue_hint(state_name: String) -> void:
 		var speaker: String = String(_dialogue_snapshot.get("speaker", "来电者"))
 		var text: String = String(_dialogue_snapshot.get("text", ""))
 		if not text.strip_edges().is_empty():
-			var suffix: String = "\n\n请选择回应。"
-			if bool(_dialogue_snapshot.get("is_terminal", false)):
-				suffix = "\n\n本轮对话结束，可结束通话。"
-			_set_dialogue_hint_text("%s：\n%s%s" % [speaker, text, suffix], true)
+			_set_dialogue_hint_text("%s：\n%s" % [speaker, text], true)
 			return
 	match state_name:
 		"RINGING":
-			_set_dialogue_hint_text("线路正在响铃。接听或等待系统处理；不能主动外拨。")
+			_set_dialogue_hint_text("铃声响起。你可以接听，或等它停下。")
 		"CONNECTED":
-			_set_dialogue_hint_text("线路已接通。可以请求进入一轮预制选择、主动挂断或结束通话。")
+			_set_dialogue_hint_text("线路已接通。点击面板上的“继续对话”。")
 		"DIALOGUE_CHOICE":
-			_set_dialogue_hint_text("正在等待本轮选择。时钟继续流动，02:00 可由系统中断。")
+			_set_dialogue_hint_text("对方正在等待你的回应。")
 		_:
 			_set_dialogue_hint_text("当前没有可操作的接通线路。")
 
@@ -328,7 +296,9 @@ func _stop_typewriter() -> void:
 func _refresh_dialogue_options(state_name: String) -> void:
 	for child: Node in _dialogue_options.get_children():
 		child.queue_free()
-	if state_name != "DIALOGUE_CHOICE" or _dialogue_snapshot.is_empty() or bool(_dialogue_snapshot.get("is_terminal", false)):
+	_dialogue_choice_overlay.visible = false
+	_dialogue_scroll.visible = true
+	if state_name != "DIALOGUE_CHOICE" or not _are_dialogue_options_revealed or _dialogue_snapshot.is_empty() or bool(_dialogue_snapshot.get("is_terminal", false)):
 		return
 	var raw_options: Variant = _dialogue_snapshot.get("options", [])
 	if not raw_options is Array:
@@ -350,49 +320,65 @@ func _refresh_dialogue_options(state_name: String) -> void:
 		var button: Button = Button.new()
 		button.text = option_text
 		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		# 两列布局为 125% 字号保留足够行宽；更多选项由既有滚动区承载。
-		button.custom_minimum_size = Vector2(740.0, 94.0)
+		# 分支仍由稳定 option_id 提交；选择区独立于通话面板，使用屏幕中央纵向长条。
+		button.custom_minimum_size = Vector2(0.0, 48.0)
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		button.add_theme_color_override(&"font_color", Color(0.46, 0.96, 0.60, 1.0))
+		button.add_theme_color_override(&"font_hover_color", Color(0.72, 1.0, 0.76, 1.0))
+		button.add_theme_color_override(&"font_pressed_color", Color(0.25, 0.76, 0.40, 1.0))
+		button.add_theme_color_override(&"font_disabled_color", Color(0.30, 0.47, 0.34, 1.0))
+		button.add_theme_color_override(&"font_outline_color", Color(0.02, 0.12, 0.05, 1.0))
+		button.add_theme_constant_override(&"outline_size", 2)
+		_style_dialogue_choice_button(button)
 		button.disabled = not _are_actions_enabled
 		button.tooltip_text = _disabled_tooltip(_actions_disabled_reason) if button.disabled else "选择此回应。"
 		button.pressed.connect(_on_dialogue_option_button_pressed.bind(option_id))
 		_dialogue_options.add_child(button)
+	var has_options: bool = _dialogue_options.get_child_count() > 0
+	# 选择区固定在正文下方，既不遮挡说话内容，也不改变权威对话状态。
+	_dialogue_choice_overlay.visible = has_options
+	_dialogue_scroll.visible = true
+
+
+## 分支选择使用明确的横向长条而非只靠绿色文字；各状态仍保留可见反馈。
+func _style_dialogue_choice_button(button: Button) -> void:
+	button.add_theme_stylebox_override(&"normal", _make_choice_style(Color(0.018, 0.10, 0.045, 0.94), Color(0.18, 0.72, 0.36, 0.82)))
+	button.add_theme_stylebox_override(&"hover", _make_choice_style(Color(0.035, 0.20, 0.085, 0.98), Color(0.43, 1.0, 0.60, 1.0)))
+	button.add_theme_stylebox_override(&"pressed", _make_choice_style(Color(0.012, 0.055, 0.025, 1.0), Color(0.22, 0.84, 0.42, 1.0)))
+	button.add_theme_stylebox_override(&"disabled", _make_choice_style(Color(0.018, 0.045, 0.027, 0.72), Color(0.18, 0.32, 0.22, 0.82)))
+
+
+func _make_choice_style(background_color: Color, border_color: Color) -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = background_color
+	style.border_color = border_color
+	style.set_border_width_all(2)
+	style.corner_radius_top_left = 5
+	style.corner_radius_top_right = 5
+	style.corner_radius_bottom_left = 5
+	style.corner_radius_bottom_right = 5
+	style.content_margin_left = 24.0
+	style.content_margin_right = 24.0
+	style.content_margin_top = 5.0
+	style.content_margin_bottom = 5.0
+	return style
 
 
 func _set_action_availability(state_name: String, allow_actions: bool) -> void:
 	_answer_button.disabled = not allow_actions or state_name != "RINGING"
 	_answer_button.tooltip_text = _action_tooltip(_answer_button.disabled, "仅在电话响铃时可以接听。")
 	var has_completed_dialogue: bool = not _dialogue_snapshot.is_empty() and bool(_dialogue_snapshot.get("is_terminal", false))
-	_dialogue_choice_button.disabled = not allow_actions or state_name != "CONNECTED" or has_completed_dialogue
-	if has_completed_dialogue:
-		_dialogue_choice_button.text = "对话已结束\n请结束通话"
-		_dialogue_choice_button.tooltip_text = "不可用：本通电话的预制对话已经结束，请结束通话或主动挂断。"
+	var can_reveal_options: bool = state_name == "DIALOGUE_CHOICE" and not _are_dialogue_options_revealed and not _dialogue_snapshot.is_empty() and not has_completed_dialogue
+	_dialogue_choice_button.disabled = not allow_actions or (state_name != "CONNECTED" and not can_reveal_options) or has_completed_dialogue
+	if not allow_actions:
+		_dialogue_choice_button.tooltip_text = _disabled_tooltip(_actions_disabled_reason)
+	elif has_completed_dialogue:
+		_dialogue_choice_button.tooltip_text = "不可用：请挂断电话。"
 	else:
-		_dialogue_choice_button.text = "开始预制对话" if state_name == "CONNECTED" else "对话选项见上方"
-		_dialogue_choice_button.tooltip_text = _action_tooltip(_dialogue_choice_button.disabled, "仅在已接通时可以开始预制对话。")
+		_dialogue_choice_button.tooltip_text = _action_tooltip(_dialogue_choice_button.disabled, "继续听对方说话，或作出回应。")
 	_hang_up_button.disabled = not allow_actions or (state_name != "CONNECTED" and state_name != "DIALOGUE_CHOICE")
-	_hang_up_button.tooltip_text = _action_tooltip(_hang_up_button.disabled, "仅在已接通或对话选择时可主动挂断。")
-	_finish_button.disabled = not allow_actions or state_name != "CONNECTED"
-	_finish_button.tooltip_text = _action_tooltip(_finish_button.disabled, "仅在已接通时可以正常结束通话。")
-	_refresh_action_availability_hint(state_name, allow_actions, has_completed_dialogue)
-
-
-func _refresh_action_availability_hint(state_name: String, allow_actions: bool, has_completed_dialogue: bool) -> void:
-	if not allow_actions and not _are_actions_enabled:
-		_action_availability_label.text = "操作已锁定：%s" % _actions_disabled_reason
-		return
-	if has_completed_dialogue:
-		_action_availability_label.text = "操作提示：本通对话已结束，请结束通话或主动挂断。"
-		return
-	match state_name:
-		"RINGING":
-			_action_availability_label.text = "操作提示：尚未接通；对话、挂断与结束通话暂不可用。"
-		"CONNECTED":
-			_action_availability_label.text = "操作提示：线路已接通；接听暂不可用。"
-		"DIALOGUE_CHOICE":
-			_action_availability_label.text = "操作提示：正在等待回应；其余线路操作暂不可用。"
-		_:
-			_action_availability_label.text = "操作提示：当前没有活动线路，电话操作暂不可用。"
+	var hang_up_hint: String = "结束本次通话。" if has_completed_dialogue else "仅在已接通或对话选择时可主动挂断。"
+	_hang_up_button.tooltip_text = _action_tooltip(_hang_up_button.disabled, hang_up_hint)
 
 
 func _refresh_return_button(disabled_reason: String = "") -> void:
@@ -423,54 +409,6 @@ func _configure_ambient_fx() -> void:
 		push_error("[电话][ambient_fx_motion] %s" % String(result.get("message", "环境效果初始化失败。")))
 
 
-func _refresh_phone_indicator() -> void:
-	if _phone_indicator_light == null:
-		push_error("[电话][indicator_missing] 缺少电话线路指示灯贴图层。")
-		return
-	var is_ringing: bool = false
-	if _phone_system != null:
-		var state_value: Variant = _phone_system.call(&"get_state_name")
-		is_ringing = typeof(state_value) == TYPE_STRING and String(state_value) == "RINGING"
-	if not is_ringing:
-		_stop_indicator_blink()
-		_set_indicator_lit(false)
-		return
-	if not _is_motion_enabled:
-		_stop_indicator_blink()
-		_set_indicator_lit(true)
-		return
-	if _indicator_timer == null or not _indicator_timer.is_stopped():
-		return
-	_set_indicator_lit(true)
-	_indicator_timer.wait_time = 0.34
-	_indicator_timer.start()
-
-
-func _on_indicator_timer_timeout() -> void:
-	if _phone_system == null or not _is_motion_enabled:
-		return
-	var state_value: Variant = _phone_system.call(&"get_state_name")
-	if typeof(state_value) != TYPE_STRING or String(state_value) != "RINGING":
-		_set_indicator_lit(false)
-		return
-	_set_indicator_lit(not _is_indicator_lit)
-	if _indicator_timer == null:
-		return
-	_indicator_timer.wait_time = 0.16 if not _is_indicator_lit else 0.34
-	_indicator_timer.start()
-
-
-func _stop_indicator_blink() -> void:
-	if _indicator_timer != null:
-		_indicator_timer.stop()
-
-
-func _set_indicator_lit(is_lit: bool) -> void:
-	_is_indicator_lit = is_lit
-	if _phone_indicator_light != null:
-		_phone_indicator_light.visible = is_lit
-
-
 func _action_tooltip(is_disabled: bool, enabled_text: String) -> String:
 	if is_disabled:
 		if not _are_actions_enabled:
@@ -482,20 +420,20 @@ func _action_tooltip(is_disabled: bool, enabled_text: String) -> String:
 func _disabled_tooltip(reason: String) -> String:
 	var normalized_reason: String = reason.strip_edges()
 	if normalized_reason.is_empty():
-		normalized_reason = "当前界面已由系统锁定。"
+		normalized_reason = "当前无法操作。"
 	return "不可用：%s" % normalized_reason
 
 
 func _format_state(state_name: String) -> String:
 	match state_name:
 		"IDLE":
-			return "空闲"
+			return "线路待机"
 		"RINGING":
 			return "正在响铃"
 		"CONNECTED":
 			return "已接通"
 		"DIALOGUE_CHOICE":
-			return "等待选择"
+			return "正在通话"
 		"ENDED":
 			return "通话结束"
 		"MISSED":
@@ -518,6 +456,21 @@ func _on_dialogue_choice_button_pressed() -> void:
 		dialogue_choice_requested.emit()
 
 
+## 仅由 GameScreen 在已确认的 DIALOGUE_CHOICE 状态下调用；这不是剧情状态。
+func reveal_dialogue_options() -> Dictionary:
+	if _phone_system == null or _dialogue_snapshot.is_empty() or bool(_dialogue_snapshot.get("is_terminal", false)):
+		return {"ok": false, "message": "当前没有可回应的内容。"}
+	var state_value: Variant = _phone_system.call(&"get_state_name")
+	if typeof(state_value) != TYPE_STRING or String(state_value) != "DIALOGUE_CHOICE":
+		return {"ok": false, "message": "当前不能回应。"}
+	if _are_dialogue_options_revealed:
+		return {"ok": false, "message": "回应已经显示。"}
+	_are_dialogue_options_revealed = true
+	_refresh_dialogue_options(String(state_value))
+	_set_action_availability(String(state_value), _are_actions_enabled)
+	return {"ok": true}
+
+
 func _on_dialogue_option_button_pressed(option_id: String) -> void:
 	if _are_actions_enabled and not option_id.strip_edges().is_empty():
 		dialogue_option_requested.emit(option_id)
@@ -537,12 +490,14 @@ func _refresh_dialogue_snapshot() -> void:
 
 func _on_hang_up_button_pressed() -> void:
 	if not _hang_up_button.disabled:
+		if _is_active_dialogue_terminal():
+			finish_call_requested.emit()
+			return
 		hang_up_requested.emit()
 
 
-func _on_finish_button_pressed() -> void:
-	if not _finish_button.disabled:
-		finish_call_requested.emit()
+func _is_active_dialogue_terminal() -> bool:
+	return not _dialogue_snapshot.is_empty() and bool(_dialogue_snapshot.get("is_terminal", false))
 
 
 func _make_error(message: String) -> Dictionary:

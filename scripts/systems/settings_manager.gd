@@ -17,9 +17,9 @@ const SETTING_AMBIENCE_VOLUME: String = "ambience_volume"
 const SETTING_UI_PHONE_VOLUME: String = "ui_phone_volume"
 const SETTING_WINDOW_MODE: String = "window_mode"
 const SETTING_TEXT_SPEED: String = "text_speed"
-const SETTING_FONT_SIZE: String = "font_size"
 const SETTING_REDUCE_FLASHING: String = "reduce_flashing"
 const SETTING_CRT_ENABLED: String = "crt_enabled"
+const RETIRED_SETTING_FONT_SIZE: String = "font_size"
 
 const WINDOW_MODE_WINDOWED: String = "windowed"
 const WINDOW_MODE_FULLSCREEN: String = "fullscreen"
@@ -28,8 +28,6 @@ const MIN_VOLUME: float = 0.0
 const MAX_VOLUME: float = 1.0
 const MIN_TEXT_SPEED: float = 0.25
 const MAX_TEXT_SPEED: float = 4.0
-const FONT_SIZE_DEFAULT: int = 100
-const FONT_SIZE_LARGE: int = 125
 
 const REQUIRED_TOP_LEVEL_FIELDS: Array[String] = [
 	"format_version",
@@ -42,7 +40,6 @@ const REQUIRED_SETTING_FIELDS: Array[String] = [
 	SETTING_UI_PHONE_VOLUME,
 	SETTING_WINDOW_MODE,
 	SETTING_TEXT_SPEED,
-	SETTING_FONT_SIZE,
 	SETTING_REDUCE_FLASHING,
 	SETTING_CRT_ENABLED,
 ]
@@ -53,7 +50,6 @@ const DEFAULT_SETTINGS: Dictionary = {
 	SETTING_UI_PHONE_VOLUME: 1.0,
 	SETTING_WINDOW_MODE: WINDOW_MODE_WINDOWED,
 	SETTING_TEXT_SPEED: 1.0,
-	SETTING_FONT_SIZE: FONT_SIZE_DEFAULT,
 	SETTING_REDUCE_FLASHING: false,
 	SETTING_CRT_ENABLED: true,
 }
@@ -118,7 +114,32 @@ func load_settings() -> Dictionary:
 		_is_loaded = false
 		_last_load_result = read_result.duplicate(true)
 		return read_result
-	var validation_result: Dictionary = validate_document(read_result["document"] as Dictionary)
+	var document: Dictionary = read_result["document"] as Dictionary
+	var retired_field_result: Dictionary = _remove_retired_font_size_if_exact(document)
+	if bool(retired_field_result.get("removed", false)):
+		var sanitized_document: Dictionary = retired_field_result["document"] as Dictionary
+		var sanitized_validation: Dictionary = validate_document(sanitized_document)
+		if not bool(sanitized_validation.get("ok", false)):
+			_is_loaded = false
+			_last_load_result = _with_path(sanitized_validation, _settings_path)
+			return _last_load_result.duplicate(true)
+		var rewrite_result: Dictionary = _write_settings_document(sanitized_validation["settings"] as Dictionary)
+		if not bool(rewrite_result.get("ok", false)):
+			_is_loaded = false
+			_last_load_result = rewrite_result.duplicate(true)
+			return _last_load_result.duplicate(true)
+		_settings = (sanitized_validation["settings"] as Dictionary).duplicate(true)
+		_is_loaded = true
+		_last_load_result = {
+			"ok": true,
+			"created_defaults": false,
+			"retired_field_removed": RETIRED_SETTING_FONT_SIZE,
+			"path": _settings_path,
+		}
+		_emit_settings_applied([])
+		print("[设置][settings_retired_field_removed] path=%s field=%s。" % [_settings_path, RETIRED_SETTING_FONT_SIZE])
+		return _last_load_result.duplicate(true)
+	var validation_result: Dictionary = validate_document(document)
 	if not bool(validation_result.get("ok", false)):
 		_is_loaded = false
 		_last_load_result = _with_path(validation_result, _settings_path)
@@ -266,15 +287,6 @@ func set_text_speed(value: float) -> Dictionary:
 	return _set_single_value(SETTING_TEXT_SPEED, value)
 
 
-## 当前 MVP 只支持 100% 与 125% 两档，避免无验证的任意比例破坏布局。
-func get_font_size() -> int:
-	return int(_settings[SETTING_FONT_SIZE])
-
-
-func set_font_size(value: int) -> Dictionary:
-	return _set_single_value(SETTING_FONT_SIZE, value)
-
-
 func is_reduce_flashing_enabled() -> bool:
 	return bool(_settings[SETTING_REDUCE_FLASHING])
 
@@ -304,6 +316,42 @@ func validate_document(document: Dictionary) -> Dictionary:
 	if not document["settings"] is Dictionary:
 		return _make_error("invalid_settings_type", "设置字段 settings 必须是对象。")
 	return _validate_settings(document["settings"] as Dictionary)
+
+
+## 仅处理本次已知、已退役的字号字段：顶层和现有 v1 字段必须完整合法，且
+## font_size 必须是旧合同允许的精确 100 或 125。其他任一异常仍交给严格校验拒绝。
+func _remove_retired_font_size_if_exact(document: Dictionary) -> Dictionary:
+	if document.is_empty() or document.size() != REQUIRED_TOP_LEVEL_FIELDS.size():
+		return {"removed": false}
+	for top_level_field: String in REQUIRED_TOP_LEVEL_FIELDS:
+		if not document.has(top_level_field):
+			return {"removed": false}
+	var version_result: Dictionary = _read_exact_integer(document.get("format_version"))
+	if not bool(version_result.get("ok", false)) or int(version_result.get("value", -1)) != FORMAT_VERSION:
+		return {"removed": false}
+	if not document["settings"] is Dictionary:
+		return {"removed": false}
+	var legacy_settings: Dictionary = document["settings"] as Dictionary
+	if legacy_settings.size() != REQUIRED_SETTING_FIELDS.size() + 1:
+		return {"removed": false}
+	for field_name: String in REQUIRED_SETTING_FIELDS:
+		if not legacy_settings.has(field_name):
+			return {"removed": false}
+	if not legacy_settings.has(RETIRED_SETTING_FONT_SIZE):
+		return {"removed": false}
+	for field_name_variant: Variant in legacy_settings.keys():
+		if typeof(field_name_variant) != TYPE_STRING:
+			return {"removed": false}
+		var field_name: String = String(field_name_variant)
+		if field_name != RETIRED_SETTING_FONT_SIZE and not REQUIRED_SETTING_FIELDS.has(field_name):
+			return {"removed": false}
+	var font_size_result: Dictionary = _read_exact_integer(legacy_settings[RETIRED_SETTING_FONT_SIZE])
+	if not bool(font_size_result.get("ok", false)) or not [100, 125].has(int(font_size_result.get("value", -1))):
+		return {"removed": false}
+	var sanitized_document: Dictionary = document.duplicate(true)
+	var sanitized_settings: Dictionary = sanitized_document["settings"] as Dictionary
+	sanitized_settings.erase(RETIRED_SETTING_FONT_SIZE)
+	return {"removed": true, "document": sanitized_document}
 
 
 ## 测试只能指定 user:// 下的隔离路径；玩家流程不应调用此接口。
@@ -393,10 +441,6 @@ func _validate_settings(settings: Dictionary) -> Dictionary:
 	if text_speed < MIN_TEXT_SPEED or text_speed > MAX_TEXT_SPEED:
 		return _make_error("setting_out_of_range", "设置项 text_speed 必须在 %.2f 到 %.2f 倍之间。" % [MIN_TEXT_SPEED, MAX_TEXT_SPEED])
 	normalized[SETTING_TEXT_SPEED] = text_speed
-	var font_size_result: Dictionary = _read_exact_integer(settings[SETTING_FONT_SIZE])
-	if not bool(font_size_result.get("ok", false)) or not [FONT_SIZE_DEFAULT, FONT_SIZE_LARGE].has(int(font_size_result.get("value", -1))):
-		return _make_error("invalid_font_size", "设置项 font_size 只能是 100 或 125。")
-	normalized[SETTING_FONT_SIZE] = int(font_size_result["value"])
 	for setting_id: String in [SETTING_REDUCE_FLASHING, SETTING_CRT_ENABLED]:
 		if typeof(settings[setting_id]) != TYPE_BOOL:
 			return _make_error("invalid_setting_type", "设置项 %s 必须是布尔值。" % setting_id)

@@ -134,19 +134,17 @@ func _test_phone_closeup() -> void:
 	await process_frame
 	await process_frame
 	await _capture_view_if_requested("phone_closeup_1920x1080.png")
-	_assert_background_contract(closeup, "phone_base.png", "电话近景")
+	_assert_background_contract(closeup, "通话UI.png", "电话近景", TextureRect.STRETCH_KEEP_ASPECT_CENTERED)
 	_assert_ambient_contract(closeup, NodePath("AmbientFx"), "equipment", "电话近景")
 	_assert_true(closeup.has_method(&"set_motion_enabled"), "电话近景必须公开 set_motion_enabled()。")
 	_assert_true(closeup.has_signal(&"return_requested"), "电话近景必须公开 return_requested()。")
 	_assert_true(closeup.has_signal(&"answer_requested"), "电话近景必须公开 answer_requested()。")
 	_assert_true(closeup.has_signal(&"dialogue_choice_requested"), "电话近景必须公开 dialogue_choice_requested()。")
 	_assert_true(closeup.has_signal(&"hang_up_requested"), "电话近景必须公开 hang_up_requested()。")
-	_assert_true(closeup.has_signal(&"finish_call_requested"), "电话近景必须公开 finish_call_requested()。")
 	_connect_signal(closeup, &"return_requested", "_on_return_requested", "电话近景返回")
 	_connect_signal(closeup, &"answer_requested", "_on_answer_requested", "电话近景接听意图")
 	_connect_signal(closeup, &"dialogue_choice_requested", "_on_choice_requested", "电话近景选择意图")
 	_connect_signal(closeup, &"hang_up_requested", "_on_hang_up_requested", "电话近景挂断意图")
-	_connect_signal(closeup, &"finish_call_requested", "_on_finish_requested", "电话近景结束意图")
 	var phone_system: RefCounted = PHONE_SYSTEM_SCRIPT.new()
 	var bind_result: Variant = closeup.call(&"bind_phone_system", phone_system)
 	_assert_true(bind_result is Dictionary and bool((bind_result as Dictionary).get("ok", false)), "电话近景必须能绑定 PhoneSystem 只读接口。")
@@ -157,12 +155,10 @@ func _test_phone_closeup() -> void:
 	}
 	_assert_true(bool(phone_system.call(&"begin_incoming_call", event_data, 10, 60)), "电话视图测试必须能触发响铃。")
 	await process_frame
-	var indicator: TextureRect = closeup.get_node_or_null(NodePath("PhoneIndicatorLight")) as TextureRect
-	_assert_true(indicator != null and indicator.texture != null and indicator.texture.resource_path.ends_with("phone_state_indicator_on.png"), "电话必须使用独立的亮灯状态贴图层。")
-	_assert_true(indicator != null and indicator.visible, "电话响铃时必须覆盖显示锚定在设备上的线路指示灯。")
-	_assert_true(closeup.get("_indicator_timer") is Timer, "电话响铃必须由设备亮灭 Timer 控制，而非 UI 透明度 Tween。")
+	var caller_label: Label = closeup.get_node_or_null(NodePath("CallerLabel")) as Label
+	_assert_true(caller_label != null and caller_label.get_theme_color(&"font_color") == Color(0.22, 0.105, 0.035, 1), "来电人信息必须使用通话美术可读的暖棕色。")
 	await _capture_view_if_requested("phone_closeup_ringing_1920x1080.png")
-	var answer_button: Button = closeup.get_node_or_null(NodePath("DialoguePanel/DialogueContent/Actions/AnswerButton")) as Button
+	var answer_button: Button = closeup.get_node_or_null(NodePath("AnswerButton")) as Button
 	_assert_true(answer_button != null and not answer_button.disabled, "响铃时电话近景必须启用接听意图。")
 	if answer_button != null:
 		answer_button.emit_signal(&"pressed")
@@ -170,22 +166,17 @@ func _test_phone_closeup() -> void:
 	_assert_equal(String(phone_system.call(&"get_state_name")), "RINGING", "电话页发出接听意图后不得自行推进电话状态。")
 	_assert_true(bool(phone_system.call(&"answer_call", 12)), "测试控制器必须能将电话推进为已接通。")
 	await process_frame
-	_assert_true(indicator != null and not indicator.visible, "电话接通后不得继续覆盖显示响铃指示灯。")
-	var choice_button: Button = closeup.get_node_or_null(NodePath("DialoguePanel/DialogueContent/Actions/DialogueChoiceButton")) as Button
-	var hang_up_button: Button = closeup.get_node_or_null(NodePath("DialoguePanel/DialogueContent/Actions/HangUpButton")) as Button
-	var finish_button: Button = closeup.get_node_or_null(NodePath("DialoguePanel/DialogueContent/Actions/FinishButton")) as Button
+	var choice_button: Button = closeup.get_node_or_null(NodePath("DialogueChoiceButton")) as Button
+	var hang_up_button: Button = closeup.get_node_or_null(NodePath("HangUpButton")) as Button
 	_assert_true(choice_button != null and not choice_button.disabled, "接通后必须能请求进入对话选择。")
 	_assert_true(hang_up_button != null and not hang_up_button.disabled, "接通后必须能请求主动挂断。")
-	_assert_true(finish_button != null and not finish_button.disabled, "接通后必须能请求结束通话。")
+	_assert_true(closeup.get_node_or_null(NodePath("FinishButton")) == null, "通话美术只保留接通、继续对话与挂断三个电话操作按钮。")
 	if choice_button != null:
 		choice_button.emit_signal(&"pressed")
 	if hang_up_button != null:
 		hang_up_button.emit_signal(&"pressed")
-	if finish_button != null:
-		finish_button.emit_signal(&"pressed")
 	_assert_equal(_choice_requests, 1, "电话近景选择按钮必须发意图。")
 	_assert_equal(_hang_up_requests, 1, "电话近景挂断按钮必须发意图。")
-	_assert_equal(_finish_requests, 1, "电话近景结束按钮必须发意图。")
 	var back_button: Button = closeup.get_node_or_null(NodePath("BackButton")) as Button
 	_assert_true(back_button != null, "电话近景必须有明确返回按钮。")
 	if back_button != null:
@@ -312,7 +303,7 @@ func _test_door_window_closeup() -> void:
 	await process_frame
 
 
-func _assert_background_contract(view: Control, texture_file_name: String, view_name: String) -> void:
+func _assert_background_contract(view: Control, texture_file_name: String, view_name: String, expected_stretch_mode: TextureRect.StretchMode = TextureRect.STRETCH_KEEP_ASPECT_COVERED) -> void:
 	var background: TextureRect = view.get_node_or_null(NodePath("Background")) as TextureRect
 	if background == null:
 		background = view.get_node_or_null(NodePath("BackgroundZoom/Background")) as TextureRect
@@ -323,7 +314,7 @@ func _assert_background_contract(view: Control, texture_file_name: String, view_
 	if background.texture != null:
 		_assert_true(background.texture.resource_path.ends_with(texture_file_name), "%s背景必须引用对应概念图 %s。" % [view_name, texture_file_name])
 	_assert_true(background.expand_mode == TextureRect.EXPAND_IGNORE_SIZE, "%s背景必须忽略原始纹理尺寸。" % view_name)
-	_assert_true(background.stretch_mode == TextureRect.STRETCH_KEEP_ASPECT_COVERED, "%s背景必须使用 keep aspect covered。" % view_name)
+	_assert_true(background.stretch_mode == expected_stretch_mode, "%s背景必须使用约定的保持比例模式。" % view_name)
 
 
 func _assert_window_rain_foreground_contract(overview: Control) -> void:

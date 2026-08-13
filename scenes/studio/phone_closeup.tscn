@@ -1,24 +1,9 @@
-[gd_scene load_steps=8 format=3]
+[gd_scene load_steps=5 format=3]
 
 [ext_resource type="Script" path="res://scripts/ui/phone_closeup.gd" id="1_script"]
-[ext_resource type="Texture2D" path="res://art/runtime/phone_closeup/phone_base.png" id="2_background"]
+[ext_resource type="Texture2D" path="res://UI美术/通话UI.png" id="2_phone_ui"]
 [ext_resource type="PackedScene" path="res://scenes/ui/fx/ambient_fx.tscn" id="3_ambient_fx"]
-[ext_resource type="Texture2D" path="res://art/runtime/phone_closeup/phone_state_indicator_on.png" id="4_indicator_on"]
-[ext_resource type="Theme" path="res://resources/legacy_game_ui_theme.tres" id="5_theme"]
-[ext_resource type="Texture2D" path="res://art/ui/low_saturation_v1/panels/runtime/dialogue_backdrop.png" id="6_dialogue"]
-[ext_resource type="Texture2D" path="res://art/ui/low_saturation_v1/icons/runtime/icon_back.png" id="7_back_icon"]
-
-[sub_resource type="StyleBoxTexture" id="StyleBoxDialogue"]
-texture = ExtResource("6_dialogue")
-texture_margin_left = 112.0
-texture_margin_top = 112.0
-texture_margin_right = 112.0
-texture_margin_bottom = 112.0
-content_margin_left = 72.0
-content_margin_top = 70.0
-content_margin_right = 72.0
-content_margin_bottom = 70.0
-modulate_color = Color(0.72, 0.76, 0.76, 0.94)
+[ext_resource type="Theme" path="res://resources/legacy_game_ui_theme.tres" id="4_theme"]
 
 [node name="PhoneCloseup" type="Control"]
 layout_mode = 3
@@ -27,8 +12,18 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-theme = ExtResource("5_theme")
+theme = ExtResource("4_theme")
 script = ExtResource("1_script")
+
+[node name="Backdrop" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.075, 0.047, 0.029, 1)
 
 [node name="Background" type="TextureRect" parent="."]
 layout_mode = 1
@@ -38,24 +33,72 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
-texture = ExtResource("2_background")
+texture = ExtResource("2_phone_ui")
 expand_mode = 1
-stretch_mode = 6
-
-[node name="ReadableOverlay" type="ColorRect" parent="."]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
-color = Color(0.01, 0.02, 0.02, 0.20)
+stretch_mode = 5
 
 [node name="AmbientFx" parent="." instance=ExtResource("3_ambient_fx")]
 layout_mode = 1
+mouse_filter = 2
 
-[node name="PhoneIndicatorLight" type="TextureRect" parent="."]
+[node name="CallerLabel" type="Label" parent="."]
+unique_name_in_owner = true
+layout_mode = 0
+offset_left = 460.0
+offset_top = 112.0
+offset_right = 1100.0
+offset_bottom = 212.0
+theme_override_colors/font_color = Color(0.22, 0.105, 0.035, 1)
+theme_override_colors/font_outline_color = Color(0.89, 0.72, 0.47, 0.62)
+theme_override_constants/outline_size = 1
+theme_override_font_sizes/font_size = 24
+vertical_alignment = 1
+text = "暂无来电"
+autowrap_mode = 2
+
+[node name="PhoneStateLabel" type="Label" parent="."]
+unique_name_in_owner = true
+layout_mode = 0
+offset_left = 1150.0
+offset_top = 112.0
+offset_right = 1410.0
+offset_bottom = 184.0
+theme_override_colors/font_color = Color(0.29, 0.11, 0.02, 1)
+theme_override_font_sizes/font_size = 16
+horizontal_alignment = 1
+vertical_alignment = 1
+text = "线路待机"
+autowrap_mode = 2
+
+[node name="DialogueScroll" type="ScrollContainer" parent="."]
+unique_name_in_owner = true
+layout_mode = 0
+offset_left = 310.0
+offset_top = 300.0
+offset_right = 1665.0
+offset_bottom = 570.0
+horizontal_scroll_mode = 0
+vertical_scroll_mode = 1
+
+[node name="DialogueScrollContent" type="VBoxContainer" parent="DialogueScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 18
+
+[node name="DialogueHintLabel" type="Label" parent="DialogueScroll/DialogueScrollContent"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.38, 0.92, 0.53, 1)
+theme_override_colors/font_outline_color = Color(0.02, 0.12, 0.05, 1)
+theme_override_constants/outline_size = 2
+theme_override_font_sizes/font_size = 26
+autowrap_mode = 2
+text = "当前没有可操作的接通线路。"
+
+[node name="DialogueChoiceOverlay" type="Control" parent="."]
+unique_name_in_owner = true
 visible = false
 layout_mode = 1
 anchors_preset = 15
@@ -64,175 +107,88 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
-texture = ExtResource("4_indicator_on")
-expand_mode = 1
-stretch_mode = 6
 
-[node name="HeaderPanel" type="PanelContainer" parent="."]
+[node name="ChoiceBackdrop" type="ColorRect" parent="DialogueChoiceOverlay"]
 layout_mode = 0
-offset_left = 1160.0
-offset_top = 250.0
-offset_right = 1872.0
-offset_bottom = 550.0
-clip_contents = true
+offset_left = 310.0
+offset_top = 590.0
+offset_right = 1665.0
+offset_bottom = 814.0
+mouse_filter = 2
+color = Color(0.006, 0.024, 0.012, 0.94)
 
-[node name="HeaderContent" type="VBoxContainer" parent="HeaderPanel"]
-layout_mode = 2
-theme_override_constants/separation = 6
+[node name="ChoiceTitle" type="Label" parent="DialogueChoiceOverlay"]
+layout_mode = 0
+offset_left = 350.0
+offset_top = 596.0
+offset_right = 1625.0
+offset_bottom = 628.0
+mouse_filter = 2
+theme_override_colors/font_color = Color(0.52, 1, 0.63, 1)
+theme_override_colors/font_outline_color = Color(0.02, 0.12, 0.05, 1)
+theme_override_constants/outline_size = 2
+theme_override_font_sizes/font_size = 25
+text = "请选择回应"
+horizontal_alignment = 1
 
-[node name="TitleLabel" type="Label" parent="HeaderPanel/HeaderContent"]
-layout_mode = 2
-theme_override_colors/font_color = Color(0.77, 0.84, 0.83, 1)
-theme_override_font_sizes/font_size = 20
-text = "值班线路／私下沟通"
-
-[node name="PhoneStateLabel" type="Label" parent="HeaderPanel/HeaderContent"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_override_colors/font_color = Color(0.91, 0.91, 0.84, 1)
-theme_override_font_sizes/font_size = 24
-text = "电话状态：初始化中"
-autowrap_mode = 2
-
-[node name="CallerScroll" type="ScrollContainer" parent="HeaderPanel/HeaderContent"]
-custom_minimum_size = Vector2(0, 86)
-layout_mode = 2
-size_flags_vertical = 3
+[node name="ChoiceScroll" type="ScrollContainer" parent="DialogueChoiceOverlay"]
+layout_mode = 0
+offset_left = 350.0
+offset_top = 638.0
+offset_right = 1625.0
+offset_bottom = 806.0
 horizontal_scroll_mode = 0
 vertical_scroll_mode = 1
 
-[node name="CallerLabel" type="Label" parent="HeaderPanel/HeaderContent/CallerScroll"]
+[node name="DialogueOptions" type="VBoxContainer" parent="DialogueChoiceOverlay/ChoiceScroll"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_colors/font_color = Color(0.84, 0.87, 0.85, 1)
-theme_override_font_sizes/font_size = 20
-text = "来显：等待电话系统提供活动线路。"
-autowrap_mode = 2
+theme_override_constants/separation = 8
 
-[node name="DialoguePanel" type="PanelContainer" parent="."]
+[node name="AnswerButton" type="Button" parent="."]
+unique_name_in_owner = true
 layout_mode = 0
-offset_left = 80.0
-offset_top = 536.0
-offset_right = 1840.0
-offset_bottom = 1032.0
-theme_override_styles/panel = SubResource("StyleBoxDialogue")
-clip_contents = true
+offset_left = 386.0
+offset_top = 823.0
+offset_right = 572.0
+offset_bottom = 904.0
+modulate = Color(1, 1, 1, 0.01)
+tooltip_text = "接通来电。"
 
-[node name="DialogueContent" type="VBoxContainer" parent="DialoguePanel"]
-layout_mode = 2
-theme_override_constants/separation = 10
-
-[node name="DialogueSectionLabel" type="Label" parent="DialoguePanel/DialogueContent"]
-layout_mode = 2
-theme_override_colors/font_color = Color(0.68, 0.79, 0.79, 1)
-theme_override_font_sizes/font_size = 17
-text = "通话内容／本通记录可在此回看"
-
-[node name="DialogueScroll" type="ScrollContainer" parent="DialoguePanel/DialogueContent"]
-custom_minimum_size = Vector2(0, 132)
-layout_mode = 2
-size_flags_vertical = 3
-horizontal_scroll_mode = 0
-vertical_scroll_mode = 1
-
-[node name="DialogueScrollContent" type="VBoxContainer" parent="DialoguePanel/DialogueContent/DialogueScroll"]
+[node name="DialogueChoiceButton" type="Button" parent="."]
 unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-theme_override_constants/separation = 12
+layout_mode = 0
+offset_left = 698.0
+offset_top = 823.0
+offset_right = 885.0
+offset_bottom = 904.0
+modulate = Color(1, 1, 1, 0.01)
+tooltip_text = "继续对话。"
 
-[node name="DialogueHintLabel" type="Label" parent="DialoguePanel/DialogueContent/DialogueScroll/DialogueScrollContent"]
+[node name="HangUpButton" type="Button" parent="."]
 unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-theme_override_colors/font_color = Color(0.92, 0.92, 0.87, 1)
-theme_override_font_sizes/font_size = 21
-autowrap_mode = 2
-text = "对话：当前没有可操作的接通线路。"
-
-[node name="DialogueOptions" type="HFlowContainer" parent="DialoguePanel/DialogueContent/DialogueScroll/DialogueScrollContent"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-theme_override_constants/h_separation = 12
-theme_override_constants/v_separation = 12
-
-[node name="ActionSectionLabel" type="Label" parent="DialoguePanel/DialogueContent"]
-layout_mode = 2
-theme_override_colors/font_color = Color(0.68, 0.79, 0.79, 1)
-theme_override_font_sizes/font_size = 17
-text = "线路操作"
-
-[node name="Actions" type="HFlowContainer" parent="DialoguePanel/DialogueContent"]
-layout_mode = 2
-theme_override_constants/h_separation = 12
-theme_override_constants/v_separation = 12
-
-[node name="AnswerButton" type="Button" parent="DialoguePanel/DialogueContent/Actions"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(252, 76)
-layout_mode = 2
-theme_override_font_sizes/font_size = 20
-text = "接听"
-autowrap_mode = 2
-
-[node name="DialogueChoiceButton" type="Button" parent="DialoguePanel/DialogueContent/Actions"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(312, 76)
-layout_mode = 2
-theme_override_font_sizes/font_size = 20
-text = "进入一轮选择"
-autowrap_mode = 2
-
-[node name="HangUpButton" type="Button" parent="DialoguePanel/DialogueContent/Actions"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(252, 76)
-layout_mode = 2
-theme_override_font_sizes/font_size = 20
-text = "主动挂断"
-autowrap_mode = 2
-
-[node name="FinishButton" type="Button" parent="DialoguePanel/DialogueContent/Actions"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(252, 76)
-layout_mode = 2
-theme_override_font_sizes/font_size = 20
-text = "结束通话"
-autowrap_mode = 2
-
-[node name="ActionAvailabilityLabel" type="Label" parent="DialoguePanel/DialogueContent"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_override_colors/font_color = Color(0.78, 0.8, 0.77, 1)
-theme_override_font_sizes/font_size = 16
-text = "操作提示：当前没有活动线路，电话操作暂不可用。"
-autowrap_mode = 2
-
-[node name="OutboundStatusLabel" type="Label" parent="DialoguePanel/DialogueContent"]
-layout_mode = 2
-theme_override_colors/font_color = Color(0.67, 0.72, 0.71, 1)
-theme_override_font_sizes/font_size = 15
-text = "外拨线路维护中：MVP 不提供主动拨号。"
-autowrap_mode = 2
+layout_mode = 0
+offset_left = 993.0
+offset_top = 823.0
+offset_right = 1206.0
+offset_bottom = 904.0
+modulate = Color(1, 1, 1, 0.01)
+tooltip_text = "挂断电话。"
 
 [node name="BackButton" type="Button" parent="."]
 unique_name_in_owner = true
 layout_mode = 0
-offset_left = 1460.0
-offset_top = 48.0
-offset_right = 1872.0
-offset_bottom = 144.0
-theme_override_font_sizes/font_size = 20
+offset_left = 1480.0
+offset_top = 46.0
+offset_right = 1830.0
+offset_bottom = 112.0
+theme_override_colors/font_color = Color(0.91, 0.74, 0.48, 1)
+theme_override_font_sizes/font_size = 18
 text = "返回工作室总览"
 tooltip_text = "返回工作室总览。"
-icon = ExtResource("7_back_icon")
-expand_icon = true
-icon_max_width = 30
-autowrap_mode = 0
 
-[connection signal="pressed" from="DialoguePanel/DialogueContent/Actions/AnswerButton" to="." method="_on_answer_button_pressed"]
-[connection signal="pressed" from="DialoguePanel/DialogueContent/Actions/DialogueChoiceButton" to="." method="_on_dialogue_choice_button_pressed"]
-[connection signal="pressed" from="DialoguePanel/DialogueContent/Actions/HangUpButton" to="." method="_on_hang_up_button_pressed"]
-[connection signal="pressed" from="DialoguePanel/DialogueContent/Actions/FinishButton" to="." method="_on_finish_button_pressed"]
+[connection signal="pressed" from="AnswerButton" to="." method="_on_answer_button_pressed"]
+[connection signal="pressed" from="DialogueChoiceButton" to="." method="_on_dialogue_choice_button_pressed"]
+[connection signal="pressed" from="HangUpButton" to="." method="_on_hang_up_button_pressed"]
 [connection signal="pressed" from="BackButton" to="." method="_on_back_button_pressed"]

@@ -132,11 +132,13 @@ func show_broadcast_feedback(result: Dictionary) -> Dictionary:
 	if bool(result["ok"]):
 		var record_value: Variant = result.get("record", {})
 		if record_value is Dictionary and (record_value as Dictionary).has("broadcast_id"):
-			_feedback_text = "预制稿件已发送，播出记录已归档。"
+			_feedback_text = "稿件已送出，播出记录已归档。"
 		else:
 			_feedback_text = "播出已发送。"
 	else:
-		_feedback_text = "播出未发送：%s" % String(result.get("message", "未知原因。"))
+		var raw_message: String = String(result.get("message", "未知原因。"))
+		push_error("[电脑][broadcast_rejected] %s" % raw_message)
+		_feedback_text = "播出未发送，请稍后再试。"
 	_refresh()
 	return {"ok": true}
 
@@ -388,28 +390,6 @@ func _refresh() -> void:
 		_refresh_broadcast_page()
 	else:
 		_refresh_information_page(_active_category)
-	_apply_current_font_size()
-
-
-## 页签与信息卡片在运行时创建。每次重建后用当前全局档位处理新增控件，
-## 避免 125% 下新出现的新闻、短信、记录或播出卡片退回默认字号。
-func _apply_current_font_size() -> void:
-	var settings_manager: Node = get_tree().root.get_node_or_null(NodePath("SettingsManager")) as Node
-	if settings_manager == null or not settings_manager.has_method(&"get_settings_snapshot"):
-		return
-	var snapshot_value: Variant = settings_manager.call(&"get_settings_snapshot")
-	if not snapshot_value is Dictionary:
-		return
-	var font_size_value: Variant = (snapshot_value as Dictionary).get("font_size", 100)
-	if typeof(font_size_value) != TYPE_INT:
-		return
-	var font_size_percent: int = int(font_size_value)
-	if font_size_percent != 100 and font_size_percent != 125:
-		return
-	var inherited_percent: int = int(get_meta(SettingsUiScale.META_APPLIED_PERCENT, font_size_percent))
-	var result: Dictionary = SettingsUiScale.apply_font_size(self, font_size_percent, inherited_percent)
-	if not bool(result.get("ok", false)):
-		push_error("[电脑][dynamic_font_apply_failed] %s" % String(result.get("message", "未知原因。")))
 
 
 func _refresh_tab_labels() -> void:
@@ -479,7 +459,7 @@ func _refresh_information_page(category: String) -> void:
 
 
 func _refresh_broadcast_page() -> void:
-	var drafts_title: Label = _make_section_title("已解锁预制稿件")
+	var drafts_title: Label = _make_section_title("已解锁稿件")
 	_content_box.add_child(drafts_title)
 	_refresh_broadcast_drafts()
 	_content_box.add_child(_make_section_title("真实播出记录"))
@@ -647,12 +627,12 @@ func _make_broadcast_draft_card(draft: Dictionary) -> Control:
 	card.add_child(source_label)
 	card.add_child(_make_wrapped_label(String(draft["body"])))
 	var button: Button = Button.new()
-	button.text = "发送此预制稿件"
+	button.text = "发送此稿件"
 	button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	button.custom_minimum_size = Vector2(0.0, 46.0)
 	button.disabled = not bool(draft["is_available_to_send"]) or _is_ending_locked
 	var disabled_reason: String = "02:00 强制收束中，不能发送玩家广播。" if _is_ending_locked else String(draft.get("disabled_reason", ""))
-	button.tooltip_text = "不可用：%s" % disabled_reason if button.disabled else "向外播出这条预制稿件。"
+	button.tooltip_text = "不可用：%s" % disabled_reason if button.disabled else "向外播出这条稿件。"
 	_style_terminal_button(button)
 	button.pressed.connect(_on_broadcast_button_pressed.bind(String(draft["id"])))
 	card.add_child(button)
@@ -867,7 +847,7 @@ func _format_outcome(outcome: String) -> String:
 		"forced_end":
 			return "02:00 中断"
 	push_error("[电脑][unknown_call_outcome] 来电记录包含未知结果枚举：%s。" % outcome)
-	return "状态无法识别"
+	return "暂时无法确认"
 
 
 func _make_error(message: String) -> Dictionary:

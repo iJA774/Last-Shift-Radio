@@ -11,7 +11,7 @@
       "when_busy": "expire",
       "on_expire": "mark_missed",
       "condition_ids": [],
-      "caller_display_name": "系统测试线路 A",
+      "caller_display_name": "夜间听众 A",
       "caller_number": "000-0101"
     },
     {
@@ -23,7 +23,7 @@
       "when_busy": "queue",
       "on_expire": "mark_missed",
       "condition_ids": [],
-      "caller_display_name": "系统测试线路 B",
+      "caller_display_name": "夜间听众 B",
       "caller_number": "000-0102"
     }
   ]

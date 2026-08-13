@@ -15,7 +15,6 @@
     "ui_phone_volume": 1.0,
     "window_mode": "windowed",
     "text_speed": 1.0,
-    "font_size": 100,
     "reduce_flashing": false,
     "crt_enabled": true
   }
@@ -26,6 +25,16 @@
 缺少字段、未知字段、错误类型、非法范围、顶层非对象、JSON 语法错误或版本不等于 `1`
 均会被拒绝，不能用默认值悄悄补齐。
 
+唯一的退役兼容例外是本项目曾写入的 `font_size`：加载时仅当顶层与其余 v1
+字段均完整合法、`settings` 唯一额外字段正是 `font_size`，且值为旧合同允许的精确
+`100` 或 `125`，才会移除该字段、重新按当前契约校验并通过既有原子替换流程写回。
+任何其他未知字段、非法字号、伴随未知字段、错误版本或损坏 JSON 仍严格拒绝；这项
+一次性清理仅为此次已知格式演进保留，不构成通用迁移器。
+
+该窄兼容层的唯一使用方是已实际存在、由本项目旧 v1 合同写入 `font_size` 的用户
+`settings.json`。当前内部验证/发布窗口确认已无此类活跃设置后，应在同一变更中删除
+退役字段常量、清理函数、专项测试及本段说明；不得为其他旧字段或未知格式扩展该路径。
+
 | 字段 | 类型与允许值 | 默认值 | 消费者 |
 | --- | --- | --- | --- |
 | `master_volume` | 有限数值，`0.0`～`1.0` | `1.0` | AudioManager 的 `Master` Bus |
@@ -33,12 +42,11 @@
 | `ui_phone_volume` | 有限数值，`0.0`～`1.0` | `1.0` | AudioManager 的 `UIPhone` Bus |
 | `window_mode` | `windowed` 或 `fullscreen` | `windowed` | 设置 UI / 窗口适配层 |
 | `text_speed` | 有限倍率，`0.25`～`4.0`；越大越快 | `1.0` | 电话对白显示层 |
-| `font_size` | 整数枚举：`100` 或 `125`（百分比） | `100` | 全部文字 UI |
 | `reduce_flashing` | 布尔值 | `false` | 环境、灯光与 CRT 动态效果 |
 | `crt_enabled` | 布尔值 | `true` | CRT/噪声显示效果 |
 
-JSON 数字在 Godot 的解析结果可能为浮点数；`format_version` 和 `font_size` 仍必须是数学上
-精确的整数，分别只接受 `1`、`100` 或 `125`。
+JSON 数字在 Godot 的解析结果可能为浮点数；`format_version` 仍必须是数学上
+精确的整数，目前只接受 `1`。
 
 ## 生命周期与失败策略
 
@@ -66,7 +74,7 @@ JSON 数字在 Godot 的解析结果可能为浮点数；`format_version` 和 `f
 
 - `get_master_volume()`、`get_ambience_volume()`、`get_ui_phone_volume()`
 - `get_window_mode()`、`is_fullscreen()`
-- `get_text_speed()`、`get_font_size()`
+- `get_text_speed()`
 - `is_reduce_flashing_enabled()`、`is_crt_enabled()`
 - `get_settings_snapshot()`：仅供设置文件、设置 UI 与测试使用，返回深拷贝；不能放入剧情存档。
 

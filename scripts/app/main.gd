@@ -66,18 +66,20 @@ func _ready() -> void:
 	_shell_error_panel.visible = false
 	_save_manager = SAVE_MANAGER_SCRIPT.new() as SaveManager
 	if _save_manager == null:
-		_show_shell_error("无法创建 SaveManager，读取和保存功能不可用。")
+		_show_shell_error("读取和保存暂时不可用。")
 	_game_clock = get_tree().root.get_node_or_null(NodePath("GameClock")) as Node
 	var settings_result: Dictionary = _bind_settings_manager()
 	if not bool(settings_result.get("ok", false)):
 		_has_settings_load_error = true
-		_show_shell_error("设置系统不可用：%s" % String(settings_result.get("message", "未知原因。")))
+		push_error("[应用][settings_bind_failed] %s" % String(settings_result.get("message", "未知原因。")))
+		_show_shell_error("设置暂时不可用。")
 	elif bool(settings_result.get("needs_recovery", false)):
 		_has_settings_load_error = true
-		_show_shell_error("设置文件读取失败：%s 可在“设置”中点击“恢复默认设置”修复。" % String(settings_result.get("message", "未知原因。")))
+		push_error("[应用][settings_load_failed] %s" % String(settings_result.get("message", "未知原因。")))
+		_show_shell_error("设置文件无法读取。可在“设置”中点击“恢复默认设置”修复。")
 	_show_main_menu()
 	if _game_clock == null:
-		_show_shell_error("找不到 GameClock 自动加载节点。无法开始值班，但可返回主菜单。")
+		_show_shell_error("无法开始值班，但可返回主菜单。")
 	print("[应用][lifecycle_ready] 应用已启动，当前状态=MAIN_MENU；本局运行时尚未创建。")
 
 
@@ -102,7 +104,7 @@ func _bind_settings_manager() -> Dictionary:
 	var settings_manager: Node = get_tree().root.get_node_or_null(NodePath("SettingsManager")) as Node
 	if settings_manager == null:
 		return {"ok": false, "message": "找不到 SettingsManager 自动加载节点。"}
-	for method_name: String in ["get_settings_snapshot", "get_font_size", "is_settings_loaded", "get_last_load_result"]:
+	for method_name: String in ["get_settings_snapshot", "is_settings_loaded", "get_last_load_result"]:
 		if not settings_manager.has_method(method_name):
 			return {"ok": false, "message": "SettingsManager 缺少 %s() 接口。" % method_name}
 	if not settings_manager.has_signal(&"settings_applied"):
@@ -133,30 +135,20 @@ func _bind_settings_manager() -> Dictionary:
 func _on_settings_applied(snapshot: Dictionary) -> void:
 	var apply_result: Dictionary = _apply_settings_to_ui(snapshot)
 	if not bool(apply_result.get("ok", false)):
-		_show_shell_error("应用设置失败：%s" % String(apply_result.get("message", "未知原因。")))
+		push_error("[应用][settings_apply_failed] %s" % String(apply_result.get("message", "未知原因。")))
+		_show_shell_error("设置暂时无法应用。")
 		return
 	if _has_settings_load_error and _settings_manager != null and bool(_settings_manager.call(&"is_settings_loaded")):
 		_has_settings_load_error = false
 		_shell_error_panel.visible = false
 
 
-## 字体先从 Main 整个可见树统一重排，再让 GameScreen 应用视觉/逐字参数。
-## 这使菜单、五个电脑页签、存档、设置与结束页在同一档位下同步更新。
 func _apply_settings_to_ui(snapshot: Dictionary) -> Dictionary:
-	if not snapshot.has("font_size") or typeof(snapshot["font_size"]) != TYPE_INT:
-		return {"ok": false, "message": "设置快照缺少整数 font_size。"}
 	if not snapshot.has("window_mode") or typeof(snapshot["window_mode"]) != TYPE_STRING:
 		return {"ok": false, "message": "设置快照缺少字符串 window_mode。"}
-	var font_size_percent: int = int(snapshot["font_size"])
-	if font_size_percent != 100 and font_size_percent != 125:
-		return {"ok": false, "message": "设置快照包含不支持的字体大小档位。"}
 	var window_result: Dictionary = _apply_window_mode(String(snapshot["window_mode"]))
 	if not bool(window_result.get("ok", false)):
 		return window_result
-	var previous_percent: int = int(get_meta(SettingsUiScale.META_APPLIED_PERCENT, 100))
-	var font_result: Dictionary = SettingsUiScale.apply_font_size(self, font_size_percent, previous_percent)
-	if not bool(font_result.get("ok", false)):
-		return font_result
 	if _game_screen != null and is_instance_valid(_game_screen):
 		var screen_result: Dictionary = _game_screen.apply_settings_snapshot(snapshot)
 		if not bool(screen_result.get("ok", false)):
@@ -187,7 +179,7 @@ func _open_settings_panel() -> void:
 	if _settings_panel != null and is_instance_valid(_settings_panel):
 		return
 	if _settings_manager == null or not is_instance_valid(_settings_manager):
-		_show_shell_error("SettingsManager 不可用，不能打开设置。")
+		_show_shell_error("设置暂时不可用。")
 		return
 	var panel: SettingsPanel = SETTINGS_PANEL_SCENE.instantiate() as SettingsPanel
 	if panel == null:
@@ -196,7 +188,8 @@ func _open_settings_panel() -> void:
 	var bind_result: Dictionary = panel.bind_settings_manager(_settings_manager)
 	if not bool(bind_result.get("ok", false)):
 		panel.queue_free()
-		_show_shell_error("无法绑定设置界面：%s" % String(bind_result.get("message", "未知原因。")))
+		push_error("[应用][settings_panel_bind_failed] %s" % String(bind_result.get("message", "未知原因。")))
+		_show_shell_error("设置暂时无法打开。")
 		return
 	panel.z_index = 50
 	panel.closed.connect(_on_application_settings_closed)
@@ -206,7 +199,8 @@ func _open_settings_panel() -> void:
 	if bool(_settings_manager.call(&"is_settings_loaded")) and snapshot_value is Dictionary:
 		var apply_result: Dictionary = _apply_settings_to_ui(snapshot_value as Dictionary)
 		if not bool(apply_result.get("ok", false)):
-			_show_shell_error("打开设置后无法应用当前设置：%s" % String(apply_result.get("message", "未知原因。")))
+			push_error("[应用][settings_reapply_failed] %s" % String(apply_result.get("message", "未知原因。")))
+			_show_shell_error("设置暂时无法应用。")
 
 
 func _on_application_settings_closed() -> void:
@@ -240,12 +234,6 @@ func return_to_main_menu() -> void:
 		return
 	if _app_state == AppState.LOADING or _app_state == AppState.ENDING or _app_state == AppState.LOAD_SLOTS:
 		_show_main_menu()
-
-
-func restart_shift() -> void:
-	if _app_state != AppState.ENDING:
-		return
-	_start_new_shift()
 
 
 func _show_main_menu() -> void:
@@ -296,7 +284,7 @@ func request_load_game() -> void:
 	if _app_state != AppState.MAIN_MENU and _app_state != AppState.ENDING:
 		return
 	if _save_manager == null:
-		_show_shell_error("SaveManager 不可用，不能读取存档。")
+		_show_shell_error("读取存档暂时不可用。")
 		return
 	_show_load_slots()
 
@@ -695,11 +683,12 @@ func _on_ending_forced(_end_tick: int) -> void:
 		return
 	var record_result: Variant = _story_engine.call(&"get_unauthorized_broadcast_record")
 	if not record_result is Dictionary or (record_result as Dictionary).is_empty():
-		_show_shell_error("02:00 收束已触发，但 StoryEngine 未提供权威未授权播出记录。")
+		_show_shell_error("夜班收束记录暂时无法显示。")
 		return
 	var display_result: Dictionary = _game_screen.show_ending(record_result as Dictionary)
 	if not bool(display_result.get("ok", false)):
-		_show_shell_error("02:00 收束记录显示失败：%s" % String(display_result.get("message", "未知错误。")))
+		push_error("[应用][ending_record_display_failed] %s" % String(display_result.get("message", "未知错误。")))
+		_show_shell_error("夜班收束记录暂时无法显示。")
 		return
 	_cancel_pending_ending_transition()
 	var serial: int = _ending_delay_serial
@@ -717,10 +706,15 @@ func _show_ending_after_delay(serial: int) -> void:
 func _show_ending_screen() -> void:
 	_remove_game_screen()
 	var ending: Control = ENDING_SCREEN_SCENE.instantiate() as Control
-	ending.connect(&"restart_requested", Callable(self, "restart_shift"))
-	ending.connect(&"load_game_requested", Callable(self, "request_load_game"))
 	ending.connect(&"return_to_menu_requested", Callable(self, "return_to_main_menu"))
 	_replace_screen(ending)
+	# MVP 仅有 StoryEngine 的 02:00 固定收束；它明确映射成功素材，
+	# 不在应用壳推断或创建任何失败条件。
+	var ending_result: Dictionary = ending.call(&"set_result", EndingScreen.EndResult.SUCCESS) as Dictionary
+	if not bool(ending_result.get("ok", false)):
+		push_error("[应用][ending_result_failed] %s" % String(ending_result.get("message", "未知原因。")))
+		_show_shell_error("结束画面暂时无法显示。")
+		return
 	_app_state = AppState.ENDING
 	print("[应用][state] 已进入 ENDING；运行时保留至重新开始或返回主菜单时统一清理。")
 
@@ -739,7 +733,8 @@ func _replace_screen(next_screen: Control) -> void:
 		if snapshot_value is Dictionary:
 			var apply_result: Dictionary = _apply_settings_to_ui(snapshot_value as Dictionary)
 			if not bool(apply_result.get("ok", false)):
-				_show_shell_error("切换界面后无法应用当前设置：%s" % String(apply_result.get("message", "未知原因。")))
+				push_error("[应用][screen_settings_apply_failed] %s" % String(apply_result.get("message", "未知原因。")))
+				_show_shell_error("设置暂时无法应用。")
 
 
 func _remove_game_screen() -> void:
@@ -812,11 +807,19 @@ func _fail_shift_creation(message: String) -> void:
 	_is_creating_shift = false
 	_dispose_runtime()
 	_show_main_menu()
-	_show_shell_error("无法开始值班：%s" % message)
+	push_error("[应用][shift_creation_failed] %s" % message)
+	_show_shell_error("无法开始值班，请稍后再试。")
 
 
 func _show_shell_error(message: String) -> void:
-	_shell_error_label.text = "系统错误：%s" % message
+	var forbidden_terms: PackedStringArray = ["StoryEngine", "PhoneSystem", "System", "system", "Dictionary", "option_id", "稳定 ID", "电话状态", "工作状态", "预制对话", "SettingsManager", "SaveManager", "GameClock", " JSON", " ID", "接口", "快照", "错误码"]
+	var player_message: String = message
+	for term: String in forbidden_terms:
+		if message.contains(term):
+			push_error("[应用][player_message_filtered] %s" % message)
+			player_message = "暂时无法完成此操作，请稍后再试。"
+			break
+	_shell_error_label.text = "提示：%s" % player_message
 	_shell_error_panel.visible = true
 	push_error("[应用][lifecycle_error] %s" % message)
 
