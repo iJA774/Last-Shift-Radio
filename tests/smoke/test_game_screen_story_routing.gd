@@ -50,19 +50,58 @@ func _run() -> void:
 		return
 
 	phone_closeup.emit_signal(&"answer_requested")
-	_assert_equal(phone.call(&"get_state_name"), "CONNECTED", "电话近景接听意图必须只经 GameScreen 转交。")
-	phone_closeup.emit_signal(&"dialogue_choice_requested")
-	_assert_equal(phone.call(&"get_state_name"), "DIALOGUE_CHOICE", "开始预制对话必须先令电话进入 DialogueChoice。")
+	_assert_equal(phone.call(&"get_state_name"), "DIALOGUE_CHOICE", "接听后必须由 GameScreen 自动进入首段权威对白的 DialogueChoice。")
 	var opening_snapshot: Dictionary = story_engine.call(&"get_active_dialogue_snapshot") as Dictionary
 	_assert_equal(String(opening_snapshot.get("node_id", "")), "dlg_warren_open", "开始预制对话必须由 StoryEngine 提供稳定入口。")
+	var dialogue_label: Label = phone_closeup.get_node_or_null(NodePath("DialogueScroll/DialogueScrollContent/DialogueHintLabel")) as Label
+	_assert_true(dialogue_label != null, "电话近景必须保留对话信息标签。")
+	if dialogue_label != null:
+		_assert_true(not dialogue_label.text.contains("[ 对话结束 ]"), "未到终止节点时不得显示对话结束标记。")
 
 	phone_closeup.emit_signal(&"dialogue_option_requested", "opt_warren_song")
+	if dialogue_label != null:
+		_assert_true(not dialogue_label.text.contains("[ 对话结束 ]"), "中间分支节点不得伪造对话结束标记。")
 	phone_closeup.emit_signal(&"dialogue_option_requested", "opt_warren_follow_report")
 	var terminal_snapshot: Dictionary = story_engine.call(&"get_active_dialogue_snapshot") as Dictionary
 	_assert_true(bool(terminal_snapshot.get("is_terminal", false)), "末个对话选项必须显示终止台词。")
 	_assert_equal(phone.call(&"get_state_name"), "CONNECTED", "终止台词后 GameScreen 必须恢复为已接通，保留结束通话操作。")
 	phone_closeup.emit_signal(&"dialogue_choice_requested")
 	_assert_equal(phone.call(&"get_state_name"), "CONNECTED", "同一通电话的终止台词不得重新开始预制对话。")
+	if dialogue_label != null:
+		var expected_terminal_text: String = "%s：\n%s\n[ 对话结束 ]" % [String(terminal_snapshot.get("speaker", "")), String(terminal_snapshot.get("text", ""))]
+		_assert_equal(dialogue_label.text, expected_terminal_text, "终止台词出现时必须在原信息末行追加精确结束标记。")
+		_assert_equal(dialogue_label.text.count("[ 对话结束 ]"), 1, "结束标记不得重复追加。")
+	# 通话完成必须经公开信号走低信息量短通知，而不是由测试直接伪造面板状态。
+	phone_closeup.emit_signal(&"finish_call_requested")
+	var system_message_panel: PanelContainer = screen.get_node_or_null(NodePath("SystemMessagePanel")) as PanelContainer
+	var system_message: Label = screen.get_node_or_null(NodePath("SystemMessagePanel/SystemMessage")) as Label
+	_assert_true(system_message_panel != null and system_message != null, "GameScreen 必须保留唯一的系统提示条。")
+	_assert_true(system_message_panel != null and system_message_panel.visible, "结束通话成功后提示条必须立即开始显示。")
+	_assert_true(system_message != null and system_message.text == "结束通话成功。", "结束通话必须显示准确的成功提示。")
+	var timing: Dictionary = screen.get_transient_notice_timing_snapshot()
+	_assert_equal(String(timing.get("mode", "")), "transient", "结束通话成功必须使用短通知模式。")
+	_assert_true(float(timing.get("max_lifetime_seconds", 9.0)) <= 2.0, "短通知完整生命周期不得超过两秒。")
+	_assert_equal(float(timing.get("alpha", 1.0)), 0.0, "短通知初始必须从完全透明开始渐入。")
+	# 新短通知开始后，旧回调即使抵达原定结束时间也不得关掉新内容。
+	await create_timer(0.38).timeout
+	screen.show_transient_notice("第二条短通知。")
+	await create_timer(1.70).timeout
+	timing = screen.get_transient_notice_timing_snapshot()
+	_assert_equal(String(timing.get("mode", "")), "transient", "旧短通知回调不得关闭新短通知。")
+	_assert_true(system_message_panel != null and system_message_panel.visible, "新短通知在自身两秒内必须保持可见。")
+	await create_timer(0.35).timeout
+	timing = screen.get_transient_notice_timing_snapshot()
+	_assert_equal(String(timing.get("mode", "")), "hidden", "短通知完整生命周期结束后必须自动隐藏。")
+	_assert_true(system_message_panel != null and not system_message_panel.visible, "短通知渐出完成后不得留下黑色空框。")
+	# 常驻错误应取消短通知 Tween，并且其信息不能被旧回调在两秒后隐藏。
+	screen.show_transient_notice("将被错误提示替换。")
+	await create_timer(0.10).timeout
+	screen.show_system_error("需要玩家处理的错误。")
+	await create_timer(2.05).timeout
+	timing = screen.get_transient_notice_timing_snapshot()
+	_assert_equal(String(timing.get("mode", "")), "persistent", "严重错误必须切换为常驻提示模式。")
+	_assert_true(system_message_panel != null and system_message_panel.visible, "严重错误不得被短通知旧回调自动隐藏。")
+	_assert_true(system_message != null and system_message.text.contains("需要玩家处理的错误。"), "常驻错误必须保留原有可读内容。")
 
 	_assert_ok(screen.show_view(GameScreen.VIEW_COMPUTER), "必须能进入播出工作台。")
 	computer_closeup.emit_signal(&"broadcast_requested", "broadcast_bridge_tanker_fire")

@@ -1,0 +1,24 @@
+[remap]
+
+importer="wav"
+type="AudioStreamWAV"
+uid="uid://bdc0kt8rt8beh"
+path="res://.godot/imported/Dark _Atmosphere13_Looped_24bit.wav-5d618cd5feb60167ef8dc4d29f5d222a.sample"
+
+[deps]
+
+source_file="res://音效/BGM/Dark _Atmosphere13_Looped_24bit.wav"
+dest_files=["res://.godot/imported/Dark _Atmosphere13_Looped_24bit.wav-5d618cd5feb60167ef8dc4d29f5d222a.sample"]
+
+[params]
+
+force/8_bit=false
+force/mono=false
+force/max_rate=false
+force/max_rate_hz=44100
+edit/trim=false
+edit/normalize=false
+edit/loop_mode=0
+edit/loop_begin=0
+edit/loop_end=-1
+compress/mode=2

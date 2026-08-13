@@ -1,10 +1,11 @@
 extends SceneTree
 
-## 三分钟 BGM 必须只有一个跨页面持续的 Ambience 播放器，并在资源层启用循环。
+## 菜单与夜班 BGM 必须由同一个 Autoload 协调，菜单曲精确截取到 1:50，且不改写 Ambience 总线。
 
-const MAIN_MENU_SCENE: PackedScene = preload("res://scenes/app/main_menu.tscn")
-const LOADING_SCREEN_SCENE: PackedScene = preload("res://scenes/app/loading_screen.tscn")
-const BGM_PATH: String = "res://音效/BGM/post_apocalyptic_wastelands_loop_180s.ogg"
+const MENU_BGM_PATH: String = "res://音效/BGM/dream_2_ambience_loop_110s.ogg"
+const SHIFT_BGM_PATH: String = "res://音效/BGM/post_apocalyptic_wastelands_loop_180s.ogg"
+const MENU_VOLUME_DB: float = -4.0
+const SILENT_VOLUME_DB: float = -80.0
 
 var _has_failed: bool = false
 
@@ -20,52 +21,66 @@ func _run() -> void:
 	if bgm_player == null:
 		_finish()
 		return
-	_assert_true(bgm_player.has_method(&"ensure_playing"), "BgmPlayer 必须公开 ensure_playing()。")
-	_assert_true(bgm_player.has_method(&"get_playback_snapshot"), "BgmPlayer 必须公开只读播放快照。")
-	_assert_true(bgm_player.has_method(&"stop_and_release_for_verification"), "BgmPlayer 必须提供专项解码资源清理接口。")
+	for method_name: StringName in [&"play_menu_bgm", &"transition_to_shift_bgm", &"get_playback_snapshot", &"stop_and_release_for_verification"]:
+		_assert_true(bgm_player.has_method(method_name), "BgmPlayer 必须公开 %s()。" % String(method_name))
 	if not bgm_player.has_method(&"get_playback_snapshot"):
 		_finish()
 		return
-	_assert_ok(bgm_player.call(&"ensure_playing"), "BGM 必须可完成播放准备。")
-	var initial_snapshot: Dictionary = bgm_player.call(&"get_playback_snapshot") as Dictionary
-	_assert_true(bool(initial_snapshot.get("ok", false)), "BGM 播放器必须成功初始化。")
-	_assert_equal(String(initial_snapshot.get("stream_path", "")), BGM_PATH, "BGM 必须使用三分钟裁剪素材。")
-	_assert_equal(String(initial_snapshot.get("bus_name", "")), "Ambience", "BGM 必须路由到 Ambience 总线。")
-	_assert_equal(int(initial_snapshot.get("player_count", 0)), 1, "BGM 必须始终只有一个播放器。")
-	_assert_true(bool(initial_snapshot.get("is_loop_enabled", false)), "三分钟 BGM 必须在资源层启用循环。")
-	_assert_true(is_equal_approx(float(initial_snapshot.get("loop_offset_seconds", -1.0)), 0.0), "BGM 循环必须从 0 秒重新开始。")
-	_assert_true(is_equal_approx(float(initial_snapshot.get("length_seconds", -1.0)), 180.0), "Godot 导入后的 BGM 时长必须精确为 180 秒。")
-	await process_frame
-	var after_prepare_snapshot: Dictionary = bgm_player.call(&"get_playback_snapshot") as Dictionary
-	if DisplayServer.get_name().to_lower() == "headless" or AudioServer.get_driver_name().to_lower() == "dummy":
-		_assert_true(not bool(after_prepare_snapshot.get("is_playing", true)), "Headless/Dummy 环境不得实际启动无意义的 BGM 播放。")
-	else:
-		_assert_true(bool(after_prepare_snapshot.get("is_playing", false)), "图形音频环境中 BGM 准备后必须处于播放状态。")
 
-	var instance_id: int = bgm_player.get_instance_id()
-	var main_menu: Control = MAIN_MENU_SCENE.instantiate() as Control
-	root.add_child(main_menu)
-	await process_frame
-	root.remove_child(main_menu)
-	main_menu.queue_free()
-	await process_frame
-	var loading_screen: Control = LOADING_SCREEN_SCENE.instantiate() as Control
-	root.add_child(loading_screen)
-	await process_frame
-	root.remove_child(loading_screen)
-	loading_screen.queue_free()
-	await process_frame
-	var later_snapshot: Dictionary = bgm_player.call(&"get_playback_snapshot") as Dictionary
-	_assert_equal(bgm_player.get_instance_id(), instance_id, "页面切换不得重建 BGM 自动加载节点。")
-	_assert_equal(int(later_snapshot.get("player_count", 0)), 1, "页面切换不得叠加第二个 BGM 播放器。")
-	if DisplayServer.get_name().to_lower() != "headless" and AudioServer.get_driver_name().to_lower() != "dummy":
-		_assert_true(bool(later_snapshot.get("is_playing", false)), "图形环境中页面切换后 BGM 必须持续播放。")
+	var ambience_bus_index: int = AudioServer.get_bus_index(&"Ambience")
+	_assert_true(ambience_bus_index >= 0, "BGM 必须使用既有 Ambience 总线。")
+	var ambience_before_db: float = AudioServer.get_bus_volume_db(ambience_bus_index) if ambience_bus_index >= 0 else 0.0
+	_assert_ok(bgm_player.call(&"play_menu_bgm"), "主菜单 BGM 必须可完成播放准备。")
+	var menu_snapshot: Dictionary = bgm_player.call(&"get_playback_snapshot") as Dictionary
+	_assert_true(bool(menu_snapshot.get("ok", false)), "BGM 播放器必须成功初始化。")
+	_assert_equal(String(menu_snapshot.get("mode", "")), "MENU", "初始页面必须是菜单音乐状态。")
+	_assert_equal(String(menu_snapshot.get("menu_stream_path", "")), MENU_BGM_PATH, "主菜单必须使用 Dream 2 的精确 1:50 裁切副本。")
+	_assert_equal(String(menu_snapshot.get("shift_stream_path", "")), SHIFT_BGM_PATH, "夜班必须保留既有三分钟 BGM 音源。")
+	_assert_equal(String(menu_snapshot.get("bus_name", "")), "Ambience", "两首 BGM 必须路由到 Ambience。")
+	_assert_equal(int(menu_snapshot.get("player_count", 0)), 2, "单一 BgmPlayer 服务必须拥有恰好两个受控播放器。")
+	_assert_true(bool(menu_snapshot.get("menu_loop_enabled", false)), "菜单 BGM 必须在资源层启用循环。")
+	_assert_true(is_equal_approx(float(menu_snapshot.get("menu_loop_offset_seconds", -1.0)), 0.0), "菜单 BGM 循环必须从 0 秒重新开始。")
+	_assert_true(is_equal_approx(float(menu_snapshot.get("menu_length_seconds", -1.0)), 110.0), "菜单 BGM 运行时素材必须精确为 110 秒，不能仅靠 loop_offset 截断。")
+	_assert_true(is_equal_approx(float(menu_snapshot.get("menu_volume_db", 0.0)), MENU_VOLUME_DB), "菜单 BGM 必须只在播放器自身降低 4dB。")
+	_assert_true(bool(menu_snapshot.get("shift_loop_enabled", false)), "夜班 BGM 必须保留资源层循环。")
+	_assert_true(is_equal_approx(float(menu_snapshot.get("shift_length_seconds", -1.0)), 180.0), "夜班 BGM 必须保留 180 秒长度。")
+	if ambience_bus_index >= 0:
+		_assert_true(is_equal_approx(AudioServer.get_bus_volume_db(ambience_bus_index), ambience_before_db), "菜单独立响度不得改写 Ambience 总线响度。")
+
+	_assert_ok(bgm_player.call(&"transition_to_shift_bgm"), "加载页开始时必须能够启动菜单到夜班的过渡。")
+	_assert_true(bool((bgm_player.call(&"transition_to_shift_bgm") as Dictionary).get("already_transitioning", false)), "重复开始请求不得重置两秒淡出。")
+	await create_timer(0.35, true, false, true).timeout
+	var fading_snapshot: Dictionary = bgm_player.call(&"get_playback_snapshot") as Dictionary
+	_assert_equal(String(fading_snapshot.get("mode", "")), "MENU_TO_SHIFT", "前两秒必须仍处于菜单淡出阶段。")
+	_assert_true(float(fading_snapshot.get("menu_volume_db", MENU_VOLUME_DB)) < MENU_VOLUME_DB, "菜单曲必须从加载开始平滑降低。")
+	if ambience_bus_index >= 0:
+		_assert_true(is_equal_approx(AudioServer.get_bus_volume_db(ambience_bus_index), ambience_before_db), "淡出期间不得修改 Ambience 总线。")
+
+	await create_timer(1.85, true, false, true).timeout
+	var shift_fade_snapshot: Dictionary = bgm_player.call(&"get_playback_snapshot") as Dictionary
+	_assert_equal(String(shift_fade_snapshot.get("mode", "")), "SHIFT", "菜单曲两秒静音后必须进入夜班曲淡入。")
+	_assert_true(float(shift_fade_snapshot.get("menu_volume_db", 0.0)) <= SILENT_VOLUME_DB + 0.1, "菜单曲达到最低响度后必须停止。")
+	await create_timer(0.85, true, false, true).timeout
+	var shift_snapshot: Dictionary = bgm_player.call(&"get_playback_snapshot") as Dictionary
+	_assert_equal(String(shift_snapshot.get("mode", "")), "SHIFT", "夜班曲淡入后必须保持夜班状态。")
+	_assert_true(is_equal_approx(float(shift_snapshot.get("shift_volume_db", SILENT_VOLUME_DB)), 0.0), "夜班 BGM 必须平滑恢复自身标准响度。")
+	if ambience_bus_index >= 0:
+		_assert_true(is_equal_approx(AudioServer.get_bus_volume_db(ambience_bus_index), ambience_before_db), "夜班曲淡入也不得修改 Ambience 总线。")
+
+	_assert_ok(bgm_player.call(&"play_menu_bgm"), "返回主菜单必须能启动反向平滑切换。")
+	await create_timer(0.70, true, false, true).timeout
+	var returned_menu_snapshot: Dictionary = bgm_player.call(&"get_playback_snapshot") as Dictionary
+	_assert_equal(String(returned_menu_snapshot.get("mode", "")), "MENU", "返回主菜单后必须恢复菜单音乐状态。")
+	_assert_true(is_equal_approx(float(returned_menu_snapshot.get("menu_volume_db", SILENT_VOLUME_DB)), MENU_VOLUME_DB), "反向切换后菜单曲必须恢复独立降低后的响度。")
+	_assert_true(float(returned_menu_snapshot.get("shift_volume_db", 0.0)) <= SILENT_VOLUME_DB + 0.1, "反向切换后不得残留夜班曲响度。")
+	if ambience_bus_index >= 0:
+		_assert_true(is_equal_approx(AudioServer.get_bus_volume_db(ambience_bus_index), ambience_before_db), "反向切换不得修改 Ambience 总线。")
+
 	bgm_player.call(&"stop_and_release_for_verification")
 	await process_frame
 	await process_frame
 	var released_snapshot: Dictionary = bgm_player.call(&"get_playback_snapshot") as Dictionary
 	_assert_equal(int(released_snapshot.get("player_count", -1)), 0, "专项清理后不得保留 BGM 播放器。")
-	_assert_true(not bool(released_snapshot.get("is_playing", true)), "专项清理后 BGM 必须停止。")
 	_finish()
 
 
@@ -89,5 +104,5 @@ func _finish() -> void:
 		print("[测试][BgmPlayer] 失败。")
 		quit(1)
 		return
-	print("[测试][BgmPlayer] 通过：三分钟素材、Ambience 路由、唯一循环播放器与跨页面连续播放均符合合同。")
+	print("[测试][BgmPlayer] 通过：菜单 1:50 循环、独立响度、双向平滑切换及总线隔离均符合合同。")
 	quit(0)

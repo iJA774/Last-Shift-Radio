@@ -250,6 +250,7 @@ func _show_main_menu() -> void:
 	_replace_screen(menu)
 	_app_state = AppState.MAIN_MENU
 	_is_shift_started = false
+	_request_menu_bgm()
 	print("[应用][state] 已进入 MAIN_MENU；GameClock 不运行且本局运行时已清理。")
 
 
@@ -266,6 +267,13 @@ func _show_loading_screen(target: LoadingTarget) -> void:
 	_loading_target = target
 	_replace_screen(loading)
 	_app_state = AppState.LOADING
+	if target == LoadingTarget.START_SHIFT:
+		# 菜单音乐的两秒淡出以加载页出现为零点；BgmPlayer 自己串接夜班曲，
+		# Main 不持有播放器、Tween 或音量状态。
+		_request_shift_bgm_transition()
+	else:
+		# 返回主菜单同样走平滑反向切换，加载页完成时菜单曲已可继续播放。
+		_request_menu_bgm()
 	print("[应用][state] 已进入 LOADING；target=%s，本局运行时已清理且 GameClock 已停止。" % LoadingTarget.keys()[target])
 
 
@@ -500,6 +508,7 @@ func _restore_loaded_shift(document: Dictionary) -> Dictionary:
 		return {"ok": false, "message": "读取后应用当前全局设置失败：%s" % String(settings_apply_result.get("message", "未知原因。"))}
 	# 直到此处 staging 中的运行时与全局设置均已成功。状态转换紧贴提交前发生，
 	# 使此前任一失败都仍保持 LOAD_SLOTS 及未启动的时钟基线。
+	_request_shift_bgm_transition()
 	_app_state = AppState.SHIFT
 	_is_shift_started = true
 	_commit_staged_game_screen()
@@ -693,6 +702,27 @@ func _on_ending_forced(_end_tick: int) -> void:
 	_cancel_pending_ending_transition()
 	var serial: int = _ending_delay_serial
 	_show_ending_after_delay(serial)
+
+
+## 应用壳只提交页面生命周期意图；BgmPlayer 统一拥有曲目、独立菜单响度和淡化状态。
+func _request_menu_bgm() -> void:
+	var bgm_player: Node = get_tree().root.get_node_or_null(NodePath("BgmPlayer")) as Node
+	if bgm_player == null or not bgm_player.has_method(&"play_menu_bgm"):
+		push_error("[音频][menu_bgm_unavailable] BgmPlayer 缺少 play_menu_bgm()，无法恢复主菜单音乐。")
+		return
+	var result: Variant = bgm_player.call(&"play_menu_bgm")
+	if not _is_ok_result(result):
+		push_error("[音频][menu_bgm_start_failed] %s" % _describe_result(result))
+
+
+func _request_shift_bgm_transition() -> void:
+	var bgm_player: Node = get_tree().root.get_node_or_null(NodePath("BgmPlayer")) as Node
+	if bgm_player == null or not bgm_player.has_method(&"transition_to_shift_bgm"):
+		push_error("[音频][shift_bgm_unavailable] BgmPlayer 缺少 transition_to_shift_bgm()，无法切换夜班音乐。")
+		return
+	var result: Variant = bgm_player.call(&"transition_to_shift_bgm")
+	if not _is_ok_result(result):
+		push_error("[音频][shift_bgm_transition_failed] %s" % _describe_result(result))
 
 
 func _show_ending_after_delay(serial: int) -> void:

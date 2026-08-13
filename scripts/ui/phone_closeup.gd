@@ -249,7 +249,12 @@ func _refresh_dialogue_hint(state_name: String) -> void:
 		var speaker: String = String(_dialogue_snapshot.get("speaker", "来电者"))
 		var text: String = String(_dialogue_snapshot.get("text", ""))
 		if not text.strip_edges().is_empty():
-			_set_dialogue_hint_text("%s：\n%s" % [speaker, text], true)
+			var display_text: String = "%s：\n%s" % [speaker, text]
+			# 仅终止节点是 StoryEngine 的“本轮对话完成”权威语义。全量设置文本而
+			# 非 append，既避免重复标记，也不会把中途挂断或 02:00 打断伪装成完成。
+			if bool(_dialogue_snapshot.get("is_terminal", false)):
+				display_text += "\n[ 对话结束 ]"
+			_set_dialogue_hint_text(display_text, true)
 			return
 	match state_name:
 		"RINGING":

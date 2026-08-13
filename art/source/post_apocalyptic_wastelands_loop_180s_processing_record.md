@@ -5,7 +5,7 @@
 - 源文件：`音效/BGM/Juhani Junkala - Post Apocalyptic Wastelands [Loop Ready].ogg`
 - 输出文件：`音效/BGM/post_apocalyptic_wastelands_loop_180s.ogg`
 - 输出文件大小：9,470,882 字节。
-- 用途：主菜单、加载页与夜班之间持续播放的背景音乐；由唯一 `BgmPlayer` 路由到 `Ambience` 总线，循环从 0 秒开始。
+- 用途：仅在夜班阶段播放的背景音乐；由唯一 `BgmPlayer` 服务中的夜班播放器路由到 `Ambience` 总线，循环从 0 秒开始。
 
 ## 源与输出参数
 

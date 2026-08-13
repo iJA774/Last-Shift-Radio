@@ -39,6 +39,11 @@ const TRANSITION_COMPUTER_SECONDS: float = 0.26
 const TRANSITION_PHONE_SECONDS: float = 0.20
 const TRANSITION_DOOR_SECONDS: float = 0.32
 const TRANSITION_RETURN_TO_STUDIO_SECONDS: float = 0.24
+## 短通知从请求到完全隐藏的总时长不得超过两秒。
+const TRANSIENT_NOTICE_FADE_IN_SECONDS: float = 0.24
+const TRANSIENT_NOTICE_HOLD_SECONDS: float = 1.50
+const TRANSIENT_NOTICE_FADE_OUT_SECONDS: float = 0.24
+const TRANSIENT_NOTICE_MAX_LIFETIME_SECONDS: float = TRANSIENT_NOTICE_FADE_IN_SECONDS + TRANSIENT_NOTICE_HOLD_SECONDS + TRANSIENT_NOTICE_FADE_OUT_SECONDS
 const SAVE_SLOT_PANEL_SCENE: PackedScene = preload("res://scenes/ui/save_slot_panel.tscn")
 const SETTINGS_PANEL_SCENE: PackedScene = preload("res://scenes/ui/settings_panel.tscn")
 const SHIFT_CONTROL_BAR_SCENE: PackedScene = preload("res://scenes/ui/shift_control_bar.tscn")
@@ -61,6 +66,9 @@ var _save_slot_panel: SaveSlotPanel = null
 var _settings_panel: SettingsPanel = null
 var _shift_control_bar: Control = null
 var _text_speed_multiplier: float = 1.0
+var _system_message_tween: Tween = null
+var _system_message_serial: int = 0
+var _system_message_mode: String = "hidden"
 
 @onready var _studio_overview: Control = $ViewHost/StudioOverview
 @onready var _phone_closeup: Control = $ViewHost/PhoneCloseup
@@ -79,7 +87,7 @@ func _ready() -> void:
 		VIEW_COMPUTER: _computer_closeup,
 		VIEW_DOOR: _door_window_closeup,
 	}
-	_system_message_panel.visible = false
+	_hide_system_message_immediately()
 	_show_view_internal(VIEW_STUDIO, true)
 
 
@@ -284,8 +292,7 @@ func show_ending(record: Dictionary) -> Dictionary:
 	if not _is_ok_result(computer_return_lock_result):
 		push_error("[游戏界面][computer_return_lock_error] %s" % str(computer_return_lock_result))
 	_set_overview_hotspots_enabled(false, "02:00 强制收束中，已切换到电脑播出记录。")
-	_system_message.text = "夜班已经结束，线路安静了下来。"
-	_system_message_panel.visible = true
+	_show_persistent_system_message("夜班已经结束，线路安静了下来。")
 	_show_view_internal(VIEW_COMPUTER, true)
 	var work_state_result: Dictionary = _sync_work_state_and_time_rate()
 	if not bool(work_state_result.get("ok", false)):
@@ -294,8 +301,86 @@ func show_ending(record: Dictionary) -> Dictionary:
 
 
 func show_system_error(message: String) -> void:
-	_system_message.text = "提示：%s" % _player_safe_message(message)
+	_show_persistent_system_message("提示：%s" % _player_safe_message(message))
+
+
+## 用于接听、挂断等低信息量反馈。单一 Panel 不会叠出多个框，每次均从透明渐入。
+func show_transient_notice(message: String) -> void:
+	if message.strip_edges().is_empty():
+		return
+	_cancel_system_message_tween()
+	_system_message_serial += 1
+	var serial: int = _system_message_serial
+	_system_message_mode = "transient"
+	_system_message.text = message
 	_system_message_panel.visible = true
+	# 每条短通知独立从透明开始；不能继承常驻错误或上一条通知的满不透明状态。
+	_set_system_message_alpha(0.0)
+	_system_message_tween = create_tween()
+	_system_message_tween.set_process_mode(Tween.TWEEN_PROCESS_IDLE)
+	_system_message_tween.set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
+	# 使用方法 Tween 而非属性子路径，确保 CanvasItem 的 alpha 在所有渲染后端均逐帧插值。
+	_system_message_tween.tween_method(_set_system_message_alpha, 0.0, 1.0, TRANSIENT_NOTICE_FADE_IN_SECONDS).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	_system_message_tween.tween_interval(TRANSIENT_NOTICE_HOLD_SECONDS)
+	_system_message_tween.tween_method(_set_system_message_alpha, 1.0, 0.0, TRANSIENT_NOTICE_FADE_OUT_SECONDS).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
+	_system_message_tween.tween_callback(_finish_transient_notice.bind(serial))
+
+
+## 供自动化验证读取；不承载剧情状态，也不允许调用方修改通知流程。
+func get_transient_notice_timing_snapshot() -> Dictionary:
+	var snapshot: Dictionary = {
+		"mode": _system_message_mode,
+		"is_visible": _system_message_panel.visible,
+		"alpha": _get_system_message_alpha(),
+		"fade_in_seconds": TRANSIENT_NOTICE_FADE_IN_SECONDS,
+		"hold_seconds": TRANSIENT_NOTICE_HOLD_SECONDS,
+		"fade_out_seconds": TRANSIENT_NOTICE_FADE_OUT_SECONDS,
+		"max_lifetime_seconds": TRANSIENT_NOTICE_MAX_LIFETIME_SECONDS,
+	}
+	snapshot.make_read_only()
+	return snapshot
+
+
+func _show_persistent_system_message(message: String) -> void:
+	_cancel_system_message_tween()
+	_system_message_serial += 1
+	_system_message_mode = "persistent"
+	_system_message.text = message
+	_system_message_panel.visible = true
+	_set_system_message_alpha(1.0)
+
+
+func _hide_system_message_immediately() -> void:
+	_cancel_system_message_tween()
+	_system_message_serial += 1
+	_system_message_mode = "hidden"
+	_system_message_panel.visible = false
+	_set_system_message_alpha(0.0)
+
+
+func _cancel_system_message_tween() -> void:
+	if _system_message_tween != null and _system_message_tween.is_valid():
+		_system_message_tween.kill()
+	_system_message_tween = null
+
+
+func _finish_transient_notice(serial: int) -> void:
+	if serial != _system_message_serial or _system_message_mode != "transient":
+		return
+	_system_message_tween = null
+	_system_message_mode = "hidden"
+	_system_message_panel.visible = false
+	_set_system_message_alpha(0.0)
+
+
+func _get_system_message_alpha() -> float:
+	return clampf(_system_message_panel.modulate.a, 0.0, 1.0)
+
+
+func _set_system_message_alpha(alpha: float) -> void:
+	var color: Color = _system_message_panel.modulate
+	color.a = clampf(alpha, 0.0, 1.0)
+	_system_message_panel.modulate = color
 
 
 ## 底层契约错误会包含实现名、数据类型和内部 ID；它们只进入日志，不能进入玩家提示。
@@ -445,6 +530,7 @@ func toggle_control_bar() -> Dictionary:
 ## 本控制器持有的运行时引用和自身回调，不能重置 StoryEngine 或 PhoneSystem。
 func release_runtime() -> Dictionary:
 	_cancel_view_transition()
+	_hide_system_message_immediately()
 	_close_save_panel()
 	_close_settings_panel(false)
 	_close_control_bar()
@@ -695,7 +781,7 @@ func _on_answer_requested() -> void:
 		return
 	var dialogue_result: Variant = _story_engine.call(&"begin_active_call_dialogue")
 	if _is_ok_result(dialogue_result):
-		_system_message_panel.visible = false
+		_hide_system_message_immediately()
 		return
 	var restore_result: Variant = _phone_system.call(&"exit_dialogue_choice")
 	if typeof(restore_result) != TYPE_BOOL or not bool(restore_result):
@@ -751,7 +837,7 @@ func _on_dialogue_option_requested(option_id: String) -> void:
 	if typeof(exit_result) != TYPE_BOOL or not bool(exit_result):
 		show_system_error("线路暂时无法继续，请稍后再试。")
 		return
-	_system_message_panel.visible = false
+	_hide_system_message_immediately()
 
 
 func _is_active_dialogue_terminal() -> bool:
@@ -1016,8 +1102,7 @@ func _call_phone_action(method_name: StringName, action_name: String, needs_game
 		arguments.append(int(tick_result["game_tick"]))
 	var result: Variant = _phone_system.callv(method_name, arguments)
 	if typeof(result) == TYPE_BOOL and bool(result):
-		_system_message.text = "%s成功。" % action_name
-		_system_message_panel.visible = true
+		show_transient_notice("%s成功。" % action_name)
 		return true
 	var reason: String = "线路暂时无法响应。"
 	if _phone_system.has_method(&"get_last_error"):

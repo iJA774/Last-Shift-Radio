@@ -32,9 +32,8 @@ func _run() -> void:
 	var startup_error_label: Label = invalid_app.get_node_or_null(NodePath("ShellErrorPanel/ErrorLabel")) as Label
 	_assert_true(
 		startup_error_label != null
-			and startup_error_label.text.contains("测试剧情数据")
-			and startup_error_label.text.contains("JSON 解析失败"),
-		"损坏 JSON 必须在 GameScreen 显示可定位的中文错误。"
+			and startup_error_label.text.contains("无法开始值班"),
+		"损坏 JSON 必须在应用壳显示简体中文错误，底层解析细节只进入日志。"
 	)
 	root.remove_child(invalid_app)
 	invalid_app.queue_free()
@@ -76,8 +75,8 @@ func _run() -> void:
 	_assert_true(phone_closeup != null, "GameScreen 必须持有电话近景场景。")
 	if phone_closeup != null:
 		phone_closeup.emit_signal(&"answer_requested")
-		_assert_equal(String(phone_system.call(&"get_state_name")), "CONNECTED", "电话近景接听意图必须由 GameScreen 转交 PhoneSystem。")
-		phone_closeup.emit_signal(&"finish_call_requested")
+		_assert_equal(String(phone_system.call(&"get_state_name")), "DIALOGUE_CHOICE", "接听后必须由 GameScreen 自动进入首段权威对白。")
+		phone_closeup.emit_signal(&"hang_up_requested")
 		_assert_equal(String(phone_system.call(&"get_state_name")), "IDLE", "第一通电话结束后若无同窗事件，线路必须恢复空闲。")
 
 	var records_result: Variant = phone_system.call(&"get_call_records")
@@ -85,7 +84,7 @@ func _run() -> void:
 	if records_result is Array and not (records_result as Array).is_empty():
 		var first_record: Dictionary = (records_result as Array)[0] as Dictionary
 		_assert_equal(String(first_record.get("event_id", "")), "call_01_warren", "记录必须来自 JSON 稳定事件 ID。")
-		_assert_equal(String(first_record.get("outcome", "")), "answered", "正常结束的记录结果必须为 answered。")
+		_assert_equal(String(first_record.get("outcome", "")), "hung_up", "首段对话中主动挂断必须保留 hung_up 记录结果。")
 
 	var remaining_ticks: Variant = game_clock.call(&"get_remaining_game_ticks")
 	_assert_true(typeof(remaining_ticks) == TYPE_INT, "GameClock 必须返回整数剩余 tick。")
