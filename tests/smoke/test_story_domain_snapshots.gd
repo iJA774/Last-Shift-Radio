@@ -54,7 +54,10 @@ func _test_ringing_snapshot_round_trip(content: Dictionary) -> void:
 	_assert_true(source_story.is_condition_met("condition_wagon_witness_request_sent"), "保存前必须保留已发送广播设置的条件。")
 	_assert_true(source_story.is_statement_revealed("statement_warren_tanker_fire_claim"), "保存前必须有已揭示来源陈述。")
 	_assert_true(source_story.is_fact_confirmed("fact_accounts_conflict"), "保存前必须有根据陈述确认的事实。")
-	_assert_equal(source_story.get_player_broadcast_records().size(), 2, "保存前应有两条玩家广播记录。")
+	_assert_equal(source_story.get_player_broadcast_records().size(), 1, "保存前应有一条真实完成的玩家发布任务记录。")
+	var saved_publication: Dictionary = source_story.get_player_broadcast_records()[0]
+	_assert_equal(String(saved_publication.get("task_id", "")), "task_broadcast_wagon_witness_request", "保存前玩家记录必须使用稳定 task_id。")
+	_assert_equal(saved_publication.get("information_item_ids", []), ["info_wagon_martha_route"], "保存前玩家记录必须精确保存所选信息项。")
 	_assert_true(_is_call_record_read(source_story, "call_01_warren"), "保存前必须保留真实来电摘要的已读状态。")
 
 	var source_story_snapshot: Dictionary = _json_round_trip(source_story.create_snapshot(), "剧情快照")
@@ -133,7 +136,8 @@ func _prepare_0123_ringing_state(story: StoryEngine, phone: PhoneSystem) -> void
 	_assert_ok(story.mark_computer_entry_read("news", "news_north_bridge_closure"), "应能阅读基础新闻。")
 	_assert_ok(story.mark_computer_entry_read("messages", "message_01_miller"), "应能阅读警方短信并确认冲突事实。")
 	_assert_ok(story.mark_computer_entry_read("call_log", "call_01_warren"), "应能阅读真实沃伦来电摘要。")
-	_assert_ok(story.send_player_broadcast("broadcast_bridge_structural_closure"), "应能发送第一条已解锁广播。")
+	var bridge_after_warren: Dictionary = _find_broadcast_task(story.get_broadcast_tasks(), "task_broadcast_bridge_closure")
+	_assert_true(not bool(bridge_after_warren.get("prerequisites_met", true)), "01:12 时只完成沃伦，北桥任务不得绕过 A+B 最低对话门槛。")
 	_assert_ok(story.advance_to_game_tick(1020), "01:17 应触发玛莎来电。")
 	_assert_true(phone.answer_call(1020), "玛莎来电应能接听。")
 	_assert_true(phone.enter_dialogue_choice(), "玛莎来电应能进入对话选择。")
@@ -142,7 +146,8 @@ func _prepare_0123_ringing_state(story: StoryEngine, phone: PhoneSystem) -> void
 	_assert_ok(story.select_dialogue_option("opt_martha_follow_request"), "玛莎征集请求应能完成对话。")
 	_assert_true(phone.exit_dialogue_choice(), "玛莎终止台词后应返回接通状态。")
 	_assert_true(phone.finish_call(1020), "玛莎来电应结束并写入真实记录。")
-	_assert_ok(story.send_player_broadcast("broadcast_wagon_witness_request"), "应能发送会设置条件的第二条广播。")
+	var wagon_information_ids: Array[String] = ["info_wagon_martha_route"]
+	_assert_ok(story.send_broadcast_task("task_broadcast_wagon_witness_request", wagon_information_ids), "应能发送会设置条件的寻车发布任务。")
 	_assert_ok(story.advance_to_game_tick(1380), "01:23 应触发条件来电并进入响铃。")
 
 
@@ -209,6 +214,13 @@ func _make_runtime(content: Dictionary, bind_phone_before_configure: bool = true
 		_assert_ok(story.set_phone_system(phone), "新夜班应能先绑定电话。")
 	_assert_ok(story.configure_test_night_story(content), "新夜班应能配置已验证内容。")
 	return {"story": story, "phone": phone}
+
+
+func _find_broadcast_task(tasks: Array[Dictionary], task_id: String) -> Dictionary:
+	for task: Dictionary in tasks:
+		if String(task.get("id", "")) == task_id:
+			return task
+	return {}
 
 
 func _call_record_ids(phone: PhoneSystem) -> Array[String]:

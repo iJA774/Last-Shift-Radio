@@ -77,7 +77,7 @@ func _capture_dynamic_ui() -> void:
 		return
 	if not _save_viewport("phone_story_dialogue.png"):
 		return
-	if not _complete_authoritative_warren_dialogue_and_broadcast(main):
+	if not _complete_authoritative_warren_dialogue(main):
 		return
 	await _wait_frames(3)
 
@@ -87,13 +87,36 @@ func _capture_dynamic_ui() -> void:
 	if not _save_viewport("transition_return_mid.png"):
 		return
 	await create_timer(0.18).timeout
+	if not _complete_authoritative_trucker_dialogue(main):
+		return
+	await _wait_frames(2)
+	var microphone_hotspot: Button = game_screen.get_node_or_null(
+		NodePath("ViewHost/StudioOverview/MicrophoneHotspot")
+	) as Button
+	var microphone_panel: Control = game_screen.get_node_or_null(
+		NodePath("ViewHost/StudioOverview/MicrophonePanel")
+	) as Control
+	if microphone_hotspot == null or microphone_panel == null:
+		_fail("工作室总览缺少中央麦克风验收控件。")
+		return
+	microphone_hotspot.pressed.emit()
+	await _wait_frames(2)
+	if not _save_viewport("microphone_broadcast_panel.png"):
+		return
+	var selected_information_ids: Array[String] = ["info_bridge_tanker_fire", "info_bridge_east_queue"]
+	microphone_panel.emit_signal(&"broadcast_requested", "task_broadcast_bridge_closure", selected_information_ids)
+	await _wait_frames(2)
+	if not _save_viewport("microphone_broadcast_feedback.png"):
+		return
+	microphone_panel.emit_signal(&"close_requested")
+	await _wait_frames(2)
 
 	if not _show_view(game_screen, "computer"):
 		return
 	await create_timer(0.30).timeout
 	if not _save_viewport("computer_glow_a.png"):
 		return
-	if not _save_viewport("computer_broadcast_workspace.png"):
+	if not _save_viewport("computer_information_terminal.png"):
 		return
 	await create_timer(1.70).timeout
 	if not _save_viewport("computer_glow_b.png"):
@@ -128,11 +151,15 @@ func _capture_dynamic_ui() -> void:
 		_fail("无法恢复动态效果：%s。" % str(restore_result))
 		return
 	var game_clock: Node = root.get_node_or_null(NodePath("GameClock"))
-	if game_clock == null or not bool(game_clock.call(
+	if game_clock == null:
+		_fail("无法取得推进到 02:00 所需的 GameClock。")
+		return
+	var remaining_ticks_value: Variant = game_clock.call(&"get_remaining_game_ticks")
+	if typeof(remaining_ticks_value) != TYPE_INT or not bool(game_clock.call(
 		&"advance_ticks_for_verification",
-		GAME_CLOCK_SCRIPT.SHIFT_DURATION_TICKS
+		int(remaining_ticks_value)
 	)):
-		_fail("无法把 GameClock 推进到 02:00。")
+		_fail("无法把 GameClock 精确推进到 02:00。")
 		return
 	await _wait_frames(3)
 	if not _save_viewport("ending_locked.png"):
@@ -195,7 +222,7 @@ func _prepare_authoritative_warren_dialogue(main: Control) -> bool:
 	return true
 
 
-func _complete_authoritative_warren_dialogue_and_broadcast(main: Control) -> bool:
+func _complete_authoritative_warren_dialogue(main: Control) -> bool:
 	var story_engine: RefCounted = main.get("_story_engine") as RefCounted
 	var phone_system: RefCounted = main.get("_phone_system") as RefCounted
 	if story_engine == null or phone_system == null:
@@ -212,9 +239,64 @@ func _complete_authoritative_warren_dialogue_and_broadcast(main: Control) -> boo
 	if not bool(phone_system.call(&"exit_dialogue_choice")):
 		_fail("无法通过 PhoneSystem 退出终止对话状态。")
 		return false
-	var broadcast_result: Variant = story_engine.call(&"send_player_broadcast", "broadcast_bridge_tanker_fire")
-	if not _is_ok_result(broadcast_result):
-		_fail("无法通过 StoryEngine 发送已解锁的预制广播稿：%s。" % str(broadcast_result))
+	var game_clock: Node = root.get_node_or_null(NodePath("GameClock")) as Node
+	if game_clock == null:
+		_fail("无法取得结束沃伦通话所需的 GameClock。")
+		return false
+	var current_tick_value: Variant = game_clock.call(&"get_current_game_tick")
+	if typeof(current_tick_value) != TYPE_INT or not bool(phone_system.call(&"finish_call", int(current_tick_value))):
+		_fail("无法通过 PhoneSystem 正常结束沃伦通话。")
+		return false
+	return true
+
+
+func _complete_authoritative_trucker_dialogue(main: Control) -> bool:
+	var story_engine: RefCounted = main.get("_story_engine") as RefCounted
+	var phone_system: RefCounted = main.get("_phone_system") as RefCounted
+	var game_clock: Node = root.get_node_or_null(NodePath("GameClock")) as Node
+	if story_engine == null or phone_system == null or game_clock == null:
+		_fail("无法取得完成卡车司机对话所需的运行时。")
+		return false
+	var current_tick_value: Variant = game_clock.call(&"get_current_game_tick")
+	if typeof(current_tick_value) != TYPE_INT:
+		_fail("GameClock 未返回推进 B 对话所需的整数 tick。")
+		return false
+	var target_tick: int = 33 * GAME_CLOCK_SCRIPT.GAME_TICKS_PER_MINUTE
+	var current_tick: int = int(current_tick_value)
+	if current_tick > target_tick:
+		_fail("动态验收在完成 B 前已经越过 01:33，当前 tick=%d。" % current_tick)
+		return false
+	if current_tick < target_tick and not bool(game_clock.call(&"advance_ticks_for_verification", target_tick - current_tick)):
+		_fail("无法通过 GameClock 推进到 01:33 的卡车司机来电。")
+		return false
+	if String(phone_system.call(&"get_active_event_id")) != "call_06_trucker":
+		_fail("01:33 未得到预期的 call_06_trucker 活动线路。")
+		return false
+	var trucker_tick_value: Variant = game_clock.call(&"get_current_game_tick")
+	if typeof(trucker_tick_value) != TYPE_INT or not bool(phone_system.call(&"answer_call", int(trucker_tick_value))):
+		_fail("无法接听 01:33 的卡车司机来电。")
+		return false
+	if not bool(phone_system.call(&"enter_dialogue_choice")):
+		_fail("无法进入卡车司机对话选择。")
+		return false
+	var begin_result: Variant = story_engine.call(&"begin_active_call_dialogue")
+	if not _is_ok_result(begin_result):
+		_fail("无法开始卡车司机预制对话：%s。" % str(begin_result))
+		return false
+	var first_choice: Variant = story_engine.call(&"select_dialogue_option", "opt_trucker_closure")
+	if not _is_ok_result(first_choice):
+		_fail("无法提交卡车司机第一轮回应：%s。" % str(first_choice))
+		return false
+	var final_choice: Variant = story_engine.call(&"select_dialogue_option", "opt_trucker_follow_wait")
+	if not _is_ok_result(final_choice) or not bool((final_choice as Dictionary).get("reached_terminal", false)):
+		_fail("卡车司机终止台词未能由 StoryEngine 正确生成：%s。" % str(final_choice))
+		return false
+	if not bool(phone_system.call(&"exit_dialogue_choice")):
+		_fail("无法退出卡车司机终止对话状态。")
+		return false
+	var finish_tick_value: Variant = game_clock.call(&"get_current_game_tick")
+	if typeof(finish_tick_value) != TYPE_INT or not bool(phone_system.call(&"finish_call", int(finish_tick_value))):
+		_fail("无法正常结束卡车司机通话。")
 		return false
 	return true
 

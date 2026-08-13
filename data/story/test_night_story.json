@@ -18,10 +18,7 @@
       "condition_ids": [],
       "caller_display_name": "沃伦",
       "caller_number": "555-0118",
-      "dialogue_start_id": "dlg_warren_open",
-      "unlocks_broadcast_ids": [
-        "broadcast_bridge_tanker_fire"
-      ]
+      "dialogue_start_id": "dlg_warren_open"
     },
     {
       "id": "call_02_wrong_number",
@@ -34,8 +31,7 @@
       "condition_ids": [],
       "caller_display_name": "错号来电",
       "caller_number": "555-0182",
-      "dialogue_start_id": "dlg_wrong_number_open",
-      "unlocks_broadcast_ids": []
+      "dialogue_start_id": "dlg_wrong_number_open"
     },
     {
       "id": "call_03_martha",
@@ -48,10 +44,7 @@
       "condition_ids": [],
       "caller_display_name": "玛莎·克莱恩",
       "caller_number": "555-0146",
-      "dialogue_start_id": "dlg_martha_open",
-      "unlocks_broadcast_ids": [
-        "broadcast_wagon_witness_request"
-      ]
+      "dialogue_start_id": "dlg_martha_open"
     },
     {
       "id": "call_04_dog_walker",
@@ -66,8 +59,7 @@
       ],
       "caller_display_name": "河边遛狗者",
       "caller_number": "555-0191",
-      "dialogue_start_id": "dlg_dog_walker_open",
-      "unlocks_broadcast_ids": []
+      "dialogue_start_id": "dlg_dog_walker_open"
     },
     {
       "id": "call_05_cinema",
@@ -80,8 +72,7 @@
       "condition_ids": [],
       "caller_display_name": "星光小影院",
       "caller_number": "555-0163",
-      "dialogue_start_id": "dlg_cinema_open",
-      "unlocks_broadcast_ids": []
+      "dialogue_start_id": "dlg_cinema_open"
     },
     {
       "id": "call_06_trucker",
@@ -94,8 +85,7 @@
       "condition_ids": [],
       "caller_display_name": "东侧卡车司机",
       "caller_number": "555-0170",
-      "dialogue_start_id": "dlg_trucker_open",
-      "unlocks_broadcast_ids": []
+      "dialogue_start_id": "dlg_trucker_open"
     },
     {
       "id": "call_07_ronnie_1",
@@ -108,8 +98,7 @@
       "condition_ids": [],
       "caller_display_name": "罗尼·哈特",
       "caller_number": "555-0109",
-      "dialogue_start_id": "dlg_ronnie_one_open",
-      "unlocks_broadcast_ids": []
+      "dialogue_start_id": "dlg_ronnie_one_open"
     },
     {
       "id": "call_08_score",
@@ -122,8 +111,7 @@
       "condition_ids": [],
       "caller_display_name": "西仓门卫",
       "caller_number": "555-0120",
-      "dialogue_start_id": "dlg_score_open",
-      "unlocks_broadcast_ids": []
+      "dialogue_start_id": "dlg_score_open"
     },
     {
       "id": "call_09_southbound",
@@ -136,8 +124,7 @@
       "condition_ids": [],
       "caller_display_name": "路过的年轻司机",
       "caller_number": "555-0152",
-      "dialogue_start_id": "dlg_southbound_open",
-      "unlocks_broadcast_ids": []
+      "dialogue_start_id": "dlg_southbound_open"
     },
     {
       "id": "call_10_ronnie_2",
@@ -150,8 +137,7 @@
       "condition_ids": [],
       "caller_display_name": "罗尼·哈特",
       "caller_number": "555-0109",
-      "dialogue_start_id": "dlg_ronnie_two_open",
-      "unlocks_broadcast_ids": []
+      "dialogue_start_id": "dlg_ronnie_two_open"
     },
     {
       "id": "call_11_final_amy",
@@ -164,8 +150,7 @@
       "condition_ids": [],
       "caller_display_name": "艾米",
       "caller_number": "555-0177",
-      "dialogue_start_id": "dlg_amy_open",
-      "unlocks_broadcast_ids": []
+      "dialogue_start_id": "dlg_amy_open"
     }
   ],
   "checklist_entries": [
@@ -273,7 +258,6 @@
       "sender": "夜班交接",
       "body": "雨势比预报大。值班清单在终端里，咖啡壶别再空烧。",
       "unlock_minute": 0,
-      "unlocks_broadcast_ids": [],
       "statement_ids": [],
       "fact_ids": []
     },
@@ -282,9 +266,6 @@
       "sender": "警员 K. 米勒 #451",
       "body": "WMLH，请向市民广播：北桥因结构受损封闭，切勿前往。重复，是结构问题，桥面有塌陷风险。这不是演习。",
       "unlock_minute": 12,
-      "unlocks_broadcast_ids": [
-        "broadcast_bridge_structural_closure"
-      ],
       "statement_ids": [
         "statement_miller_bridge_closure"
       ],
@@ -299,7 +280,6 @@
       "sender": "天气台",
       "body": "河谷低雾持续到清晨，能见度会再降。常规播报已排进整点带。",
       "unlock_minute": 19,
-      "unlocks_broadcast_ids": [],
       "statement_ids": [],
       "fact_ids": []
     },
@@ -308,7 +288,6 @@
       "sender": "印刷间",
       "body": "社区放映单的校样卡纸了，明早再送一份干净的到新闻室。",
       "unlock_minute": 30,
-      "unlocks_broadcast_ids": [],
       "statement_ids": [],
       "fact_ids": []
     },
@@ -317,7 +296,6 @@
       "sender": "市政桌",
       "body": "北桥封闭公告已转给晨报。除官方结构受损通知外，暂不确认其他事故说法。",
       "unlock_minute": 39,
-      "unlocks_broadcast_ids": [],
       "statement_ids": [],
       "fact_ids": [
         "fact_bridge_closed"
@@ -328,51 +306,94 @@
       "sender": "夜编室",
       "body": "冰球比分若有人问，等第三节结束再说；别把未核实的听众电话写进晨间摘要。",
       "unlock_minute": 50,
-      "unlocks_broadcast_ids": [],
       "statement_ids": [],
       "fact_ids": []
     }
   ],
-  "broadcasts": [
+  "broadcast_tasks": [
     {
-      "id": "broadcast_bridge_tanker_fire",
+      "id": "task_broadcast_bridge_closure",
+      "name": "通过麦克风发布北桥封锁信息",
+      "channel": "microphone",
       "source": "Studio A",
-      "body": "未核实路况：有听众称北桥附近一辆油罐车起火或冒烟。请避开该区域，等待官方更新。",
-      "unlock_message_ids": [],
-      "unlock_event_ids": [
-        "call_01_warren"
+      "related_dialogue_event_ids": [
+        "call_01_warren",
+        "call_06_trucker",
+        "call_09_southbound"
+      ],
+      "required_dialogue_event_ids": [
+        "call_01_warren",
+        "call_06_trucker"
       ],
       "sets_condition_id": "",
-      "exclusive_group_id": "bridge_closure_report",
-      "fact_ids": []
-    },
-    {
-      "id": "broadcast_bridge_structural_closure",
-      "source": "Studio A",
-      "body": "官方路况：北桥因结构受损封闭，桥面存在塌陷风险。请勿前往，并按现场指示绕行。",
-      "unlock_message_ids": [
-        "message_01_miller"
-      ],
-      "unlock_event_ids": [],
-      "sets_condition_id": "",
-      "exclusive_group_id": "bridge_closure_report",
-      "fact_ids": [
-        "fact_bridge_closed"
+      "information_items": [
+        {
+          "id": "info_bridge_tanker_fire",
+          "source_label": "沃伦",
+          "body": "未核实路况：有听众称北桥附近一辆油罐车起火或冒烟。请避开该区域，等待官方更新。",
+          "statement_ids": [
+            "statement_warren_tanker_fire_claim"
+          ],
+          "fact_ids": []
+        },
+        {
+          "id": "info_bridge_east_queue",
+          "source_label": "东侧卡车司机",
+          "body": "现场路况：北桥东侧入口严重拥堵，有车辆在封闭区域前等待。请避开该区域并等待现场指引。",
+          "statement_ids": [
+            "statement_trucker_bridge_queue"
+          ],
+          "fact_ids": []
+        },
+        {
+          "id": "info_bridge_official_closure",
+          "source_label": "警员 K. 米勒 #451",
+          "body": "官方路况：北桥因结构受损封闭，桥面存在塌陷风险。请勿前往，并按现场指示绕行。",
+          "statement_ids": [
+            "statement_miller_bridge_closure"
+          ],
+          "fact_ids": [
+            "fact_bridge_closed"
+          ]
+        },
+        {
+          "id": "info_bridge_southbound_crossing",
+          "source_label": "路过的年轻司机",
+          "body": "未核实补充：有司机称封桥消息后仍按临时路牌经过北桥。请不要据此前往，继续按官方封闭通知绕行。",
+          "statement_ids": [
+            "statement_southbound_bridge_claim"
+          ],
+          "fact_ids": [
+            "fact_bridge_traffic_after_closure"
+          ]
+        }
       ]
     },
     {
-      "id": "broadcast_wagon_witness_request",
+      "id": "task_broadcast_wagon_witness_request",
+      "name": "通过麦克风征集旧旅行车目击信息",
+      "channel": "microphone",
       "source": "Studio A",
-      "body": "代家属征集信息：如您今晚在北桥周边见过一辆深色旧旅行车，请在安全地点联系 WMLH 新闻室；请勿自行追车。",
-      "unlock_message_ids": [],
-      "unlock_event_ids": [
+      "related_dialogue_event_ids": [
+        "call_03_martha"
+      ],
+      "required_dialogue_event_ids": [
         "call_03_martha"
       ],
       "sets_condition_id": "condition_wagon_witness_request_sent",
-      "exclusive_group_id": "",
-      "fact_ids": [
-        "fact_same_wagon_recurs",
-        "fact_wagon_positions_conflict"
+      "information_items": [
+        {
+          "id": "info_wagon_martha_route",
+          "source_label": "玛莎·克莱恩",
+          "body": "代家属征集信息：如您今晚在北桥周边见过一辆深色旧旅行车，请在安全地点联系 WMLH 新闻室；请勿自行追车。",
+          "statement_ids": [
+            "statement_martha_wagon_route"
+          ],
+          "fact_ids": [
+            "fact_same_wagon_recurs",
+            "fact_wagon_positions_conflict"
+          ]
+        }
       ]
     }
   ],
@@ -515,7 +536,9 @@
           "id": "opt_martha_vehicle",
           "text": "请说说他开的车和可能的路线。",
           "next_node_id": "dlg_martha_follow",
-          "reveals_statement_ids": ["statement_martha_wagon_route"]
+          "reveals_statement_ids": [
+            "statement_martha_wagon_route"
+          ]
         },
         {
           "id": "opt_martha_calm",
@@ -577,7 +600,9 @@
           "id": "opt_dog_walker_color",
           "text": "你看清车的颜色或车牌了吗？",
           "next_node_id": "dlg_dog_walker_follow",
-          "reveals_statement_ids": ["statement_dog_walker_wagon_color"]
+          "reveals_statement_ids": [
+            "statement_dog_walker_wagon_color"
+          ]
         },
         {
           "id": "opt_dog_walker_direction",
@@ -599,7 +624,9 @@
           "id": "opt_dog_walker_follow_color",
           "text": "只说你有把握的外观细节。",
           "next_node_id": "dlg_dog_walker_color_end",
-          "reveals_statement_ids": ["statement_dog_walker_wagon_color"]
+          "reveals_statement_ids": [
+            "statement_dog_walker_wagon_color"
+          ]
         },
         {
           "id": "opt_dog_walker_follow_direction",
@@ -739,7 +766,9 @@
       "speaker": "东侧卡车司机",
       "text": "一辆老旅行车，右边尾灯黑着，隔两秒又闪一下。它贴在我车后催我让道，好像前面还能长出一条路。",
       "is_terminal": true,
-      "reveals_statement_ids": [],
+      "reveals_statement_ids": [
+        "statement_trucker_bridge_queue"
+      ],
       "options": []
     },
     {
@@ -748,7 +777,9 @@
       "speaker": "东侧卡车司机",
       "text": "封闭？那就告诉后面那辆老旅行车去听广播吧，它的喇叭快把我仪表盘震散了。",
       "is_terminal": true,
-      "reveals_statement_ids": [],
+      "reveals_statement_ids": [
+        "statement_trucker_bridge_queue"
+      ],
       "options": []
     },
     {
@@ -887,13 +918,17 @@
           "id": "opt_southbound_confirm",
           "text": "你确定是北桥，不是河西辅桥？",
           "next_node_id": "dlg_southbound_follow",
-          "reveals_statement_ids": ["statement_southbound_bridge_claim"]
+          "reveals_statement_ids": [
+            "statement_southbound_bridge_claim"
+          ]
         },
         {
           "id": "opt_southbound_vehicle",
           "text": "桥上或附近还有别的车辆吗？",
           "next_node_id": "dlg_southbound_follow",
-          "reveals_statement_ids": ["statement_southbound_wagon_sighting"]
+          "reveals_statement_ids": [
+            "statement_southbound_wagon_sighting"
+          ]
         }
       ]
     },
@@ -909,13 +944,17 @@
           "id": "opt_southbound_follow_bridge",
           "text": "回想一下路牌和桥面位置，不要掉头。",
           "next_node_id": "dlg_southbound_confirm_end",
-          "reveals_statement_ids": ["statement_southbound_bridge_claim"]
+          "reveals_statement_ids": [
+            "statement_southbound_bridge_claim"
+          ]
         },
         {
           "id": "opt_southbound_follow_vehicle",
           "text": "说说超过你的那辆车。",
           "next_node_id": "dlg_southbound_vehicle_end",
-          "reveals_statement_ids": ["statement_southbound_wagon_sighting"]
+          "reveals_statement_ids": [
+            "statement_southbound_wagon_sighting"
+          ]
         }
       ]
     },
@@ -1011,7 +1050,9 @@
           "id": "opt_amy_broadcast",
           "text": "我播报了什么？",
           "next_node_id": "dlg_amy_broadcast_end",
-          "reveals_statement_ids": ["statement_amy_unauthorized_broadcast"]
+          "reveals_statement_ids": [
+            "statement_amy_unauthorized_broadcast"
+          ]
         }
       ]
     },
@@ -1055,6 +1096,11 @@
       "id": "statement_dog_walker_wagon_color",
       "source_id": "call_04_dog_walker",
       "body": "遛狗者称河边看见一辆深色旧旅行车，右后灯忽明忽暗。"
+    },
+    {
+      "id": "statement_trucker_bridge_queue",
+      "source_id": "call_06_trucker",
+      "body": "东侧卡车司机称北桥东边严重拥堵，车辆在封闭区域前等待，现场有人下车查看道路。"
     },
     {
       "id": "statement_southbound_bridge_claim",

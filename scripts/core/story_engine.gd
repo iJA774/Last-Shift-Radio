@@ -49,7 +49,7 @@ var _computer_system: RefCounted = COMPUTER_SYSTEM_SCRIPT.new()
 var _is_test_story_configured: bool = false
 var _story_event_by_id: Dictionary = {}
 var _message_by_id: Dictionary = {}
-var _broadcast_fact_ids_by_id: Dictionary = {}
+var _broadcast_task_by_id: Dictionary = {}
 var _statement_by_id: Dictionary = {}
 var _fact_by_id: Dictionary = {}
 var _revealed_statement_ids: Dictionary = {}
@@ -65,7 +65,7 @@ func _init() -> void:
 	_scheduler.event_queued.connect(_on_scheduler_event_queued)
 	_scheduler.event_expired.connect(_on_scheduler_event_expired)
 	_scheduler.scheduler_error.connect(_on_scheduler_error)
-	_broadcast_system.connect(&"available_broadcasts_changed", Callable(self, "_on_available_broadcasts_changed"))
+	_broadcast_system.connect(&"publication_state_changed", Callable(self, "_on_broadcast_publication_state_changed"))
 	_broadcast_system.connect(&"player_broadcast_sent", Callable(self, "_on_player_broadcast_sent"))
 	_broadcast_system.connect(&"broadcast_error", Callable(self, "_on_broadcast_error"))
 	_computer_system.connect(&"entries_changed", Callable(self, "_on_computer_entries_changed"))
@@ -158,7 +158,7 @@ func configure_test_night_story(content: Dictionary) -> Dictionary:
 	if not bool(validation.get("ok", false)):
 		return _make_error("invalid_story_content", "测试剧情运行时校验失败：%s" % String(validation.get("message", "未知错误。")))
 	var checked_content: Dictionary = validation
-	for field_name: String in ["events", "checklist_entries", "news_entries", "messages", "broadcasts", "dialogue_nodes", "statements", "facts"]:
+	for field_name: String in ["events", "checklist_entries", "news_entries", "messages", "broadcast_tasks", "dialogue_nodes", "statements", "facts"]:
 		if not checked_content.has(field_name) or typeof(checked_content[field_name]) != TYPE_ARRAY:
 			return _make_error("invalid_story_content", "测试剧情缺少已校验数组字段：%s。" % field_name)
 	var next_event_by_id: Dictionary = {}
@@ -166,7 +166,7 @@ func configure_test_night_story(content: Dictionary) -> Dictionary:
 	var next_dialogue_node_by_id: Dictionary = {}
 	var next_statement_by_id: Dictionary = {}
 	var next_fact_by_id: Dictionary = {}
-	var next_broadcast_fact_ids_by_id: Dictionary = {}
+	var next_broadcast_task_by_id: Dictionary = {}
 	var next_declared_condition_ids: Dictionary = {}
 	for raw_event: Variant in checked_content["events"] as Array:
 		if not raw_event is Dictionary:
@@ -220,15 +220,17 @@ func configure_test_night_story(content: Dictionary) -> Dictionary:
 		if next_fact_by_id.has(fact_id):
 			return _make_error("invalid_story_content", "测试剧情 facts 中出现重复 ID。")
 		next_fact_by_id[fact_id] = fact.duplicate(true)
-	for raw_broadcast: Variant in checked_content["broadcasts"] as Array:
-		if not raw_broadcast is Dictionary:
-			return _make_error("invalid_story_content", "测试剧情 broadcasts 中包含非对象项目。")
-		var broadcast: Dictionary = raw_broadcast as Dictionary
-		var broadcast_id: String = String(broadcast["id"])
-		next_broadcast_fact_ids_by_id[broadcast_id] = (broadcast["fact_ids"] as Array).duplicate(true)
-		var broadcast_condition_id: String = String(broadcast.get("sets_condition_id", ""))
-		if not broadcast_condition_id.is_empty():
-			next_declared_condition_ids[broadcast_condition_id] = true
+	for raw_task: Variant in checked_content["broadcast_tasks"] as Array:
+		if not raw_task is Dictionary:
+			return _make_error("invalid_story_content", "测试剧情 broadcast_tasks 中包含非对象项目。")
+		var task: Dictionary = raw_task as Dictionary
+		var task_id: String = String(task["id"])
+		if next_broadcast_task_by_id.has(task_id):
+			return _make_error("invalid_story_content", "测试剧情 broadcast_tasks 中出现重复 ID。")
+		next_broadcast_task_by_id[task_id] = task.duplicate(true)
+		var task_condition_id: String = String(task.get("sets_condition_id", ""))
+		if not task_condition_id.is_empty():
+			next_declared_condition_ids[task_condition_id] = true
 	# 到这里尚未写入任何 StoryEngine 或 BroadcastSystem 内容。所有轻量边界检查
 	# 成功后才登记事件、配置广播稿并一次性提交运行时映射。
 	var computer_result_value: Variant = _computer_system.call(
@@ -242,16 +244,16 @@ func configure_test_night_story(content: Dictionary) -> Dictionary:
 	var schedule_result: Dictionary = schedule_events(checked_content["events"] as Array)
 	if not bool(schedule_result.get("ok", false)):
 		return schedule_result
-	var broadcasts: Array = checked_content["broadcasts"] as Array
-	var broadcast_result_value: Variant = _broadcast_system.call(&"configure_drafts", broadcasts)
+	var broadcast_tasks: Array = checked_content["broadcast_tasks"] as Array
+	var broadcast_result_value: Variant = _broadcast_system.call(&"configure_tasks", broadcast_tasks)
 	if not broadcast_result_value is Dictionary:
-		return _make_error("invalid_broadcast_system_result", "BroadcastSystem.configure_drafts() 必须返回带 ok 的 Dictionary。")
+		return _make_error("invalid_broadcast_system_result", "BroadcastSystem.configure_tasks() 必须返回带 ok 的 Dictionary。")
 	var broadcast_result: Dictionary = broadcast_result_value as Dictionary
 	if not bool(broadcast_result.get("ok", false)):
 		return broadcast_result
 	_story_event_by_id = next_event_by_id
 	_message_by_id = next_message_by_id
-	_broadcast_fact_ids_by_id = next_broadcast_fact_ids_by_id
+	_broadcast_task_by_id = next_broadcast_task_by_id
 	_declared_condition_ids = next_declared_condition_ids
 	_condition_state_by_id = {}
 	for condition_id_variant: Variant in _declared_condition_ids:
@@ -836,20 +838,19 @@ func _snapshot_message(value: Variant) -> String:
 	return "返回值不是有效结果。"
 
 
-## 电脑播出工作台的只读稿件接口。UI 只能展示此返回值并提交其中的 broadcast_id。
-func get_available_broadcasts() -> Array[Dictionary]:
-	var result: Variant = _broadcast_system.call(&"get_available_drafts")
-	if not result is Array:
-		_make_error("invalid_broadcast_system_result", "BroadcastSystem.get_available_drafts() 必须返回 Array。")
-		return []
-	var drafts: Array[Dictionary] = []
-	for raw_draft: Variant in result as Array:
-		if raw_draft is Dictionary:
-			drafts.append(raw_draft as Dictionary)
-	return drafts
+## 中央麦克风的统一发布任务只读接口。任务资格只由 StoryEngine 的权威剧情状态派生：
+## required_dialogue_event_ids 必须全部完成；information_items 只有其 statement_ids
+## 全部真正揭示后才会出现在 available_information_items 中。UI 不自行推断这些状态。
+func get_broadcast_tasks() -> Array[Dictionary]:
+	var tasks: Array[Dictionary] = []
+	var task_ids: Array[String] = _sorted_dictionary_keys(_broadcast_task_by_id)
+	for task_id: String in task_ids:
+		tasks.append(_build_broadcast_task_snapshot(task_id))
+	return tasks
 
 
-## 电脑播出工作台的只读玩家记录接口；不包含 02:00 的异常记录。
+## 玩家公告记录的只读接口；不包含 02:00 的异常记录。fact_ids 仅来自本次实际选择
+## 的 information_item_ids，而不是任务中尚未播出的其它可选信息。
 func get_player_broadcast_records() -> Array[Dictionary]:
 	var result: Variant = _broadcast_system.call(&"get_player_broadcast_records")
 	if not result is Array:
@@ -857,25 +858,56 @@ func get_player_broadcast_records() -> Array[Dictionary]:
 		return []
 	var records: Array[Dictionary] = []
 	for raw_record: Variant in result as Array:
-		if raw_record is Dictionary:
-			var record: Dictionary = (raw_record as Dictionary).duplicate(true)
-			var broadcast_id: String = String(record.get("broadcast_id", ""))
-			if _broadcast_fact_ids_by_id.has(broadcast_id):
-				record["fact_ids"] = (_broadcast_fact_ids_by_id[broadcast_id] as Array).duplicate(true)
-			record.make_read_only()
-			records.append(record)
+		if not raw_record is Dictionary:
+			continue
+		var record: Dictionary = (raw_record as Dictionary).duplicate(true)
+		var task_id: String = String(record.get("task_id", ""))
+		var fact_lookup: Dictionary = {}
+		if _broadcast_task_by_id.has(task_id):
+			var selected_ids: Array = record.get("information_item_ids", []) as Array
+			var task: Dictionary = _broadcast_task_by_id[task_id] as Dictionary
+			for raw_item: Variant in task["information_items"] as Array:
+				var item: Dictionary = raw_item as Dictionary
+				if not selected_ids.has(String(item["id"])):
+					continue
+				for fact_id_variant: Variant in item["fact_ids"] as Array:
+					fact_lookup[String(fact_id_variant)] = true
+		record["fact_ids"] = _sorted_dictionary_keys(fact_lookup)
+		record.make_read_only()
+		records.append(record)
 	return records
 
 
-## 玩家发送预制稿件的唯一意图入口。02:00 后与未解锁/重复/互斥稿件均明确拒绝。
-func send_player_broadcast(broadcast_id: String) -> Dictionary:
+## 玩家执行麦克风发布任务的唯一意图入口。最低对话门槛未满足、信息尚未揭示、
+## 空选择、重复任务或 02:00 后请求都会明确拒绝。
+func send_broadcast_task(task_id: String, information_item_ids: Array[String]) -> Dictionary:
 	if not _is_test_story_configured:
-		return _make_error("story_not_configured", "测试剧情尚未配置，不能发送广播。")
+		return _make_error("story_not_configured", "测试剧情尚未配置，不能执行发布任务。")
 	if _is_ending_forced:
-		return _make_error("ending_forced", "02:00 强制收束已发生，不能发送玩家广播。")
-	var result_value: Variant = _broadcast_system.call(&"send_player_broadcast", broadcast_id, _current_game_tick)
+		return _make_error("ending_forced", "02:00 强制收束已发生，不能执行玩家发布任务。")
+	if not _broadcast_task_by_id.has(task_id):
+		return _make_error("unknown_broadcast_task", "不存在发布任务：%s。" % task_id)
+	var task_snapshot: Dictionary = _build_broadcast_task_snapshot(task_id)
+	if bool(task_snapshot["is_sent"]):
+		return _make_error("broadcast_task_already_sent", "该发布任务本局已经完成，不能重复发布。")
+	if not bool(task_snapshot["prerequisites_met"]):
+		return _make_error("broadcast_task_prerequisites_unmet", "该发布任务尚未完成最低必要对话。")
+	if information_item_ids.is_empty():
+		return _make_error("broadcast_task_empty_selection", "至少选择一条已经收集的信息后才能发布。")
+	var available_lookup: Dictionary = {}
+	for raw_item: Variant in task_snapshot["available_information_items"] as Array:
+		var item: Dictionary = raw_item as Dictionary
+		available_lookup[String(item["id"])] = true
+	var seen_selection: Dictionary = {}
+	for information_id: String in information_item_ids:
+		if seen_selection.has(information_id):
+			return _make_error("broadcast_task_duplicate_information", "同一信息项不能重复选择。")
+		seen_selection[information_id] = true
+		if not available_lookup.has(information_id):
+			return _make_error("broadcast_task_information_unavailable", "所选信息尚未在剧情中真正揭示，不能发布：%s。" % information_id)
+	var result_value: Variant = _broadcast_system.call(&"send_task_publication", task_id, information_item_ids, _current_game_tick)
 	if not result_value is Dictionary:
-		return _make_error("invalid_broadcast_system_result", "BroadcastSystem.send_player_broadcast() 必须返回带 ok 的 Dictionary。")
+		return _make_error("invalid_broadcast_system_result", "BroadcastSystem.send_task_publication() 必须返回带 ok 的 Dictionary。")
 	var result: Dictionary = result_value as Dictionary
 	if not bool(result.get("ok", false)):
 		return result
@@ -884,8 +916,64 @@ func send_player_broadcast(broadcast_id: String) -> Dictionary:
 		var condition_result: Dictionary = set_condition_state(condition_id, true)
 		if not bool(condition_result.get("ok", false)):
 			return condition_result
-		print("[剧情][%s] 玩家广播已设置条件。" % condition_id)
+		print("[剧情][%s] 玩家发布任务已设置条件。" % condition_id)
+	broadcast_state_changed.emit()
 	return result
+
+
+func _build_broadcast_task_snapshot(task_id: String) -> Dictionary:
+	if not _broadcast_task_by_id.has(task_id):
+		return {}
+	var task: Dictionary = _broadcast_task_by_id[task_id] as Dictionary
+	var required_ids: Array = task["required_dialogue_event_ids"] as Array
+	var completed_required_ids: Array[String] = []
+	for event_id_variant: Variant in required_ids:
+		var event_id: String = String(event_id_variant)
+		if _completed_dialogue_event_ids.has(event_id):
+			completed_required_ids.append(event_id)
+	var available_items: Array[Dictionary] = []
+	for raw_item: Variant in task["information_items"] as Array:
+		var item: Dictionary = raw_item as Dictionary
+		var all_statements_revealed: bool = true
+		for statement_id_variant: Variant in item["statement_ids"] as Array:
+			if not _revealed_statement_ids.has(String(statement_id_variant)):
+				all_statements_revealed = false
+				break
+		if all_statements_revealed:
+			var public_item: Dictionary = item.duplicate(true)
+			public_item.make_read_only()
+			available_items.append(public_item)
+	var is_sent_value: Variant = _broadcast_system.call(&"is_task_sent", task_id)
+	var is_sent: bool = bool(is_sent_value) if typeof(is_sent_value) == TYPE_BOOL else false
+	var prerequisites_met: bool = completed_required_ids.size() == required_ids.size()
+	var is_publishable: bool = prerequisites_met and not is_sent and not available_items.is_empty()
+	var disabled_reason: String = ""
+	if is_sent:
+		disabled_reason = "该任务已发布。"
+	elif not prerequisites_met:
+		disabled_reason = "必要通话尚未完成（%d/%d）。" % [completed_required_ids.size(), required_ids.size()]
+	elif available_items.is_empty():
+		disabled_reason = "必要通话已完成，但尚没有可发布的已揭示信息。"
+	var snapshot: Dictionary = {
+		"id": task_id,
+		"name": String(task["name"]),
+		"channel": String(task["channel"]),
+		"source": String(task["source"]),
+		"related_dialogue_event_ids": (task["related_dialogue_event_ids"] as Array).duplicate(true),
+		"required_dialogue_event_ids": required_ids.duplicate(true),
+		"completed_required_dialogue_event_ids": completed_required_ids,
+		"required_dialogue_count": required_ids.size(),
+		"completed_required_dialogue_count": completed_required_ids.size(),
+		"prerequisites_met": prerequisites_met,
+		"available_information_items": available_items,
+		"total_information_item_count": (task["information_items"] as Array).size(),
+		"available_information_item_count": available_items.size(),
+		"is_sent": is_sent,
+		"is_publishable": is_publishable,
+		"disabled_reason": disabled_reason,
+	}
+	snapshot.make_read_only()
+	return snapshot
 
 
 func get_unlocked_messages() -> Array[Dictionary]:
@@ -1036,9 +1124,9 @@ func select_dialogue_option(option_id: String) -> Dictionary:
 		var snapshot: Dictionary = get_active_dialogue_snapshot()
 		var reached_terminal: bool = bool(snapshot["is_terminal"])
 		if reached_terminal:
-			var unlock_result: Dictionary = _unlock_broadcasts_for_completed_dialogue(_active_dialogue_event_id)
-			if not bool(unlock_result.get("ok", false)):
-				return unlock_result
+			var completion_result: Dictionary = _mark_dialogue_completed(_active_dialogue_event_id)
+			if not bool(completion_result.get("ok", false)):
+				return completion_result
 		dialogue_changed.emit(snapshot)
 		return {"ok": true, "snapshot": snapshot, "reached_terminal": reached_terminal}
 	return _make_error("unknown_dialogue_option", "当前对话节点不存在该选项。")
@@ -1060,7 +1148,7 @@ func get_active_dialogue_snapshot() -> Dictionary:
 	return snapshot
 
 
-## 结尾电脑页读取的唯一播出记录来源。收束前返回空字典。
+## 结尾电脑页读取的唯一夜班结束记录来源。收束前返回空字典。
 func get_unauthorized_broadcast_record() -> Dictionary:
 	if _unauthorized_broadcast_record.is_empty():
 		return {}
@@ -1151,7 +1239,7 @@ func _on_scheduler_error(_event_id: String, error_code: String, message: String)
 	story_error.emit(error_code, message)
 
 
-func _on_available_broadcasts_changed() -> void:
+func _on_broadcast_publication_state_changed() -> void:
 	broadcast_state_changed.emit()
 
 
@@ -1167,8 +1255,8 @@ func _on_computer_entries_changed(category: String) -> void:
 	computer_entries_changed.emit(category)
 
 
-## 解锁只表示“可查看”，绝不能被当作角色已经说过或玩家已经读过。短信仍可
-## 作为广播稿的既有解锁来源，但其 statement_ids 只能在玩家打开短信后揭示。
+## 解锁只表示“可查看”，绝不能被当作角色已经说过或玩家已经读过。
+## 发布任务的信息项只在对应 statement 真正揭示后可用，因此短信到达本身不再解锁公告。
 func _on_computer_source_unlocked(category: String, entry: Dictionary) -> void:
 	if category != "messages":
 		return
@@ -1176,14 +1264,11 @@ func _on_computer_source_unlocked(category: String, entry: Dictionary) -> void:
 	if source_id.is_empty():
 		_make_error("invalid_computer_source", "ComputerSystem 解锁的短信缺少稳定 source_id。")
 		return
-	var broadcast_result_value: Variant = _broadcast_system.call(&"unlock_for_source_id", source_id)
-	if not broadcast_result_value is Dictionary or not bool((broadcast_result_value as Dictionary).get("ok", false)):
-		_make_error("broadcast_unlock_failed", "短信 %s 未能解锁关联广播稿。" % source_id)
-		return
 	var public_message: Dictionary = entry.duplicate(true)
 	public_message.make_read_only()
 	message_unlocked.emit(public_message)
-	print("[剧情][%s] 短信已解锁，minute=%d。" % [source_id, _current_minute])
+	broadcast_state_changed.emit()
+	print("[剧情][%s] 短信已解锁，minute=%d；发布任务等待玩家实际阅读/揭示信息。" % [source_id, _current_minute])
 
 
 func _on_computer_source_read(category: String, source_id: String, statement_ids: Array[String]) -> void:
@@ -1210,6 +1295,7 @@ func _reveal_statement_ids(statement_ids: Array, expected_source_id: String) -> 
 		statement_revealed.emit(snapshot)
 		print("[剧情][%s] 来源陈述已揭示，source=%s。" % [statement_id, expected_source_id])
 	_evaluate_unconfirmed_facts()
+	broadcast_state_changed.emit()
 	return {"ok": true}
 
 
@@ -1267,20 +1353,15 @@ func _decorate_call_log_entry(entry: Dictionary) -> void:
 	entry["confirmed_fact_ids"] = confirmed_fact_ids
 
 
-func _unlock_broadcasts_for_completed_dialogue(event_id: String) -> Dictionary:
-	if event_id.is_empty():
-		return _make_error("invalid_dialogue_event", "完成对话时缺少稳定事件 ID。")
+func _mark_dialogue_completed(event_id: String) -> Dictionary:
+	if event_id.is_empty() or not _story_event_by_id.has(event_id):
+		return _make_error("invalid_dialogue_event", "完成对话时缺少或引用了不存在的稳定事件 ID。")
 	if _completed_dialogue_event_ids.has(event_id):
-		return {"ok": true, "already_unlocked": true}
-	var unlock_result_value: Variant = _broadcast_system.call(&"unlock_for_source_id", event_id)
-	if not unlock_result_value is Dictionary:
-		return _make_error("invalid_broadcast_system_result", "BroadcastSystem.unlock_for_source_id() 必须返回带 ok 的 Dictionary。")
-	var unlock_result: Dictionary = unlock_result_value as Dictionary
-	if not bool(unlock_result.get("ok", false)):
-		return _make_error("broadcast_unlock_failed", "完成来电 %s 后未能解锁关联广播稿。" % event_id)
+		return {"ok": true, "already_completed": true}
 	_completed_dialogue_event_ids[event_id] = true
-	print("[剧情][%s] 预制对话完成，关联广播稿已按稳定 ID 解锁。" % event_id)
-	return {"ok": true, "unlocked_count": int(unlock_result.get("unlocked_count", 0))}
+	broadcast_state_changed.emit()
+	print("[剧情][%s] 预制对话完成；发布任务资格将从 completed_dialogue_event_ids 重新派生。" % event_id)
+	return {"ok": true, "already_completed": false}
 
 
 func _clear_active_dialogue() -> void:

@@ -1,128 +1,80 @@
-## 玩家预制广播的最小权威状态。
+## 玩家通过麦克风执行发布任务的最小权威记账状态。
 ##
-## 本系统只接受已经过 ContentValidator 校验的稿件，并保证单次稿件不会被
-## 快速重复点击伪造为多条记录。电话线路和 02:00 的未授权播出都不经过这里。
+## 本系统不判断“是否完成了哪些对话”或“哪些陈述已经揭示”；这些剧情资格全部由
+## StoryEngine 负责。本系统只接受已校验的任务定义，保证每个任务本局最多发布一次，
+## 并用稳定 task_id / information_item_ids 生成可严格校验的玩家播出记录。
 class_name BroadcastSystem
 extends RefCounted
 
-signal available_broadcasts_changed()
+signal publication_state_changed()
 signal player_broadcast_sent(record: Dictionary)
-signal broadcast_error(broadcast_id: String, error_code: String, message: String)
+signal broadcast_error(task_id: String, error_code: String, message: String)
 
-var _draft_by_id: Dictionary = {}
-var _unlocked_draft_ids: Dictionary = {}
-var _sent_broadcast_ids: Dictionary = {}
-var _sent_exclusive_group_ids: Dictionary = {}
-var _player_records: Array[Dictionary] = []
-
-const SNAPSHOT_VERSION: int = 1
+const SNAPSHOT_VERSION: int = 2
 const SYSTEM_ID: String = "broadcast_system"
 
+var _task_by_id: Dictionary = {}
+var _sent_task_ids: Dictionary = {}
+var _player_records: Array[Dictionary] = []
 
-## 只能在一局开始、剧情内容校验完成后配置。调用者保留原始 JSON 不会改变内部状态。
-func configure_drafts(drafts: Array) -> Dictionary:
-	if not _draft_by_id.is_empty() or not _player_records.is_empty():
-		return _make_error("", "already_configured", "广播稿已配置，不能在同一局中覆盖权威状态。")
-	if drafts.is_empty():
-		return _make_error("", "empty_broadcast_drafts", "测试剧情至少需要一条预制广播稿。")
-	for raw_draft: Variant in drafts:
-		if not raw_draft is Dictionary:
-			return _make_error("", "invalid_broadcast_draft", "广播稿必须是对象。")
-		var draft: Dictionary = raw_draft as Dictionary
-		var validation: Dictionary = _validate_runtime_draft(draft)
+
+func configure_tasks(tasks: Array) -> Dictionary:
+	if not _task_by_id.is_empty() or not _player_records.is_empty():
+		return _make_error("", "already_configured", "发布任务已配置，不能在同一局中覆盖权威状态。")
+	if tasks.is_empty():
+		return _make_error("", "empty_broadcast_tasks", "测试剧情至少需要一个麦克风发布任务。")
+	for raw_task: Variant in tasks:
+		if not raw_task is Dictionary:
+			return _make_error("", "invalid_broadcast_task", "发布任务必须是对象。")
+		var task: Dictionary = raw_task as Dictionary
+		var validation: Dictionary = _validate_runtime_task(task)
 		if not bool(validation.get("ok", false)):
 			return validation
-		var broadcast_id: String = String(draft["id"])
-		if _draft_by_id.has(broadcast_id):
-			return _make_error(broadcast_id, "duplicate_broadcast_id", "广播稿 ID 重复。")
-		_draft_by_id[broadcast_id] = draft.duplicate(true)
+		var task_id: String = String(task["id"])
+		if _task_by_id.has(task_id):
+			return _make_error(task_id, "duplicate_task_id", "发布任务 ID 重复。")
+		_task_by_id[task_id] = task.duplicate(true)
 	return {"ok": true}
 
 
-## 短信或已经接通的来电通过稳定 ID 解锁稿件。未知来源 ID 是无害的 no-op，
-## 因为内容交叉引用已经在启动时严格校验；这里不从显示正文推断状态。
-func unlock_for_source_id(source_id: String) -> Dictionary:
-	if source_id.is_empty():
-		return _make_error("", "invalid_unlock_source_id", "解锁来源 ID 不能为空。")
-	var unlocked_count: int = 0
-	for broadcast_id_variant: Variant in _draft_by_id.keys():
-		var broadcast_id: String = String(broadcast_id_variant)
-		if _unlocked_draft_ids.has(broadcast_id):
-			continue
-		var draft: Dictionary = _draft_by_id[broadcast_id] as Dictionary
-		var message_ids: Array = draft["unlock_message_ids"] as Array
-		var event_ids: Array = draft["unlock_event_ids"] as Array
-		if not message_ids.has(source_id) and not event_ids.has(source_id):
-			continue
-		_unlocked_draft_ids[broadcast_id] = true
-		unlocked_count += 1
-	if unlocked_count > 0:
-		available_broadcasts_changed.emit()
-		print("[广播][%s] 已解锁 %d 条预制稿件。" % [source_id, unlocked_count])
-	return {"ok": true, "unlocked_count": unlocked_count}
-
-
-## 玩家唯一的发送入口。成功后记录必须同时包含稳定 ID、来源、游戏 tick、正文与
-## is_unauthorized=false；任何失败都不写入半条记录。
-func send_player_broadcast(broadcast_id: String, sent_at_tick: int) -> Dictionary:
+## StoryEngine 已经完成资格校验后调用。这里仍严格检查所选信息项是否属于该任务，
+## 防止 UI 或其它调用者把任意正文写入播出记录。
+func send_task_publication(task_id: String, information_item_ids: Array[String], sent_at_tick: int) -> Dictionary:
 	if sent_at_tick < 0:
-		return _make_error(broadcast_id, "invalid_sent_at_tick", "广播发送 tick 不能小于零。")
-	if not _draft_by_id.has(broadcast_id):
-		return _make_error(broadcast_id, "unknown_broadcast_id", "不存在该预制广播稿。")
-	if not _unlocked_draft_ids.has(broadcast_id):
-		return _make_error(broadcast_id, "broadcast_not_unlocked", "该广播稿尚未解锁，不能发送。")
-	if _sent_broadcast_ids.has(broadcast_id):
-		return _make_error(broadcast_id, "broadcast_already_sent", "该预制广播稿本局已发送，不能重复记账。")
-	var draft: Dictionary = _draft_by_id[broadcast_id] as Dictionary
-	var exclusive_group_id: String = String(draft["exclusive_group_id"])
-	if not exclusive_group_id.is_empty() and _sent_exclusive_group_ids.has(exclusive_group_id):
-		return _make_error(broadcast_id, "broadcast_exclusive_group_sent", "同一封桥口径组已有一条稿件播出，不能重复播报相互排斥的口径。")
+		return _make_error(task_id, "invalid_sent_at_tick", "广播发送 tick 不能小于零。")
+	if not _task_by_id.has(task_id):
+		return _make_error(task_id, "unknown_task_id", "不存在该麦克风发布任务。")
+	if _sent_task_ids.has(task_id):
+		return _make_error(task_id, "task_already_published", "该发布任务本局已经完成，不能重复记账。")
+	var selection_result: Dictionary = _normalize_information_selection(task_id, information_item_ids)
+	if not bool(selection_result.get("ok", false)):
+		return selection_result
+	var normalized_ids: Array[String] = selection_result["ids"] as Array[String]
+	var task: Dictionary = _task_by_id[task_id] as Dictionary
+	var body: String = _compose_body(task, normalized_ids)
 	var record: Dictionary = {
-		"broadcast_id": broadcast_id,
-		"source": String(draft["source"]),
+		"task_id": task_id,
+		"information_item_ids": normalized_ids.duplicate(),
+		"source": String(task["source"]),
 		"sent_at_tick": sent_at_tick,
-		"body": String(draft["body"]),
+		"body": body,
 		"is_unauthorized": false,
 	}
-	_sent_broadcast_ids[broadcast_id] = true
-	if not exclusive_group_id.is_empty():
-		_sent_exclusive_group_ids[exclusive_group_id] = broadcast_id
+	_sent_task_ids[task_id] = true
 	_player_records.append(record)
 	var public_record: Dictionary = _make_read_only_copy(record)
 	player_broadcast_sent.emit(public_record)
-	available_broadcasts_changed.emit()
-	print("[广播][%s] 玩家已发送，tick=%d。" % [broadcast_id, sent_at_tick])
+	publication_state_changed.emit()
+	print("[广播任务][%s] 玩家已发布，items=%s，tick=%d。" % [task_id, str(normalized_ids), sent_at_tick])
 	return {
 		"ok": true,
 		"record": public_record,
-		"sets_condition_id": String(draft["sets_condition_id"]),
+		"sets_condition_id": String(task["sets_condition_id"]),
 	}
 
 
-func get_available_drafts() -> Array[Dictionary]:
-	var result: Array[Dictionary] = []
-	for broadcast_id_variant: Variant in _draft_by_id.keys():
-		var broadcast_id: String = String(broadcast_id_variant)
-		if not _unlocked_draft_ids.has(broadcast_id):
-			continue
-		var draft: Dictionary = (_draft_by_id[broadcast_id] as Dictionary).duplicate(true)
-		var exclusive_group_id: String = String(draft["exclusive_group_id"])
-		var is_sent: bool = _sent_broadcast_ids.has(broadcast_id)
-		var is_exclusive_group_sent: bool = not exclusive_group_id.is_empty() and _sent_exclusive_group_ids.has(exclusive_group_id)
-		draft["is_sent"] = is_sent
-		draft["is_available_to_send"] = not is_sent and not is_exclusive_group_sent
-		if is_sent:
-			draft["disabled_reason"] = "本稿件已发送。"
-		elif is_exclusive_group_sent:
-			draft["disabled_reason"] = "已播出另一条封桥口径，本稿不再可发送。"
-		else:
-			draft["disabled_reason"] = ""
-		draft.make_read_only()
-		result.append(draft)
-	result.sort_custom(func(first: Dictionary, second: Dictionary) -> bool:
-		return String(first["id"]) < String(second["id"])
-	)
-	return result
+func is_task_sent(task_id: String) -> bool:
+	return _sent_task_ids.has(task_id)
 
 
 func get_player_broadcast_records() -> Array[Dictionary]:
@@ -132,125 +84,101 @@ func get_player_broadcast_records() -> Array[Dictionary]:
 	return result
 
 
-func is_broadcast_sent(broadcast_id: String) -> bool:
-	return _sent_broadcast_ids.has(broadcast_id)
-
-
-## 保存的广播状态只引用内容中已配置的稳定 ID；稿件正文和定义始终由内容包提供。
-## 返回值完全 JSON 安全，且固定排序使手动槽位内容可复核。
 func create_snapshot() -> Dictionary:
-	var unlocked_draft_ids: Array[String] = _sorted_dictionary_keys(_unlocked_draft_ids)
-	var sent_broadcast_ids: Array[String] = _sorted_dictionary_keys(_sent_broadcast_ids)
-	var sent_exclusive_group_ids: Array[String] = _sorted_dictionary_keys(_sent_exclusive_group_ids)
+	var sent_task_ids: Array[String] = _sorted_dictionary_keys(_sent_task_ids)
 	var player_records: Array[Dictionary] = []
 	for record: Dictionary in _player_records:
 		player_records.append(record.duplicate(true))
 	var snapshot: Dictionary = {
 		"snapshot_version": SNAPSHOT_VERSION,
 		"system_id": SYSTEM_ID,
-		"unlocked_draft_ids": unlocked_draft_ids,
-		"sent_broadcast_ids": sent_broadcast_ids,
-		"sent_exclusive_group_ids": sent_exclusive_group_ids,
+		"sent_task_ids": sent_task_ids,
 		"player_records": player_records,
 	}
 	snapshot.make_read_only()
 	return snapshot
 
 
-## 验证先于恢复完成；不配置内容或任何 ID/记录不一致时均明确拒绝，绝不补默认值。
 func validate_snapshot(snapshot: Dictionary, _context: Dictionary = {}) -> Dictionary:
-	if _draft_by_id.is_empty():
-		return _make_error("", "snapshot_content_not_configured", "广播稿尚未配置，不能校验存档。")
-	var top_level_validation: Dictionary = _validate_snapshot_envelope(snapshot)
-	if not bool(top_level_validation.get("ok", false)):
-		return top_level_validation
-	var unlocked_result: Dictionary = _validate_snapshot_id_array(snapshot["unlocked_draft_ids"], "unlocked_draft_ids")
-	if not bool(unlocked_result.get("ok", false)):
-		return unlocked_result
-	var sent_result: Dictionary = _validate_snapshot_id_array(snapshot["sent_broadcast_ids"], "sent_broadcast_ids")
+	if _task_by_id.is_empty():
+		return _make_error("", "snapshot_content_not_configured", "发布任务尚未配置，不能校验存档。")
+	var envelope: Dictionary = _validate_snapshot_envelope(snapshot)
+	if not bool(envelope.get("ok", false)):
+		return envelope
+	var sent_result: Dictionary = _validate_snapshot_task_id_array(snapshot["sent_task_ids"])
 	if not bool(sent_result.get("ok", false)):
 		return sent_result
-	var group_result: Dictionary = _validate_snapshot_group_id_array(snapshot["sent_exclusive_group_ids"])
-	if not bool(group_result.get("ok", false)):
-		return group_result
 	if not snapshot["player_records"] is Array:
 		return _make_error("", "invalid_snapshot_records", "广播存档的 player_records 必须是数组。")
-
-	var unlocked_ids: Array[String] = unlocked_result["ids"] as Array[String]
 	var sent_ids: Array[String] = sent_result["ids"] as Array[String]
-	var group_ids: Array[String] = group_result["ids"] as Array[String]
-	var unlocked_lookup: Dictionary = _string_array_to_lookup(unlocked_ids)
-	var sent_lookup: Dictionary = _string_array_to_lookup(sent_ids)
-	for broadcast_id: String in sent_ids:
-		if not unlocked_lookup.has(broadcast_id):
-			return _make_error(broadcast_id, "snapshot_sent_not_unlocked", "已发送广播必须同时属于已解锁稿件。")
-
-	var expected_groups: Dictionary = {}
-	for broadcast_id: String in sent_ids:
-		var draft: Dictionary = _draft_by_id[broadcast_id] as Dictionary
-		var group_id: String = String(draft["exclusive_group_id"])
-		if group_id.is_empty():
-			continue
-		if expected_groups.has(group_id):
-			return _make_error(broadcast_id, "snapshot_exclusive_group_conflict", "存档中同一互斥组包含多条已发送稿件。")
-		expected_groups[group_id] = broadcast_id
-	var expected_group_ids: Array[String] = _sorted_dictionary_keys(expected_groups)
-	if expected_group_ids != group_ids:
-		return _make_error("", "snapshot_exclusive_group_mismatch", "广播存档的互斥组状态与已发送稿件不一致。")
-
-	var records_result: Dictionary = _validate_snapshot_records(snapshot["player_records"] as Array, sent_lookup)
+	var records_result: Dictionary = _validate_snapshot_records(snapshot["player_records"] as Array, _string_array_to_lookup(sent_ids))
 	if not bool(records_result.get("ok", false)):
 		return records_result
-	var normalized: Dictionary = {
-		"unlocked_draft_ids": unlocked_ids,
-		"sent_broadcast_ids": sent_ids,
-		"sent_exclusive_group_ids": group_ids,
-		"player_records": records_result["records"],
+	return {
+		"ok": true,
+		"normalized": {
+			"sent_task_ids": sent_ids,
+			"player_records": records_result["records"],
+		},
 	}
-	return {"ok": true, "normalized": normalized}
 
 
-## 恢复不会触发广播发送、解锁或可用列表信号；上层只在整个运行时原子恢复后刷新 UI。
+## 恢复不触发业务信号；上层会在整个运行时原子恢复完成后统一刷新 UI。
 func restore_snapshot(snapshot: Dictionary, context: Dictionary = {}) -> Dictionary:
 	var validation: Dictionary = validate_snapshot(snapshot, context)
 	if not bool(validation.get("ok", false)):
 		return validation
 	var normalized: Dictionary = validation["normalized"] as Dictionary
-	var next_unlocked: Dictionary = _string_array_to_lookup(normalized["unlocked_draft_ids"] as Array[String])
-	var next_sent: Dictionary = _string_array_to_lookup(normalized["sent_broadcast_ids"] as Array[String])
-	var next_groups: Dictionary = {}
-	for group_id: String in normalized["sent_exclusive_group_ids"] as Array[String]:
-		for broadcast_id: String in normalized["sent_broadcast_ids"] as Array[String]:
-			var draft: Dictionary = _draft_by_id[broadcast_id] as Dictionary
-			if String(draft["exclusive_group_id"]) == group_id:
-				next_groups[group_id] = broadcast_id
-				break
+	_sent_task_ids = _string_array_to_lookup(normalized["sent_task_ids"] as Array[String])
 	var next_records: Array[Dictionary] = []
-	for record: Dictionary in normalized["player_records"] as Array[Dictionary]:
+	for raw_record: Variant in normalized["player_records"] as Array:
+		var record: Dictionary = raw_record as Dictionary
 		next_records.append(record.duplicate(true))
-
-	_unlocked_draft_ids = next_unlocked
-	_sent_broadcast_ids = next_sent
-	_sent_exclusive_group_ids = next_groups
 	_player_records = next_records
 	return {"ok": true}
 
 
+func _normalize_information_selection(task_id: String, raw_ids: Array[String]) -> Dictionary:
+	if raw_ids.is_empty():
+		return _make_error(task_id, "empty_information_selection", "至少选择一条已经收集的信息后才能发布。")
+	var task: Dictionary = _task_by_id[task_id] as Dictionary
+	var selected_lookup: Dictionary = {}
+	for information_id: String in raw_ids:
+		if information_id.is_empty():
+			return _make_error(task_id, "invalid_information_item_id", "所选信息项 ID 不能为空。")
+		if selected_lookup.has(information_id):
+			return _make_error(task_id, "duplicate_information_item_id", "同一信息项不能重复选择。")
+		selected_lookup[information_id] = true
+	var normalized: Array[String] = []
+	for raw_item: Variant in task["information_items"] as Array:
+		var item: Dictionary = raw_item as Dictionary
+		var information_id: String = String(item["id"])
+		if selected_lookup.has(information_id):
+			normalized.append(information_id)
+			selected_lookup.erase(information_id)
+	if not selected_lookup.is_empty():
+		return _make_error(task_id, "unknown_information_item_id", "所选信息项不属于该发布任务。")
+	return {"ok": true, "ids": normalized}
+
+
+func _compose_body(task: Dictionary, information_item_ids: Array[String]) -> String:
+	var selected_lookup: Dictionary = _string_array_to_lookup(information_item_ids)
+	var paragraphs: PackedStringArray = []
+	for raw_item: Variant in task["information_items"] as Array:
+		var item: Dictionary = raw_item as Dictionary
+		if selected_lookup.has(String(item["id"])):
+			paragraphs.append(String(item["body"]))
+	return "\n\n".join(paragraphs)
+
+
 func _validate_snapshot_envelope(snapshot: Dictionary) -> Dictionary:
-	var required_fields: PackedStringArray = [
-		"snapshot_version",
-		"system_id",
-		"unlocked_draft_ids",
-		"sent_broadcast_ids",
-		"sent_exclusive_group_ids",
-		"player_records",
-	]
+	var required_fields: PackedStringArray = ["snapshot_version", "system_id", "sent_task_ids", "player_records"]
 	if snapshot.size() != required_fields.size():
 		return _make_error("", "snapshot_fields_invalid", "广播存档字段缺失或包含未知字段。")
 	for field_name: String in required_fields:
 		if not snapshot.has(field_name):
 			return _make_error("", "snapshot_missing_field", "广播存档缺少字段：%s。" % field_name)
-	var version_result: Dictionary = _read_snapshot_integer(snapshot["snapshot_version"], "snapshot_version", SNAPSHOT_VERSION, SNAPSHOT_VERSION)
+	var version_result: Dictionary = _read_snapshot_integer(snapshot["snapshot_version"], SNAPSHOT_VERSION, SNAPSHOT_VERSION)
 	if not bool(version_result.get("ok", false)):
 		return _make_error("", "snapshot_version_unsupported", "广播存档版本不受支持。")
 	if typeof(snapshot["system_id"]) != TYPE_STRING or String(snapshot["system_id"]) != SYSTEM_ID:
@@ -258,103 +186,105 @@ func _validate_snapshot_envelope(snapshot: Dictionary) -> Dictionary:
 	return {"ok": true}
 
 
-func _validate_snapshot_id_array(value: Variant, field_name: String) -> Dictionary:
+func _validate_snapshot_task_id_array(value: Variant) -> Dictionary:
 	if not value is Array:
-		return _make_error("", "invalid_snapshot_id_array", "广播存档字段 %s 必须是数组。" % field_name)
+		return _make_error("", "invalid_snapshot_task_ids", "广播存档字段 sent_task_ids 必须是数组。")
 	var ids: Array[String] = []
 	var seen: Dictionary = {}
 	for raw_id: Variant in value as Array:
-		if not raw_id is String or not _draft_by_id.has(String(raw_id)):
-			return _make_error(String(raw_id), "snapshot_unknown_broadcast_id", "广播存档引用了不存在的稿件 ID。")
-		var broadcast_id: String = String(raw_id)
-		if seen.has(broadcast_id):
-			return _make_error(broadcast_id, "snapshot_duplicate_broadcast_id", "广播存档不能包含重复稿件 ID。")
-		seen[broadcast_id] = true
-		ids.append(broadcast_id)
-	ids.sort()
-	return {"ok": true, "ids": ids}
-
-
-func _validate_snapshot_group_id_array(value: Variant) -> Dictionary:
-	if not value is Array:
-		return _make_error("", "invalid_snapshot_group_array", "广播存档字段 sent_exclusive_group_ids 必须是数组。")
-	var ids: Array[String] = []
-	var seen: Dictionary = {}
-	for raw_id: Variant in value as Array:
-		if not raw_id is String or String(raw_id).is_empty():
-			return _make_error(String(raw_id), "snapshot_invalid_exclusive_group", "广播存档互斥组 ID 无效。")
-		var group_id: String = String(raw_id)
-		if seen.has(group_id):
-			return _make_error(group_id, "snapshot_duplicate_exclusive_group", "广播存档不能包含重复互斥组 ID。")
-		seen[group_id] = true
-		ids.append(group_id)
+		if not raw_id is String or not _task_by_id.has(String(raw_id)):
+			return _make_error(String(raw_id), "snapshot_unknown_task_id", "广播存档引用了不存在的发布任务 ID。")
+		var task_id: String = String(raw_id)
+		if seen.has(task_id):
+			return _make_error(task_id, "snapshot_duplicate_task_id", "广播存档不能包含重复发布任务 ID。")
+		seen[task_id] = true
+		ids.append(task_id)
 	ids.sort()
 	return {"ok": true, "ids": ids}
 
 
 func _validate_snapshot_records(raw_records: Array, sent_lookup: Dictionary) -> Dictionary:
 	var records: Array[Dictionary] = []
-	var record_ids: Dictionary = {}
+	var record_task_ids: Dictionary = {}
 	for raw_record: Variant in raw_records:
 		if not raw_record is Dictionary:
 			return _make_error("", "invalid_snapshot_record", "广播存档记录必须是对象。")
 		var record: Dictionary = raw_record as Dictionary
-		for field_name: String in ["broadcast_id", "source", "sent_at_tick", "body", "is_unauthorized"]:
+		var expected_fields: PackedStringArray = ["task_id", "information_item_ids", "source", "sent_at_tick", "body", "is_unauthorized"]
+		if record.size() != expected_fields.size():
+			return _make_error("", "snapshot_record_fields_invalid", "玩家广播记录字段缺失或包含未知字段。")
+		for field_name: String in expected_fields:
 			if not record.has(field_name):
 				return _make_error("", "snapshot_record_missing_field", "广播存档记录缺少字段：%s。" % field_name)
-		if not record["broadcast_id"] is String or not sent_lookup.has(String(record["broadcast_id"])):
-			return _make_error(String(record.get("broadcast_id", "")), "snapshot_record_unsent_id", "广播记录必须对应一条已发送稿件。")
-		var broadcast_id: String = String(record["broadcast_id"])
-		if record_ids.has(broadcast_id):
-			return _make_error(broadcast_id, "snapshot_duplicate_record", "同一已发送广播只能有一条记录。")
+		if not record["task_id"] is String or not sent_lookup.has(String(record["task_id"])):
+			return _make_error(String(record.get("task_id", "")), "snapshot_record_unsent_task", "广播记录必须对应一个已发布任务。")
+		var task_id: String = String(record["task_id"])
+		if record_task_ids.has(task_id):
+			return _make_error(task_id, "snapshot_duplicate_record", "同一发布任务只能有一条玩家广播记录。")
+		if not record["information_item_ids"] is Array:
+			return _make_error(task_id, "snapshot_invalid_information_ids", "广播记录的 information_item_ids 必须是数组。")
+		var raw_information_ids: Array[String] = []
+		for raw_information_id: Variant in record["information_item_ids"] as Array:
+			if not raw_information_id is String:
+				return _make_error(task_id, "snapshot_invalid_information_id", "广播记录的信息项 ID 必须是字符串。")
+			raw_information_ids.append(String(raw_information_id))
+		var selection_result: Dictionary = _normalize_information_selection(task_id, raw_information_ids)
+		if not bool(selection_result.get("ok", false)):
+			return selection_result
+		var information_ids: Array[String] = selection_result["ids"] as Array[String]
 		if not record["source"] is String or not record["body"] is String:
-			return _make_error(broadcast_id, "snapshot_invalid_record", "广播存档记录字段类型或发送 tick 无效。")
-		var tick_result: Dictionary = _read_snapshot_integer(record["sent_at_tick"], "sent_at_tick", 0)
+			return _make_error(task_id, "snapshot_invalid_record", "广播记录的来源和正文必须是字符串。")
+		var tick_result: Dictionary = _read_snapshot_integer(record["sent_at_tick"], 0)
 		if not bool(tick_result.get("ok", false)):
-			return _make_error(broadcast_id, "snapshot_invalid_record", "广播存档记录字段类型或发送 tick 无效。")
+			return _make_error(task_id, "snapshot_invalid_record", "广播记录发送 tick 无效。")
 		if typeof(record["is_unauthorized"]) != TYPE_BOOL or bool(record["is_unauthorized"]):
-			return _make_error(broadcast_id, "snapshot_unauthorized_record", "玩家广播存档不能包含未授权播出记录。")
-		var draft: Dictionary = _draft_by_id[broadcast_id] as Dictionary
-		if String(record["source"]) != String(draft["source"]) or String(record["body"]) != String(draft["body"]):
-			return _make_error(broadcast_id, "snapshot_record_content_mismatch", "广播存档记录与当前稿件定义不一致。")
+			return _make_error(task_id, "snapshot_unauthorized_record", "玩家广播存档不能包含未授权播出记录。")
+		var task: Dictionary = _task_by_id[task_id] as Dictionary
+		var expected_body: String = _compose_body(task, information_ids)
+		if String(record["source"]) != String(task["source"]) or String(record["body"]) != expected_body:
+			return _make_error(task_id, "snapshot_record_content_mismatch", "广播记录与当前任务/信息项定义不一致。")
 		var normalized: Dictionary = {
-			"broadcast_id": broadcast_id,
+			"task_id": task_id,
+			"information_item_ids": information_ids.duplicate(),
 			"source": String(record["source"]),
 			"sent_at_tick": int(tick_result["value"]),
-			"body": String(record["body"]),
+			"body": expected_body,
 			"is_unauthorized": false,
 		}
 		records.append(normalized)
-		record_ids[broadcast_id] = true
-	if record_ids.size() != sent_lookup.size():
-		return _make_error("", "snapshot_record_sent_mismatch", "广播记录必须与已发送稿件一一对应。")
-	for broadcast_id_variant: Variant in sent_lookup.keys():
-		if not record_ids.has(String(broadcast_id_variant)):
-			return _make_error(String(broadcast_id_variant), "snapshot_missing_record", "已发送广播缺少对应记录。")
+		record_task_ids[task_id] = true
+	if record_task_ids.size() != sent_lookup.size():
+		return _make_error("", "snapshot_record_sent_mismatch", "玩家广播记录必须与已发布任务一一对应。")
 	records.sort_custom(func(first: Dictionary, second: Dictionary) -> bool:
-		return String(first["broadcast_id"]) < String(second["broadcast_id"])
+		return String(first["task_id"]) < String(second["task_id"])
 	)
 	return {"ok": true, "records": records}
 
 
-func _string_array_to_lookup(ids: Array[String]) -> Dictionary:
-	var lookup: Dictionary = {}
-	for entry_id: String in ids:
-		lookup[entry_id] = true
-	return lookup
+func _validate_runtime_task(task: Dictionary) -> Dictionary:
+	for field_name: String in ["id", "name", "source", "sets_condition_id"]:
+		if not task.has(field_name) or typeof(task[field_name]) != TYPE_STRING:
+			return _make_error("", "invalid_broadcast_task", "发布任务缺少字符串字段：%s。" % field_name)
+	if String(task["id"]).is_empty() or String(task["name"]).strip_edges().is_empty() or String(task["source"]).strip_edges().is_empty():
+		return _make_error(String(task["id"]), "invalid_broadcast_task", "发布任务 ID、名称和来源不能为空。")
+	if not task.has("information_items") or typeof(task["information_items"]) != TYPE_ARRAY or (task["information_items"] as Array).is_empty():
+		return _make_error(String(task["id"]), "invalid_broadcast_task", "发布任务至少需要一个 information_items 条目。")
+	var item_ids: Dictionary = {}
+	for raw_item: Variant in task["information_items"] as Array:
+		if not raw_item is Dictionary:
+			return _make_error(String(task["id"]), "invalid_information_item", "任务信息项必须是对象。")
+		var item: Dictionary = raw_item as Dictionary
+		for field_name: String in ["id", "body"]:
+			if not item.has(field_name) or typeof(item[field_name]) != TYPE_STRING or String(item[field_name]).strip_edges().is_empty():
+				return _make_error(String(task["id"]), "invalid_information_item", "任务信息项缺少有效字段：%s。" % field_name)
+		var item_id: String = String(item["id"])
+		if item_ids.has(item_id):
+			return _make_error(String(task["id"]), "duplicate_information_item_id", "同一任务中的信息项 ID 不能重复。")
+		item_ids[item_id] = true
+	return {"ok": true}
 
 
-func _sorted_dictionary_keys(source: Dictionary) -> Array[String]:
-	var ids: Array[String] = []
-	for raw_id: Variant in source.keys():
-		ids.append(String(raw_id))
-	ids.sort()
-	return ids
-
-
-## Godot 的 JSON 解析器会把 JSON 数字读成 float；只接受数学上精确的整数，
-## 既兼容自己写出的 JSON，又不允许 1.5 之类的关键时间偷偷截断。
-func _read_snapshot_integer(value: Variant, _field_name: String, minimum: int, maximum: int = -1) -> Dictionary:
+func _read_snapshot_integer(value: Variant, minimum: int, maximum: int = -1) -> Dictionary:
 	var parsed: int = 0
 	if typeof(value) == TYPE_INT:
 		parsed = int(value)
@@ -367,17 +297,19 @@ func _read_snapshot_integer(value: Variant, _field_name: String, minimum: int, m
 	return {"ok": true, "value": parsed}
 
 
-func _validate_runtime_draft(draft: Dictionary) -> Dictionary:
-	var required_strings: PackedStringArray = ["id", "source", "body", "sets_condition_id", "exclusive_group_id"]
-	for field_name: String in required_strings:
-		if not draft.has(field_name) or typeof(draft[field_name]) != TYPE_STRING:
-			return _make_error("", "invalid_broadcast_draft", "广播稿缺少字符串字段：%s。" % field_name)
-	if String(draft["id"]).is_empty() or String(draft["source"]).strip_edges().is_empty() or String(draft["body"]).strip_edges().is_empty():
-		return _make_error(String(draft["id"]), "invalid_broadcast_draft", "广播稿 ID、来源和正文不能为空。")
-	for field_name: String in ["unlock_message_ids", "unlock_event_ids"]:
-		if not draft.has(field_name) or typeof(draft[field_name]) != TYPE_ARRAY:
-			return _make_error(String(draft["id"]), "invalid_broadcast_draft", "广播稿字段 %s 必须是数组。" % field_name)
-	return {"ok": true}
+func _string_array_to_lookup(ids: Array[String]) -> Dictionary:
+	var lookup: Dictionary = {}
+	for stable_id: String in ids:
+		lookup[stable_id] = true
+	return lookup
+
+
+func _sorted_dictionary_keys(source: Dictionary) -> Array[String]:
+	var ids: Array[String] = []
+	for raw_id: Variant in source.keys():
+		ids.append(String(raw_id))
+	ids.sort()
+	return ids
 
 
 func _make_read_only_copy(source: Dictionary) -> Dictionary:
@@ -386,9 +318,7 @@ func _make_read_only_copy(source: Dictionary) -> Dictionary:
 	return copy
 
 
-func _make_error(broadcast_id: String, error_code: String, message: String) -> Dictionary:
-	broadcast_error.emit(broadcast_id, error_code, message)
-	# 未解锁、重复点击和互斥口径都是玩家可见的拒绝结果，不是引擎异常；
-	# 保留可定位开发日志，但不把通过按钮状态即可避免的操作记成 ERROR。
-	printerr("[广播][%s][%s] %s" % [broadcast_id, error_code, message])
-	return {"ok": false, "broadcast_id": broadcast_id, "error_code": error_code, "message": message}
+func _make_error(task_id: String, error_code: String, message: String) -> Dictionary:
+	broadcast_error.emit(task_id, error_code, message)
+	printerr("[广播任务][%s][%s] %s" % [task_id, error_code, message])
+	return {"ok": false, "task_id": task_id, "error_code": error_code, "message": message}

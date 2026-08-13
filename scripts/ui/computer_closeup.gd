@@ -1,10 +1,9 @@
 class_name ComputerCloseup
 extends Control
-## 电脑近景只包装信息、来电记录与播出工作台显示组件。
-## 来电记录和播出状态的权威来源仍分别是 PhoneSystem 与 StoryEngine。
+## 电脑近景只包装信息、来电记录与夜班结束记录显示组件。
+## 玩家公告通过工作室总览的中央麦克风发送，不在电脑上重复提供入口。
 
 signal return_requested()
-signal broadcast_requested(broadcast_id: String)
 signal computer_entry_open_requested(category: String, entry_id: String)
 
 ## 电脑页面是 UI 展示状态，不是 StoryEngine / ComputerSystem 的内容状态。
@@ -14,7 +13,6 @@ const PAGE_CATEGORIES: Array[String] = [
 	"news",
 	"messages",
 	"call_log",
-	"broadcast",
 ]
 
 var _is_return_enabled: bool = true
@@ -38,7 +36,7 @@ func bind_phone_system(phone_system: RefCounted) -> Dictionary:
 	return _validate_component_result(result, "绑定电话系统")
 
 
-## 电脑只读取 StoryEngine 给出的稿件/记录，并向 GameScreen 上报 broadcast_id 意图。
+## 电脑只读取信息条目；玩家公告由中央麦克风读取独立稿件接口。
 func bind_story_engine(story_engine: RefCounted) -> Dictionary:
 	if story_engine == null:
 		return _make_error("StoryEngine 实例不能为空。")
@@ -69,14 +67,6 @@ func get_active_category() -> String:
 		push_error("[电脑][invalid_active_category] 电脑信息组件返回了无效页签：%s。" % str(category_value))
 		return ""
 	return String(category_value)
-
-
-## GameScreen 转交 StoryEngine 的发送结果；电脑不自行调用发送接口或拼装记录。
-func show_broadcast_feedback(result: Dictionary) -> Dictionary:
-	if _information_view == null or not _information_view.has_method(&"show_broadcast_feedback"):
-		return _make_error("电脑记录组件缺少 show_broadcast_feedback() 接口。")
-	var component_result: Variant = _information_view.call(&"show_broadcast_feedback", result)
-	return _validate_component_result(component_result, "显示播出反馈")
 
 
 func show_unauthorized_broadcast(record: Dictionary) -> Dictionary:
@@ -158,7 +148,6 @@ func _connect_information_view_signals() -> void:
 		push_error("[电脑][computer_view_missing] 电脑信息组件不存在。")
 		return
 	var contracts: Array[Dictionary] = [
-		{"signal": &"broadcast_requested", "callback": Callable(self, "_on_information_broadcast_requested")},
 		{"signal": &"computer_entry_open_requested", "callback": Callable(self, "_on_information_entry_open_requested")},
 	]
 	for contract: Dictionary in contracts:
@@ -172,13 +161,6 @@ func _connect_information_view_signals() -> void:
 		var result: Error = _information_view.connect(signal_name, callback)
 		if result != OK:
 			push_error("[电脑][computer_view_signal_connect_failed] 无法连接 %s，错误码=%d。" % [String(signal_name), result])
-
-
-func _on_information_broadcast_requested(broadcast_id: String) -> void:
-	if broadcast_id.strip_edges().is_empty():
-		push_error("[电脑][invalid_broadcast_id] 记录组件发出了空广播 ID。")
-		return
-	broadcast_requested.emit(broadcast_id)
 
 
 func _on_information_entry_open_requested(category: String, entry_id: String) -> void:

@@ -54,7 +54,7 @@ const TEST_NIGHT_REQUIRED_FIELDS: PackedStringArray = [
 	"checklist_entries",
 	"news_entries",
 	"messages",
-	"broadcasts",
+	"broadcast_tasks",
 	"dialogue_nodes",
 	"statements",
 	"facts",
@@ -133,7 +133,7 @@ func validate_test_night_story(document: Variant, source_path: String) -> Dictio
 		return _make_error(source_path, "", "content_format_version", "invalid_content_format_version", "content_format_version 必须精确为整数 1。")
 	if typeof(root["content_kind"]) != TYPE_STRING or String(root["content_kind"]) != TEST_NIGHT_CONTENT_KIND:
 		return _make_error(source_path, "", "content_kind", "invalid_content_kind", "content_kind 必须精确为 test_night_story。")
-	for array_field: String in ["conditions", "events", "checklist_entries", "news_entries", "messages", "broadcasts", "dialogue_nodes", "statements", "facts"]:
+	for array_field: String in ["conditions", "events", "checklist_entries", "news_entries", "messages", "broadcast_tasks", "dialogue_nodes", "statements", "facts"]:
 		if typeof(root[array_field]) != TYPE_ARRAY:
 			return _make_error(source_path, "", array_field, "invalid_array_field", "%s 必须是数组。" % array_field)
 
@@ -181,19 +181,16 @@ func validate_test_night_story(document: Variant, source_path: String) -> Dictio
 	)
 	if not bool(information_reference_result.get("ok", false)):
 		return information_reference_result
-	var broadcast_result: Dictionary = _validate_test_broadcasts(root["broadcasts"] as Array, condition_ids, fact_result["by_id"] as Dictionary, source_path)
-	if not bool(broadcast_result.get("ok", false)):
-		return broadcast_result
-	var broadcast_by_id: Dictionary = broadcast_result["by_id"] as Dictionary
-	var reference_result: Dictionary = _validate_test_unlock_references(
+	var broadcast_task_result: Dictionary = _validate_test_broadcast_tasks(
+		root["broadcast_tasks"] as Array,
 		event_by_id,
-		message_by_id,
-		broadcast_by_id,
+		statement_result["by_id"] as Dictionary,
 		condition_ids,
+		fact_result["by_id"] as Dictionary,
 		source_path
 	)
-	if not bool(reference_result.get("ok", false)):
-		return reference_result
+	if not bool(broadcast_task_result.get("ok", false)):
+		return broadcast_task_result
 	var dialogue_result: Dictionary = _validate_test_dialogue_nodes(
 		root["dialogue_nodes"] as Array,
 		event_by_id,
@@ -221,7 +218,7 @@ func validate_test_night_story(document: Variant, source_path: String) -> Dictio
 		"checklist_entries": (checklist_result["entries"] as Array[Dictionary]).duplicate(true),
 		"news_entries": (news_result["entries"] as Array[Dictionary]).duplicate(true),
 		"messages": (message_result["messages"] as Array[Dictionary]).duplicate(true),
-		"broadcasts": (broadcast_result["broadcasts"] as Array[Dictionary]).duplicate(true),
+		"broadcast_tasks": (broadcast_task_result["tasks"] as Array[Dictionary]).duplicate(true),
 		"dialogue_nodes": (dialogue_result["nodes"] as Array[Dictionary]).duplicate(true),
 		"statements": (statement_result["statements"] as Array[Dictionary]).duplicate(true),
 		"facts": (fact_result["facts"] as Array[Dictionary]).duplicate(true),
@@ -253,16 +250,10 @@ func _validate_test_events(events: Array[Dictionary], condition_ids: Dictionary,
 	var by_id: Dictionary = {}
 	for event_data: Dictionary in events:
 		var event_id: String = String(event_data["id"])
-		for field_name: String in ["dialogue_start_id", "unlocks_broadcast_ids"]:
-			if not event_data.has(field_name):
-				return _make_error(source_path, event_id, field_name, "missing_field", "事件缺少测试剧情字段：%s。" % field_name)
+		if not event_data.has("dialogue_start_id"):
+			return _make_error(source_path, event_id, "dialogue_start_id", "missing_field", "事件缺少测试剧情字段：dialogue_start_id。")
 		if typeof(event_data["dialogue_start_id"]) != TYPE_STRING or not _is_stable_id(String(event_data["dialogue_start_id"])):
 			return _make_error(source_path, event_id, "dialogue_start_id", "invalid_dialogue_start_id", "dialogue_start_id 必须是英文 snake_case ID。")
-		if typeof(event_data["unlocks_broadcast_ids"]) != TYPE_ARRAY:
-			return _make_error(source_path, event_id, "unlocks_broadcast_ids", "invalid_unlock_broadcast_ids", "unlocks_broadcast_ids 必须是数组。")
-		for broadcast_id: Variant in event_data["unlocks_broadcast_ids"] as Array:
-			if typeof(broadcast_id) != TYPE_STRING or not _is_stable_id(String(broadcast_id)):
-				return _make_error(source_path, event_id, "unlocks_broadcast_ids", "invalid_broadcast_id", "事件解锁的广播 ID 必须是英文 snake_case ID。")
 		for condition_id: Variant in event_data["condition_ids"] as Array:
 			if not condition_ids.has(String(condition_id)):
 				return _make_error(source_path, event_id, "condition_ids", "unknown_condition_id", "事件引用了未声明的条件 ID：%s。" % String(condition_id))
@@ -337,7 +328,7 @@ func _validate_test_messages(raw_messages: Array, source_path: String) -> Dictio
 			return _make_error(source_path, "", "messages", "invalid_message_type", "messages 中的每一项必须是对象。")
 		var message: Dictionary = raw_message as Dictionary
 		var provisional_id: String = _read_event_id_or_empty(message)
-		for field_name: String in ["id", "sender", "body", "unlock_minute", "unlocks_broadcast_ids", "statement_ids", "fact_ids"]:
+		for field_name: String in ["id", "sender", "body", "unlock_minute", "statement_ids", "fact_ids"]:
 			if not message.has(field_name):
 				return _make_error(source_path, provisional_id, field_name, "missing_field", "短信缺少必填字段：%s。" % field_name)
 		if typeof(message["id"]) != TYPE_STRING or not _is_stable_id(String(message["id"])):
@@ -351,11 +342,6 @@ func _validate_test_messages(raw_messages: Array, source_path: String) -> Dictio
 		var minute_result: Dictionary = _read_exact_integer(message["unlock_minute"])
 		if not bool(minute_result.get("ok", false)) or int(minute_result["value"]) < 0 or int(minute_result["value"]) >= SHIFT_DURATION_MINUTES:
 			return _make_error(source_path, message_id, "unlock_minute", "invalid_unlock_minute", "短信解锁分钟必须是 0 至 59 的整数。")
-		if typeof(message["unlocks_broadcast_ids"]) != TYPE_ARRAY:
-			return _make_error(source_path, message_id, "unlocks_broadcast_ids", "invalid_unlock_broadcast_ids", "unlocks_broadcast_ids 必须是数组。")
-		for broadcast_id: Variant in message["unlocks_broadcast_ids"] as Array:
-			if typeof(broadcast_id) != TYPE_STRING or not _is_stable_id(String(broadcast_id)):
-				return _make_error(source_path, message_id, "unlocks_broadcast_ids", "invalid_broadcast_id", "短信解锁的广播 ID 必须是英文 snake_case ID。")
 		for id_field: String in ["statement_ids", "fact_ids"]:
 			var id_array_result: Dictionary = _validate_stable_id_array(message[id_field], source_path, message_id, id_field)
 			if not bool(id_array_result.get("ok", false)):
@@ -470,93 +456,89 @@ func _validate_test_information_references(entry_collections: Array, statement_b
 	return {"ok": true}
 
 
-func _validate_test_broadcasts(raw_broadcasts: Array, condition_ids: Dictionary, fact_by_id: Dictionary, source_path: String) -> Dictionary:
-	if raw_broadcasts.size() != 3:
-		return _make_error(source_path, "", "broadcasts", "invalid_broadcast_count", "测试剧情必须精确包含 3 条预制广播稿。")
-	var by_id: Dictionary = {}
-	var broadcasts: Array[Dictionary] = []
-	for raw_broadcast: Variant in raw_broadcasts:
-		if not raw_broadcast is Dictionary:
-			return _make_error(source_path, "", "broadcasts", "invalid_broadcast_type", "broadcasts 中的每一项必须是对象。")
-		var broadcast: Dictionary = raw_broadcast as Dictionary
-		var provisional_id: String = _read_event_id_or_empty(broadcast)
-		for field_name: String in ["id", "source", "body", "unlock_message_ids", "unlock_event_ids", "sets_condition_id", "exclusive_group_id", "fact_ids"]:
-			if not broadcast.has(field_name):
-				return _make_error(source_path, provisional_id, field_name, "missing_field", "广播稿缺少必填字段：%s。" % field_name)
-		if typeof(broadcast["id"]) != TYPE_STRING or not _is_stable_id(String(broadcast["id"])):
-			return _make_error(source_path, provisional_id, "id", "invalid_broadcast_id", "广播稿 ID 必须是英文 snake_case 标识符。")
-		var broadcast_id: String = String(broadcast["id"])
-		if by_id.has(broadcast_id):
-			return _make_error(source_path, broadcast_id, "id", "duplicate_broadcast_id", "广播稿 ID 在同一内容文件中重复。")
-		for field_name: String in ["source", "body"]:
-			if typeof(broadcast[field_name]) != TYPE_STRING or String(broadcast[field_name]).strip_edges().is_empty():
-				return _make_error(source_path, broadcast_id, field_name, "invalid_broadcast_text", "%s 必须是非空字符串。" % field_name)
-		for field_name: String in ["unlock_message_ids", "unlock_event_ids"]:
-			if typeof(broadcast[field_name]) != TYPE_ARRAY:
-				return _make_error(source_path, broadcast_id, field_name, "invalid_unlock_source_ids", "%s 必须是数组。" % field_name)
-			for source_id: Variant in broadcast[field_name] as Array:
-				if typeof(source_id) != TYPE_STRING or not _is_stable_id(String(source_id)):
-					return _make_error(source_path, broadcast_id, field_name, "invalid_unlock_source_id", "%s 中的 ID 必须是英文 snake_case。" % field_name)
-		if (broadcast["unlock_message_ids"] as Array).is_empty() and (broadcast["unlock_event_ids"] as Array).is_empty():
-			return _make_error(source_path, broadcast_id, "unlock_message_ids/unlock_event_ids", "missing_unlock_source", "每条广播稿必须有短信或来电解锁来源。")
-		if typeof(broadcast["sets_condition_id"]) != TYPE_STRING:
-			return _make_error(source_path, broadcast_id, "sets_condition_id", "invalid_sets_condition_id", "sets_condition_id 必须是字符串。")
-		var condition_id: String = String(broadcast["sets_condition_id"])
-		if not condition_id.is_empty() and (not _is_stable_id(condition_id) or not condition_ids.has(condition_id)):
-			return _make_error(source_path, broadcast_id, "sets_condition_id", "unknown_condition_id", "广播稿引用了未声明的条件 ID。")
-		if typeof(broadcast["exclusive_group_id"]) != TYPE_STRING:
-			return _make_error(source_path, broadcast_id, "exclusive_group_id", "invalid_exclusive_group_id", "exclusive_group_id 必须是字符串。")
-		var exclusive_group_id: String = String(broadcast["exclusive_group_id"])
-		if not exclusive_group_id.is_empty() and not _is_stable_id(exclusive_group_id):
-			return _make_error(source_path, broadcast_id, "exclusive_group_id", "invalid_exclusive_group_id", "exclusive_group_id 必须为空或英文 snake_case ID。")
-		var fact_ids_result: Dictionary = _validate_stable_id_array(broadcast["fact_ids"], source_path, broadcast_id, "fact_ids")
-		if not bool(fact_ids_result.get("ok", false)):
-			return fact_ids_result
-		for fact_id_variant: Variant in broadcast["fact_ids"] as Array:
-			if not fact_by_id.has(String(fact_id_variant)):
-				return _make_error(source_path, broadcast_id, "fact_ids", "unknown_fact_id", "广播稿引用了不存在的事实：%s。" % String(fact_id_variant))
-		by_id[broadcast_id] = broadcast.duplicate(true)
-		broadcasts.append(broadcast.duplicate(true))
-	return {"ok": true, "by_id": by_id, "broadcasts": broadcasts}
-
-
-func _validate_test_unlock_references(event_by_id: Dictionary, message_by_id: Dictionary, broadcast_by_id: Dictionary, _condition_ids: Dictionary, source_path: String) -> Dictionary:
-	for event_id_variant: Variant in event_by_id.keys():
-		var event_id: String = String(event_id_variant)
-		var event_data: Dictionary = event_by_id[event_id] as Dictionary
-		for broadcast_id_variant: Variant in event_data["unlocks_broadcast_ids"] as Array:
-			var broadcast_id: String = String(broadcast_id_variant)
-			if not broadcast_by_id.has(broadcast_id):
-				return _make_error(source_path, event_id, "unlocks_broadcast_ids", "unknown_broadcast_id", "事件引用了不存在的广播稿：%s。" % broadcast_id)
-			var draft: Dictionary = broadcast_by_id[broadcast_id] as Dictionary
-			if not (draft["unlock_event_ids"] as Array).has(event_id):
-				return _make_error(source_path, event_id, "unlocks_broadcast_ids", "unlock_reference_mismatch", "事件与广播稿的来电解锁引用必须双向一致。")
-	for message_id_variant: Variant in message_by_id.keys():
-		var message_id: String = String(message_id_variant)
-		var message: Dictionary = message_by_id[message_id] as Dictionary
-		for broadcast_id_variant: Variant in message["unlocks_broadcast_ids"] as Array:
-			var broadcast_id: String = String(broadcast_id_variant)
-			if not broadcast_by_id.has(broadcast_id):
-				return _make_error(source_path, message_id, "unlocks_broadcast_ids", "unknown_broadcast_id", "短信引用了不存在的广播稿：%s。" % broadcast_id)
-			var draft: Dictionary = broadcast_by_id[broadcast_id] as Dictionary
-			if not (draft["unlock_message_ids"] as Array).has(message_id):
-				return _make_error(source_path, message_id, "unlocks_broadcast_ids", "unlock_reference_mismatch", "短信与广播稿的短信解锁引用必须双向一致。")
-	for broadcast_id_variant: Variant in broadcast_by_id.keys():
-		var broadcast_id: String = String(broadcast_id_variant)
-		var draft: Dictionary = broadcast_by_id[broadcast_id] as Dictionary
-		for event_id_variant: Variant in draft["unlock_event_ids"] as Array:
+func _validate_test_broadcast_tasks(raw_tasks: Array, event_by_id: Dictionary, statement_by_id: Dictionary, condition_ids: Dictionary, fact_by_id: Dictionary, source_path: String) -> Dictionary:
+	if raw_tasks.is_empty():
+		return _make_error(source_path, "", "broadcast_tasks", "empty_broadcast_tasks", "测试剧情至少需要一个麦克风发布任务。")
+	var task_ids: Dictionary = {}
+	var information_item_ids: Dictionary = {}
+	var tasks: Array[Dictionary] = []
+	for raw_task: Variant in raw_tasks:
+		if not raw_task is Dictionary:
+			return _make_error(source_path, "", "broadcast_tasks", "invalid_broadcast_task_type", "broadcast_tasks 中的每一项必须是对象。")
+		var task: Dictionary = raw_task as Dictionary
+		var provisional_id: String = _read_event_id_or_empty(task)
+		for field_name: String in ["id", "name", "channel", "source", "related_dialogue_event_ids", "required_dialogue_event_ids", "sets_condition_id", "information_items"]:
+			if not task.has(field_name):
+				return _make_error(source_path, provisional_id, field_name, "missing_field", "发布任务缺少必填字段：%s。" % field_name)
+		if typeof(task["id"]) != TYPE_STRING or not _is_stable_id(String(task["id"])):
+			return _make_error(source_path, provisional_id, "id", "invalid_broadcast_task_id", "发布任务 ID 必须是英文 snake_case 标识符。")
+		var task_id: String = String(task["id"])
+		if task_ids.has(task_id):
+			return _make_error(source_path, task_id, "id", "duplicate_broadcast_task_id", "发布任务 ID 在同一内容文件中重复。")
+		task_ids[task_id] = true
+		for text_field: String in ["name", "source"]:
+			if typeof(task[text_field]) != TYPE_STRING or String(task[text_field]).strip_edges().is_empty():
+				return _make_error(source_path, task_id, text_field, "invalid_broadcast_task_text", "%s 必须是非空字符串。" % text_field)
+		if typeof(task["channel"]) != TYPE_STRING or String(task["channel"]) != "microphone":
+			return _make_error(source_path, task_id, "channel", "invalid_broadcast_task_channel", "当前发布任务 channel 必须精确为 microphone。")
+		var related_result: Dictionary = _validate_stable_id_array(task["related_dialogue_event_ids"], source_path, task_id, "related_dialogue_event_ids")
+		if not bool(related_result.get("ok", false)):
+			return related_result
+		var required_result: Dictionary = _validate_stable_id_array(task["required_dialogue_event_ids"], source_path, task_id, "required_dialogue_event_ids")
+		if not bool(required_result.get("ok", false)):
+			return required_result
+		var related_ids: Array = task["related_dialogue_event_ids"] as Array
+		var required_ids: Array = task["required_dialogue_event_ids"] as Array
+		if related_ids.is_empty() or required_ids.is_empty():
+			return _make_error(source_path, task_id, "related_dialogue_event_ids/required_dialogue_event_ids", "empty_dialogue_prerequisites", "发布任务必须声明至少一个相关对话和至少一个必需对话。")
+		for event_id_variant: Variant in related_ids:
 			var event_id: String = String(event_id_variant)
 			if not event_by_id.has(event_id):
-				return _make_error(source_path, broadcast_id, "unlock_event_ids", "unknown_event_id", "广播稿引用了不存在的来电事件：%s。" % event_id)
-			if not (event_by_id[event_id] as Dictionary)["unlocks_broadcast_ids"].has(broadcast_id):
-				return _make_error(source_path, broadcast_id, "unlock_event_ids", "unlock_reference_mismatch", "广播稿与事件的来电解锁引用必须双向一致。")
-		for message_id_variant: Variant in draft["unlock_message_ids"] as Array:
-			var message_id: String = String(message_id_variant)
-			if not message_by_id.has(message_id):
-				return _make_error(source_path, broadcast_id, "unlock_message_ids", "unknown_message_id", "广播稿引用了不存在的短信：%s。" % message_id)
-			if not (message_by_id[message_id] as Dictionary)["unlocks_broadcast_ids"].has(broadcast_id):
-				return _make_error(source_path, broadcast_id, "unlock_message_ids", "unlock_reference_mismatch", "广播稿与短信的解锁引用必须双向一致。")
-	return {"ok": true}
+				return _make_error(source_path, task_id, "related_dialogue_event_ids", "unknown_dialogue_event_id", "发布任务引用了不存在的相关来电：%s。" % event_id)
+			if String((event_by_id[event_id] as Dictionary).get("dialogue_start_id", "")).is_empty():
+				return _make_error(source_path, task_id, "related_dialogue_event_ids", "event_without_dialogue", "发布任务的相关来电必须包含预制对话：%s。" % event_id)
+		for event_id_variant: Variant in required_ids:
+			if not related_ids.has(String(event_id_variant)):
+				return _make_error(source_path, task_id, "required_dialogue_event_ids", "required_dialogue_not_related", "必需对话必须同时属于 related_dialogue_event_ids。")
+		if typeof(task["sets_condition_id"]) != TYPE_STRING:
+			return _make_error(source_path, task_id, "sets_condition_id", "invalid_sets_condition_id", "sets_condition_id 必须是字符串。")
+		var condition_id: String = String(task["sets_condition_id"])
+		if not condition_id.is_empty() and (not _is_stable_id(condition_id) or not condition_ids.has(condition_id)):
+			return _make_error(source_path, task_id, "sets_condition_id", "unknown_condition_id", "发布任务引用了未声明的条件 ID。")
+		if typeof(task["information_items"]) != TYPE_ARRAY or (task["information_items"] as Array).is_empty():
+			return _make_error(source_path, task_id, "information_items", "empty_information_items", "发布任务至少需要一个可选信息项。")
+		for raw_item: Variant in task["information_items"] as Array:
+			if not raw_item is Dictionary:
+				return _make_error(source_path, task_id, "information_items", "invalid_information_item_type", "发布任务的信息项必须是对象。")
+			var item: Dictionary = raw_item as Dictionary
+			for field_name: String in ["id", "source_label", "body", "statement_ids", "fact_ids"]:
+				if not item.has(field_name):
+					return _make_error(source_path, task_id, "information_items.%s" % field_name, "missing_field", "发布任务信息项缺少字段：%s。" % field_name)
+			if typeof(item["id"]) != TYPE_STRING or not _is_stable_id(String(item["id"])):
+				return _make_error(source_path, task_id, "information_items.id", "invalid_information_item_id", "信息项 ID 必须是英文 snake_case 标识符。")
+			var item_id: String = String(item["id"])
+			if information_item_ids.has(item_id):
+				return _make_error(source_path, item_id, "information_items.id", "duplicate_information_item_id", "信息项 ID 必须在整份内容中唯一。")
+			information_item_ids[item_id] = true
+			for text_field: String in ["source_label", "body"]:
+				if typeof(item[text_field]) != TYPE_STRING or String(item[text_field]).strip_edges().is_empty():
+					return _make_error(source_path, item_id, text_field, "invalid_information_item_text", "%s 必须是非空字符串。" % text_field)
+			var statement_ids_result: Dictionary = _validate_stable_id_array(item["statement_ids"], source_path, item_id, "statement_ids")
+			if not bool(statement_ids_result.get("ok", false)):
+				return statement_ids_result
+			if (item["statement_ids"] as Array).is_empty():
+				return _make_error(source_path, item_id, "statement_ids", "empty_information_statements", "每个任务信息项至少需要一个已揭示陈述作为可用前提。")
+			for statement_id_variant: Variant in item["statement_ids"] as Array:
+				if not statement_by_id.has(String(statement_id_variant)):
+					return _make_error(source_path, item_id, "statement_ids", "unknown_statement_id", "信息项引用了不存在的陈述：%s。" % String(statement_id_variant))
+			var fact_ids_result: Dictionary = _validate_stable_id_array(item["fact_ids"], source_path, item_id, "fact_ids")
+			if not bool(fact_ids_result.get("ok", false)):
+				return fact_ids_result
+			for fact_id_variant: Variant in item["fact_ids"] as Array:
+				if not fact_by_id.has(String(fact_id_variant)):
+					return _make_error(source_path, item_id, "fact_ids", "unknown_fact_id", "信息项引用了不存在的事实：%s。" % String(fact_id_variant))
+		tasks.append(task.duplicate(true))
+	return {"ok": true, "tasks": tasks}
 
 
 func _validate_test_dialogue_nodes(raw_nodes: Array, event_by_id: Dictionary, statement_by_id: Dictionary, source_path: String) -> Dictionary:

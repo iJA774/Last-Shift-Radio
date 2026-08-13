@@ -1,4 +1,4 @@
-[gd_scene load_steps=11 format=3]
+[gd_scene load_steps=12 format=3]
 
 [ext_resource type="Script" path="res://scripts/ui/studio_overview.gd" id="1_script"]
 [ext_resource type="Texture2D" path="res://art/concept/style_baseline_v1/studio_overview_v2.png" id="2_background"]
@@ -7,6 +7,7 @@
 [ext_resource type="Texture2D" path="res://art/concept/style_baseline_v1/studio_overview_lamp_off_v3.png" id="5_background_lamp_off"]
 [ext_resource type="PackedScene" path="res://scenes/ui/fx/window_rain_fx.tscn" id="7_window_rain_fx"]
 [ext_resource type="Texture2D" path="res://art/runtime/studio_overview/studio_foreground_window.png" id="8_window_foreground"]
+[ext_resource type="Script" path="res://scripts/ui/microphone_broadcast_panel.gd" id="9_microphone_panel"]
 
 [sub_resource type="StyleBoxFlat" id="StyleHotspotDefault"]
 bg_color = Color(0.035, 0.075, 0.085, 0)
@@ -83,6 +84,18 @@ content_margin_left = 10.0
 content_margin_top = 5.0
 content_margin_right = 10.0
 content_margin_bottom = 5.0
+
+[sub_resource type="StyleBoxFlat" id="StyleMicrophonePanel"]
+bg_color = Color(0.012, 0.014, 0.013, 0.97)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.73, 0.62, 0.33, 0.92)
+corner_radius_top_left = 5
+corner_radius_top_right = 5
+corner_radius_bottom_right = 5
+corner_radius_bottom_left = 5
 
 [node name="StudioOverview" type="Control"]
 layout_mode = 3
@@ -224,6 +237,21 @@ theme_override_styles/pressed = SubResource("StyleHotspotPressed")
 theme_override_styles/disabled = SubResource("StyleHotspotDisabled")
 tooltip_text = "点击查看门与观察窗。"
 
+[node name="MicrophoneHotspot" type="Button" parent="."]
+unique_name_in_owner = true
+layout_mode = 0
+offset_left = 594.0
+offset_top = 352.0
+offset_right = 726.0
+offset_bottom = 592.0
+focus_mode = 0
+mouse_default_cursor_shape = 2
+theme_override_styles/normal = SubResource("StyleHotspotDefault")
+theme_override_styles/hover = SubResource("StyleHotspotHover")
+theme_override_styles/pressed = SubResource("StyleHotspotPressed")
+theme_override_styles/disabled = SubResource("StyleHotspotDisabled")
+tooltip_text = "点击使用中央麦克风。"
+
 [node name="PhoneHint" type="PanelContainer" parent="."]
 unique_name_in_owner = true
 visible = false
@@ -290,9 +318,54 @@ vertical_alignment = 1
 text = "查看门与观察窗"
 autowrap_mode = 2
 
+[node name="MicrophoneHint" type="PanelContainer" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 0
+offset_left = 502.0
+offset_top = 282.0
+offset_right = 818.0
+offset_bottom = 342.0
+mouse_filter = 2
+theme_override_styles/panel = SubResource("StyleHotspotHint")
+clip_contents = true
+
+[node name="MicrophoneHintLabel" type="Label" parent="MicrophoneHint"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.95, 0.92, 0.80, 1)
+theme_override_font_sizes/font_size = 18
+horizontal_alignment = 1
+vertical_alignment = 1
+text = "使用中央麦克风"
+autowrap_mode = 2
+
+[node name="MicrophoneDim" type="ColorRect" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0, 0, 0, 0.6)
+
+[node name="MicrophonePanel" type="PanelContainer" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 0
+offset_left = 478.0
+offset_top = 150.0
+offset_right = 1442.0
+offset_bottom = 930.0
+theme_override_styles/panel = SubResource("StyleMicrophonePanel")
+script = ExtResource("9_microphone_panel")
+
 [connection signal="pressed" from="PhoneHotspot" to="." method="_on_phone_hotspot_pressed"]
 [connection signal="pressed" from="ComputerHotspot" to="." method="_on_computer_hotspot_pressed"]
 [connection signal="pressed" from="DoorHotspot" to="." method="_on_door_hotspot_pressed"]
+[connection signal="pressed" from="MicrophoneHotspot" to="." method="_on_microphone_hotspot_pressed"]
 [connection signal="mouse_entered" from="PhoneHotspot" to="." method="_on_hotspot_mouse_entered" binds= ["phone"]]
 [connection signal="mouse_exited" from="PhoneHotspot" to="." method="_on_hotspot_mouse_exited" binds= ["phone"]]
 [connection signal="button_down" from="PhoneHotspot" to="." method="_on_hotspot_button_down" binds= ["phone"]]
@@ -305,3 +378,9 @@ autowrap_mode = 2
 [connection signal="mouse_exited" from="DoorHotspot" to="." method="_on_hotspot_mouse_exited" binds= ["door"]]
 [connection signal="button_down" from="DoorHotspot" to="." method="_on_hotspot_button_down" binds= ["door"]]
 [connection signal="button_up" from="DoorHotspot" to="." method="_on_hotspot_button_up" binds= ["door"]]
+[connection signal="mouse_entered" from="MicrophoneHotspot" to="." method="_on_hotspot_mouse_entered" binds= ["microphone"]]
+[connection signal="mouse_exited" from="MicrophoneHotspot" to="." method="_on_hotspot_mouse_exited" binds= ["microphone"]]
+[connection signal="button_down" from="MicrophoneHotspot" to="." method="_on_hotspot_button_down" binds= ["microphone"]]
+[connection signal="button_up" from="MicrophoneHotspot" to="." method="_on_hotspot_button_up" binds= ["microphone"]]
+[connection signal="broadcast_requested" from="MicrophonePanel" to="." method="_on_microphone_broadcast_requested"]
+[connection signal="close_requested" from="MicrophonePanel" to="." method="_on_microphone_panel_close_requested"]

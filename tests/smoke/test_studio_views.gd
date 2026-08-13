@@ -100,6 +100,20 @@ func _test_studio_overview() -> void:
 		_assert_true(is_equal_approx(hotspot.scale.x, 1.0), "松开热点 %s 后必须恢复原始缩放。" % hotspot_names[index])
 		hotspot.emit_signal(&"mouse_exited")
 		_assert_true(hint != null and not hint.visible, "离开热点 %s 后应隐藏行动提示。" % hotspot_names[index])
+	var microphone_hotspot: Button = overview.get_node_or_null(NodePath("MicrophoneHotspot")) as Button
+	var microphone_panel: Control = overview.get_node_or_null(NodePath("MicrophonePanel")) as Control
+	var microphone_dim: ColorRect = overview.get_node_or_null(NodePath("MicrophoneDim")) as ColorRect
+	_assert_true(microphone_hotspot != null and microphone_panel != null, "总览必须包含中央麦克风热点与公告面板。")
+	_assert_true(overview.has_signal(&"broadcast_requested"), "总览必须公开中央麦克风公告意图。")
+	if microphone_hotspot != null and microphone_panel != null:
+		_assert_true(not microphone_hotspot.disabled, "夜班期间中央麦克风应始终可打开，以显示空态公告说明。")
+		microphone_hotspot.emit_signal(&"pressed")
+		_assert_true(microphone_panel.visible and microphone_dim != null and microphone_dim.visible, "打开中央麦克风时必须显示面板并阻挡底层热点。")
+		microphone_panel.emit_signal(&"close_requested")
+		_assert_true(not microphone_panel.visible and microphone_dim != null and not microphone_dim.visible, "关闭中央麦克风后必须恢复总览交互。")
+	var microphone_lock_result: Variant = overview.call(&"set_microphone_enabled", false, "夜班已经结束，中央麦克风已关闭。")
+	_assert_true(microphone_lock_result is Dictionary and bool((microphone_lock_result as Dictionary).get("ok", false)), "中央麦克风必须接受带中文原因的禁用请求。")
+	_assert_true(microphone_hotspot != null and microphone_hotspot.disabled, "收束时中央麦克风必须停止接收输入。")
 	var phone_hotspot: Button = overview.get_node_or_null(NodePath("PhoneHotspot")) as Button
 	if phone_hotspot != null:
 		phone_hotspot.emit_signal(&"mouse_entered")

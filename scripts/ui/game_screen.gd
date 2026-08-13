@@ -130,9 +130,9 @@ func bind_runtime(story_engine: RefCounted, phone_system: RefCounted, game_clock
 	var required_story_methods: PackedStringArray = [
 		"begin_active_call_dialogue",
 		"select_dialogue_option",
-		"send_player_broadcast",
+		"send_broadcast_task",
 		"get_active_dialogue_snapshot",
-		"get_available_broadcasts",
+		"get_broadcast_tasks",
 		"get_computer_entries",
 		"get_computer_unread_count",
 		"mark_computer_entry_read",
@@ -149,6 +149,8 @@ func bind_runtime(story_engine: RefCounted, phone_system: RefCounted, game_clock
 		return {"ok": false, "message": "无法绑定电话近景。"}
 	if not _bind_child_runtime(_phone_closeup, &"bind_story_engine", [_story_engine], "绑定电话剧情"):
 		return {"ok": false, "message": "无法绑定电话剧情。"}
+	if not _bind_child_runtime(_studio_overview, &"bind_story_engine", [_story_engine], "绑定中央麦克风"):
+		return {"ok": false, "message": "无法绑定中央麦克风。"}
 	if not _bind_child_runtime(_computer_closeup, &"bind_phone_system", [_phone_system], "绑定电脑近景"):
 		return {"ok": false, "message": "无法绑定电脑近景。"}
 	if not _bind_child_runtime(_computer_closeup, &"bind_story_engine", [_story_engine], "绑定电脑剧情"):
@@ -176,7 +178,7 @@ func show_view(view_id: String) -> Dictionary:
 	if not _views_by_id.has(view_id):
 		return _make_error("未知视图 ID：%s。" % view_id)
 	if _is_ending and view_id != VIEW_COMPUTER:
-		return {"ok": false, "message": "02:00 强制收束中，只能停留在电脑播出记录。"}
+		return {"ok": false, "message": "02:00 强制收束中，只能停留在电脑夜班结束记录。"}
 	_show_view_internal(view_id, false)
 	var work_state_result: Dictionary = _sync_work_state_and_time_rate()
 	if not bool(work_state_result.get("ok", false)):
@@ -287,11 +289,18 @@ func show_ending(record: Dictionary) -> Dictionary:
 	var computer_return_lock_result: Variant = _computer_closeup.call(
 		&"set_return_enabled",
 		false,
-		"02:00 强制收束中，已锁定在电脑播出记录。"
+		"02:00 强制收束中，已锁定在电脑夜班结束记录。"
 	)
 	if not _is_ok_result(computer_return_lock_result):
 		push_error("[游戏界面][computer_return_lock_error] %s" % str(computer_return_lock_result))
-	_set_overview_hotspots_enabled(false, "02:00 强制收束中，已切换到电脑播出记录。")
+	var microphone_lock_result: Variant = _studio_overview.call(
+		&"set_microphone_enabled",
+		false,
+		"夜班已经结束，中央麦克风已关闭。"
+	)
+	if not _is_ok_result(microphone_lock_result):
+		push_error("[游戏界面][microphone_lock_error] %s" % str(microphone_lock_result))
+	_set_overview_hotspots_enabled(false, "02:00 强制收束中，已切换到电脑夜班结束记录。")
 	_show_persistent_system_message("夜班已经结束，线路安静了下来。")
 	_show_view_internal(VIEW_COMPUTER, true)
 	var work_state_result: Dictionary = _sync_work_state_and_time_rate()
@@ -551,6 +560,9 @@ func _connect_view_signals() -> Dictionary:
 		return {"ok": true}
 	var contracts: Array[Dictionary] = [
 		{"source": _studio_overview, "signal": &"view_requested", "callback": Callable(self, "_on_overview_view_requested")},
+		{"source": _studio_overview, "signal": &"broadcast_requested", "callback": Callable(self, "_on_broadcast_requested")},
+		{"source": _studio_overview, "signal": &"microphone_panel_opened", "callback": Callable(self, "_on_microphone_panel_opened")},
+		{"source": _studio_overview, "signal": &"microphone_panel_closed", "callback": Callable(self, "_on_microphone_panel_closed")},
 		{"source": _phone_closeup, "signal": &"return_requested", "callback": Callable(self, "_on_closeup_return_requested")},
 		{"source": _phone_closeup, "signal": &"answer_requested", "callback": Callable(self, "_on_answer_requested")},
 		{"source": _phone_closeup, "signal": &"dialogue_choice_requested", "callback": Callable(self, "_on_dialogue_choice_requested")},
@@ -558,7 +570,6 @@ func _connect_view_signals() -> Dictionary:
 		{"source": _phone_closeup, "signal": &"hang_up_requested", "callback": Callable(self, "_on_hang_up_requested")},
 		{"source": _phone_closeup, "signal": &"finish_call_requested", "callback": Callable(self, "_on_finish_call_requested")},
 		{"source": _computer_closeup, "signal": &"return_requested", "callback": Callable(self, "_on_closeup_return_requested")},
-		{"source": _computer_closeup, "signal": &"broadcast_requested", "callback": Callable(self, "_on_broadcast_requested")},
 		{"source": _computer_closeup, "signal": &"computer_entry_open_requested", "callback": Callable(self, "_on_computer_entry_open_requested")},
 		{"source": _door_window_closeup, "signal": &"return_requested", "callback": Callable(self, "_on_closeup_return_requested")},
 	]
@@ -582,6 +593,9 @@ func _disconnect_view_signals() -> void:
 		return
 	var contracts: Array[Dictionary] = [
 		{"source": _studio_overview, "signal": &"view_requested", "callback": Callable(self, "_on_overview_view_requested")},
+		{"source": _studio_overview, "signal": &"broadcast_requested", "callback": Callable(self, "_on_broadcast_requested")},
+		{"source": _studio_overview, "signal": &"microphone_panel_opened", "callback": Callable(self, "_on_microphone_panel_opened")},
+		{"source": _studio_overview, "signal": &"microphone_panel_closed", "callback": Callable(self, "_on_microphone_panel_closed")},
 		{"source": _phone_closeup, "signal": &"return_requested", "callback": Callable(self, "_on_closeup_return_requested")},
 		{"source": _phone_closeup, "signal": &"answer_requested", "callback": Callable(self, "_on_answer_requested")},
 		{"source": _phone_closeup, "signal": &"dialogue_choice_requested", "callback": Callable(self, "_on_dialogue_choice_requested")},
@@ -589,7 +603,6 @@ func _disconnect_view_signals() -> void:
 		{"source": _phone_closeup, "signal": &"hang_up_requested", "callback": Callable(self, "_on_hang_up_requested")},
 		{"source": _phone_closeup, "signal": &"finish_call_requested", "callback": Callable(self, "_on_finish_call_requested")},
 		{"source": _computer_closeup, "signal": &"return_requested", "callback": Callable(self, "_on_closeup_return_requested")},
-		{"source": _computer_closeup, "signal": &"broadcast_requested", "callback": Callable(self, "_on_broadcast_requested")},
 		{"source": _computer_closeup, "signal": &"computer_entry_open_requested", "callback": Callable(self, "_on_computer_entry_open_requested")},
 		{"source": _door_window_closeup, "signal": &"return_requested", "callback": Callable(self, "_on_closeup_return_requested")},
 	]
@@ -722,16 +735,16 @@ func _sync_work_state_and_time_rate() -> Dictionary:
 
 
 func _has_pending_player_broadcast() -> Dictionary:
-	var drafts_value: Variant = _story_engine.call(&"get_available_broadcasts")
-	if not drafts_value is Array:
-		return _make_error("StoryEngine.get_available_broadcasts() 必须返回 Array。")
-	for raw_draft: Variant in drafts_value as Array:
-		if not raw_draft is Dictionary:
-			return _make_error("StoryEngine 返回了非 Dictionary 的广播稿。")
-		var draft: Dictionary = raw_draft as Dictionary
-		if not draft.has("is_available_to_send") or typeof(draft["is_available_to_send"]) != TYPE_BOOL:
-			return _make_error("广播稿缺少布尔字段 is_available_to_send。")
-		if bool(draft["is_available_to_send"]):
+	var tasks_value: Variant = _story_engine.call(&"get_broadcast_tasks")
+	if not tasks_value is Array:
+		return _make_error("StoryEngine.get_broadcast_tasks() 必须返回 Array。")
+	for raw_task: Variant in tasks_value as Array:
+		if not raw_task is Dictionary:
+			return _make_error("StoryEngine 返回了非 Dictionary 的发布任务。")
+		var task: Dictionary = raw_task as Dictionary
+		if not task.has("is_publishable") or typeof(task["is_publishable"]) != TYPE_BOOL:
+			return _make_error("发布任务缺少布尔字段 is_publishable。")
+		if bool(task["is_publishable"]):
 			return {"ok": true, "has_pending_broadcast": true}
 	return {"ok": true, "has_pending_broadcast": false}
 
@@ -756,6 +769,14 @@ func _on_overview_view_requested(view_id: String) -> void:
 
 func _on_closeup_return_requested() -> void:
 	_handle_view_request(VIEW_STUDIO)
+
+
+func _on_microphone_panel_opened() -> void:
+	_play_button_click("microphone_open")
+
+
+func _on_microphone_panel_closed() -> void:
+	_play_button_click("microphone_close")
 
 
 func _handle_view_request(view_id: String) -> void:
@@ -850,27 +871,32 @@ func _is_active_dialogue_terminal() -> bool:
 	return not snapshot.is_empty() and bool(snapshot.get("is_terminal", false))
 
 
-func _on_broadcast_requested(broadcast_id: String) -> void:
+func _on_broadcast_requested(task_id: String, information_item_ids: Array[String]) -> void:
 	var broadcast_result: Dictionary = {}
 	if _is_ending:
 		broadcast_result = {"ok": false, "message": "夜班已经结束，无法播出。"}
-	elif broadcast_id.strip_edges().is_empty():
-		broadcast_result = {"ok": false, "message": "这份稿件暂时无法播出。"}
+	elif task_id.strip_edges().is_empty():
+		broadcast_result = {"ok": false, "message": "这项发布任务暂时无法执行。"}
+	elif information_item_ids.is_empty():
+		broadcast_result = {"ok": false, "message": "至少选择一条已经收集的信息。"}
 	elif _story_engine == null:
 		broadcast_result = {"ok": false, "message": "播出暂时不可用。"}
 	else:
-		var result_value: Variant = _story_engine.call(&"send_player_broadcast", broadcast_id)
+		var result_value: Variant = _story_engine.call(&"send_broadcast_task", task_id, information_item_ids)
 		if result_value is Dictionary:
 			broadcast_result = result_value as Dictionary
 		else:
 			broadcast_result = {"ok": false, "message": "播出暂时不可用。"}
-	var feedback_result: Variant = _computer_closeup.call(&"show_broadcast_feedback", broadcast_result)
+	# 只有 StoryEngine 真正接受任务与所选信息后才播放操作音；拒绝路径不得伪造成功反馈。
+	if bool(broadcast_result.get("ok", false)):
+		_play_button_click("microphone_broadcast")
+	var feedback_result: Variant = _studio_overview.call(&"show_microphone_feedback", broadcast_result)
 	if not _is_ok_result(feedback_result):
-		push_error("[播出][feedback_display_failed] %s" % _describe_operation_failure(feedback_result, "电脑播出工作台不可用。"))
+		push_error("[播出][feedback_display_failed] %s" % _describe_operation_failure(feedback_result, "中央麦克风不可用。"))
 		show_system_error("播出结果暂时无法显示。")
 		return
 	if not bool(broadcast_result.get("ok", false)):
-		show_system_error("播出没有成功，请稍后再试。")
+		show_system_error(String(broadcast_result.get("message", "播出没有成功，请稍后再试。")))
 
 
 ## 电脑只报告“玩家打开了哪一条”；StoryEngine 才能将其标记已读并推进陈述/事实。

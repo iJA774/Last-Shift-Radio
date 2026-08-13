@@ -2,7 +2,7 @@ extends SceneTree
 
 ## 统一工作状态与动态时间倍率的 UI 路由验证。
 ##
-## GameScreen 不保存电话或剧情真相；它只将电话、待播广播与当前固定视图
+## GameScreen 不保存电话或剧情真相；它只将电话、可发布任务与当前固定视图
 ## 合并为 IDLE / ACTIVE 派生状态，并调用 GameClock 的公开倍率接口。
 
 const GAME_CLOCK_SCRIPT: GDScript = preload("res://scripts/core/game_clock.gd")
@@ -69,21 +69,29 @@ func _run() -> void:
 	_assert_true(phone.answer_call(0), "第二通测试来电必须可接听。")
 	_assert_true(phone.finish_call(0), "第二通测试来电必须可结束。")
 
-	_assert_ok(story_engine.advance_to_game_tick(12 * GameClockService.GAME_TICKS_PER_MINUTE), "必须能推进到米勒短信解锁时刻。")
-	_drain_story_calls(phone)
-	_assert_equal(phone.get_state_name(), "IDLE", "清理同窗测试来电后电话必须空闲。")
-	_assert_work_state(screen, GameScreen.WorkState.ACTIVE, "存在可发送广播稿时，即使电话空闲也必须保持 ACTIVE。")
-	_assert_rate(clock, GameClockService.TimeRate.SLOW, "待播广播未处理时必须与现实 1:1 推进。")
+	_assert_ok(story_engine.advance_to_game_tick(17 * GameClockService.GAME_TICKS_PER_MINUTE), "必须能推进到玛莎来电窗口。")
+	_assert_equal(String(phone.get_active_event_id()), "call_03_martha", "01:17 必须由真实剧情触发玛莎来电。")
+	_assert_true(phone.answer_call(17 * GameClockService.GAME_TICKS_PER_MINUTE), "玛莎来电必须可接听。")
+	_assert_true(phone.enter_dialogue_choice(), "玛莎来电必须进入对话选择。")
+	_assert_ok(story_engine.begin_active_call_dialogue(), "玛莎预制对话必须能开始。")
+	_assert_ok(story_engine.select_dialogue_option("opt_martha_vehicle"), "玛莎第一轮必须揭示寻车信息。")
+	_assert_ok(story_engine.select_dialogue_option("opt_martha_follow_request"), "玛莎第二轮必须完成必要对话。")
+	_assert_true(phone.exit_dialogue_choice(), "玛莎终止对白后必须恢复接通状态。")
+	_assert_true(phone.finish_call(17 * GameClockService.GAME_TICKS_PER_MINUTE), "玛莎通话必须真实结束。")
+	_assert_equal(phone.get_state_name(), "IDLE", "玛莎通话结束后电话必须空闲。")
+	_assert_work_state(screen, GameScreen.WorkState.ACTIVE, "存在 is_publishable 发布任务时，即使电话空闲也必须保持 ACTIVE。")
+	_assert_rate(clock, GameClockService.TimeRate.SLOW, "待发布任务未处理时必须与现实 1:1 推进。")
 	var active_snapshot: Dictionary = screen.get_work_state_snapshot()
 	_assert_true(
 		(active_snapshot["reason_ids"] as PackedStringArray).has(GameScreen.WORK_REASON_BROADCAST_PENDING),
 		"ACTIVE 快照必须公开稳定的 broadcast_pending 原因。"
 	)
+	var selected_information_ids: Array[String] = ["info_wagon_martha_route"]
 	_assert_ok(
-		story_engine.send_player_broadcast("broadcast_bridge_structural_closure"),
-		"发送唯一可用的结构封桥稿后必须清除待播状态。"
+		story_engine.send_broadcast_task("task_broadcast_wagon_witness_request", selected_information_ids),
+		"发送唯一可发布的寻车任务后必须清除待发布状态。"
 	)
-	_assert_work_state(screen, GameScreen.WorkState.IDLE, "待播稿件处理完且未看电脑时必须恢复 IDLE。")
+	_assert_work_state(screen, GameScreen.WorkState.IDLE, "待发布任务处理完且未看电脑时必须恢复 IDLE。")
 	_assert_rate(clock, GameClockService.TimeRate.FAST, "所有非空闲原因清除后必须恢复快速倍率。")
 
 	screen.release_runtime()

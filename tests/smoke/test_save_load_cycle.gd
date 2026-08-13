@@ -51,7 +51,8 @@ func _run() -> void:
 	_assert_true(bool(story.call(&"select_dialogue_option", "opt_warren_follow_report").get("ok", false)), "第二轮应能追问沃伦。")
 	_assert_true(bool(phone.call(&"exit_dialogue_choice")), "终止对白后必须退出对话选择。")
 	_assert_true(bool(phone.call(&"finish_call", int(game_clock.call(&"get_current_game_tick")))), "第一通电话必须正常结束。")
-	_assert_true(bool(story.call(&"send_player_broadcast", "broadcast_bridge_tanker_fire").get("ok", false)), "第一条广播必须由真实完成来电解锁。")
+	var bridge_after_warren: Dictionary = _find_broadcast_task(story.call(&"get_broadcast_tasks") as Array, "task_broadcast_bridge_closure")
+	_assert_true(not bool(bridge_after_warren.get("prerequisites_met", true)), "仅完成沃伦时北桥任务不得满足 A+B 最低对话门槛。")
 
 	# 01:17 玛莎来电，追问得到来源陈述，并发送带 condition 的广播，以确保 01:23 触发第四通。
 	_assert_true(bool(game_clock.call(&"advance_ticks_for_verification", 960)), "必须推进至玛莎来电窗口。")
@@ -63,7 +64,8 @@ func _run() -> void:
 	_assert_true(bool(story.call(&"select_dialogue_option", "opt_martha_follow_request").get("ok", false)), "玛莎第二轮必须终止。")
 	_assert_true(bool(phone.call(&"exit_dialogue_choice")), "玛莎终止对白后必须恢复接通。")
 	_assert_true(bool(phone.call(&"finish_call", int(game_clock.call(&"get_current_game_tick")))), "玛莎通话必须结束。")
-	_assert_true(bool(story.call(&"send_player_broadcast", "broadcast_wagon_witness_request").get("ok", false)), "征集目击广播必须成功发送。")
+	var wagon_information_ids: Array[String] = ["info_wagon_martha_route"]
+	_assert_true(bool(story.call(&"send_broadcast_task", "task_broadcast_wagon_witness_request", wagon_information_ids).get("ok", false)), "征集目击发布任务必须成功发送。")
 	_assert_true(bool(game_clock.call(&"advance_ticks_for_verification", 360)), "必须推进至 01:23。")
 	_assert_equal(String(phone.call(&"get_state_name")), "RINGING", "01:23 条件来电必须正在响铃。")
 	_assert_equal(String(phone.call(&"get_active_event_id")), "call_04_dog_walker", "01:23 必须保存正在响铃的河边遛狗者来电。")
@@ -200,7 +202,12 @@ func _run() -> void:
 	_assert_equal(String(restored_computer.call(&"get_active_category")), "news", "读取后必须回到保存时的电脑页签。")
 	_assert_true(not (restored_story.call(&"get_revealed_statements") as Array).is_empty(), "读取后必须保留已取得的来源陈述。")
 	_assert_true(not (restored_story.call(&"get_confirmed_facts") as Array).is_empty(), "读取后必须保留已确认事实。")
-	_assert_equal((restored_story.call(&"get_player_broadcast_records") as Array).size(), 2, "读取后不得重复或丢失玩家广播记录。")
+	var restored_publications: Array = restored_story.call(&"get_player_broadcast_records") as Array
+	_assert_equal(restored_publications.size(), 1, "读取后不得重复或丢失玩家发布任务记录。")
+	if not restored_publications.is_empty():
+		var restored_publication: Dictionary = restored_publications[0] as Dictionary
+		_assert_equal(String(restored_publication.get("task_id", "")), "task_broadcast_wagon_witness_request", "读取后玩家记录必须恢复稳定 task_id。")
+		_assert_equal(restored_publication.get("information_item_ids", []), ["info_wagon_martha_route"], "读取后玩家记录必须恢复本次实际选择的信息项。")
 
 	# LOAD 的返回仍可使用 Esc，并须经过 0.25 秒渐出；页面不再显示右侧返回主菜单按钮。
 	restored_screen.call(&"_close_save_panel")
@@ -246,7 +253,7 @@ func _run() -> void:
 	_assert_true(not restored_screen.is_save_panel_open(), "02:00 必须立即关闭存档覆盖层。")
 	_assert_true(bool(restored_story.call(&"is_ending_forced")), "恢复后 02:00 必须正常强制收束。")
 	_assert_equal(_count_event_records(restored_phone.call(&"get_call_records") as Array, "call_04_dog_walker"), 1, "读取后不得重复来电记录或凭空漏接。")
-	_assert_equal((restored_story.call(&"get_player_broadcast_records") as Array).size(), 2, "推进至 02:00 不得重复玩家广播。")
+	_assert_equal((restored_story.call(&"get_player_broadcast_records") as Array).size(), 1, "推进至 02:00 不得重复玩家发布任务记录。")
 	_assert_unique_ids(restored_story.call(&"get_confirmed_facts") as Array, "事实确认不得重复。")
 
 	root.remove_child(loaded_app)
@@ -279,6 +286,13 @@ func _assert_save_rejected(save_manager: SaveManager, app: Control, message: Str
 		app.get("_game_screen") as GameScreen
 	)
 	_assert_true(not bool(result.get("ok", false)) and String(result.get("error_code", "")) == "save_blocked", message)
+
+
+func _find_broadcast_task(tasks: Array, task_id: String) -> Dictionary:
+	for raw_task: Variant in tasks:
+		if raw_task is Dictionary and String((raw_task as Dictionary).get("id", "")) == task_id:
+			return raw_task as Dictionary
+	return {}
 
 
 func _count_event_records(records: Array, event_id: String) -> int:

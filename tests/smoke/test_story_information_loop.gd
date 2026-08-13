@@ -66,10 +66,14 @@ func _test_computer_read_and_southbound_choices(validated_story: Dictionary) -> 
 	_assert_equal(bridge_engine.get_computer_entries("messages").size(), 2, "聚焦测试中的交接与警方短信必须立即解锁。")
 	_assert_true(not bridge_engine.is_statement_revealed("statement_miller_bridge_closure"), "来源已解锁不等于玩家已经读到陈述。")
 	_assert_true(not bridge_engine.is_fact_confirmed("fact_accounts_conflict"), "单一已解锁来源不得确认矛盾事实。")
-	var available_broadcasts: Array[Dictionary] = bridge_engine.get_available_broadcasts()
-	_assert_true(_contains_fact_id(available_broadcasts, "broadcast_bridge_structural_closure", "fact_bridge_closed"), "播出工作台必须保留稳定 fact_ids 关联。")
+	var bridge_task_before_read: Dictionary = _find_broadcast_task(bridge_engine.get_broadcast_tasks(), "task_broadcast_bridge_closure")
+	_assert_true(not _task_has_information(bridge_task_before_read, "info_bridge_official_closure"), "米勒短信尚未阅读时，官方封桥信息不得提前进入可选信息集合。")
+	_assert_true(not bool(bridge_task_before_read.get("prerequisites_met", true)), "信息来源已解锁不能代替 A+B 必要对话门槛。")
 	_assert_ok(bridge_engine.mark_computer_entry_read("messages", "message_01_miller"), "阅读警方短信必须成功。")
 	_assert_true(bridge_engine.is_statement_revealed("statement_miller_bridge_closure"), "阅读电脑来源后必须揭示其陈述。")
+	var bridge_task_after_read: Dictionary = _find_broadcast_task(bridge_engine.get_broadcast_tasks(), "task_broadcast_bridge_closure")
+	_assert_true(_task_has_information(bridge_task_after_read, "info_bridge_official_closure"), "阅读米勒短信后必须只增加对应官方信息项。")
+	_assert_true(not bool(bridge_task_after_read.get("prerequisites_met", true)), "收集到官方短信信息后仍不得绕过 A+B 必要对话门槛。")
 	_assert_true(not bridge_engine.is_fact_confirmed("fact_accounts_conflict"), "只读警方短信仍不足以确认冲突事实。")
 	_assert_ok(bridge_engine.advance_to_game_tick(60), "年轻司机来电必须按聚焦时间窗触发。")
 	var bridge_phone: PhoneSystem = bridge_engine._phone_system as PhoneSystem
@@ -79,6 +83,9 @@ func _test_computer_read_and_southbound_choices(validated_story: Dictionary) -> 
 	_assert_ok(bridge_engine.begin_active_call_dialogue(), "年轻司机对话必须可开始。")
 	_assert_ok(bridge_engine.select_dialogue_option("opt_southbound_confirm"), "追问北桥路线必须可提交。")
 	_assert_true(bridge_engine.is_statement_revealed("statement_southbound_bridge_claim"), "追问北桥必须揭示经过北桥的来源陈述。")
+	var bridge_task_after_southbound: Dictionary = _find_broadcast_task(bridge_engine.get_broadcast_tasks(), "task_broadcast_bridge_closure")
+	_assert_true(_task_has_information(bridge_task_after_southbound, "info_bridge_southbound_crossing"), "南向司机桥面陈述真实揭示后，必须增加对应可选信息项。")
+	_assert_true(not bool(bridge_task_after_southbound.get("prerequisites_met", true)), "只取得 C 和米勒信息仍不能替代 A+B 最低必要对话门槛。")
 	_assert_true(not bridge_engine.is_statement_revealed("statement_southbound_wagon_sighting"), "未追问车辆不得伪造车辆目击陈述。")
 	_assert_true(not bridge_engine.is_fact_confirmed("fact_accounts_conflict"), "封桥与通行主张不能错误确认事故诱因描述冲突。")
 	_assert_true(bridge_engine.is_fact_confirmed("fact_bridge_traffic_after_closure"), "必要陈述齐备后才确认封桥后通行主张。")
@@ -198,11 +205,17 @@ func _make_engine(story: Dictionary) -> StoryEngine:
 	return engine
 
 
-func _contains_fact_id(entries: Array[Dictionary], entry_id: String, fact_id: String) -> bool:
-	for entry: Dictionary in entries:
-		if String(entry.get("id", "")) != entry_id:
-			continue
-		return (entry.get("fact_ids", []) as Array).has(fact_id)
+func _find_broadcast_task(tasks: Array[Dictionary], task_id: String) -> Dictionary:
+	for task: Dictionary in tasks:
+		if String(task.get("id", "")) == task_id:
+			return task
+	return {}
+
+
+func _task_has_information(task: Dictionary, information_item_id: String) -> bool:
+	for raw_item: Variant in task.get("available_information_items", []) as Array:
+		if raw_item is Dictionary and String((raw_item as Dictionary).get("id", "")) == information_item_id:
+			return true
 	return false
 
 

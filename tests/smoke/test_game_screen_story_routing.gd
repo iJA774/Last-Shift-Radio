@@ -43,8 +43,9 @@ func _run() -> void:
 
 	var phone_closeup: Control = screen.get_node_or_null(NodePath("ViewHost/PhoneCloseup")) as Control
 	var computer_closeup: Control = screen.get_node_or_null(NodePath("ViewHost/ComputerCloseup")) as Control
-	_assert_true(phone_closeup != null and computer_closeup != null, "GameScreen 必须持有电话与电脑近景。")
-	if phone_closeup == null or computer_closeup == null:
+	var studio_overview: Control = screen.get_node_or_null(NodePath("ViewHost/StudioOverview")) as Control
+	_assert_true(phone_closeup != null and computer_closeup != null and studio_overview != null, "GameScreen 必须持有电话、电脑与工作室总览。")
+	if phone_closeup == null or computer_closeup == null or studio_overview == null:
 		_cleanup(clock, story_engine, screen)
 		_finish()
 		return
@@ -103,15 +104,37 @@ func _run() -> void:
 	_assert_true(system_message_panel != null and system_message_panel.visible, "严重错误不得被短通知旧回调自动隐藏。")
 	_assert_true(system_message != null and system_message.text.contains("需要玩家处理的错误。"), "常驻错误必须保留原有可读内容。")
 
-	_assert_ok(screen.show_view(GameScreen.VIEW_COMPUTER), "必须能进入播出工作台。")
-	computer_closeup.emit_signal(&"broadcast_requested", "broadcast_bridge_tanker_fire")
+	_assert_true(not computer_closeup.has_signal(&"broadcast_requested"), "电脑不得保留玩家发布任务意图入口。")
+	var microphone_panel: Control = studio_overview.get_node_or_null(NodePath("MicrophonePanel")) as Control
+	_assert_true(microphone_panel != null and microphone_panel.has_signal(&"broadcast_requested"), "中央麦克风必须提供发布任务意图入口。")
+	var warren_only_information: Array[String] = ["info_bridge_tanker_fire"]
+	if microphone_panel != null:
+		microphone_panel.emit_signal(&"broadcast_requested", "task_broadcast_bridge_closure", warren_only_information)
+	_assert_equal((story_engine.call(&"get_player_broadcast_records") as Array).size(), 0, "只完成 A=沃伦时，中央麦克风意图必须由 StoryEngine 因最低对话门槛不足而拒绝。")
+
+	var trucker_target_tick: int = 33 * GameClockService.GAME_TICKS_PER_MINUTE
+	var current_tick_before_trucker: int = int(clock.get_current_game_tick())
+	_assert_true(current_tick_before_trucker <= trucker_target_tick, "UI 短通知验收不得在触发 B 前越过 01:33。")
+	if current_tick_before_trucker < trucker_target_tick:
+		_assert_true(clock.advance_ticks_for_verification(trucker_target_tick - current_tick_before_trucker), "时钟必须推进到 01:33 的 B=卡车司机窗口。")
+	_assert_equal(String(phone.call(&"get_active_event_id")), "call_06_trucker", "跨过非必要窗口后必须真实触发 B=卡车司机。")
+	phone_closeup.emit_signal(&"answer_requested")
+	_assert_equal(phone.call(&"get_state_name"), "DIALOGUE_CHOICE", "B 接听后必须进入权威预制对话。")
+	phone_closeup.emit_signal(&"dialogue_option_requested", "opt_trucker_closure")
+	phone_closeup.emit_signal(&"dialogue_option_requested", "opt_trucker_follow_wait")
+	_assert_equal(phone.call(&"get_state_name"), "CONNECTED", "B 终止对白后必须恢复已接通状态。")
+	phone_closeup.emit_signal(&"finish_call_requested")
+	var selected_bridge_information: Array[String] = ["info_bridge_tanker_fire", "info_bridge_east_queue"]
+	if microphone_panel != null:
+		microphone_panel.emit_signal(&"broadcast_requested", "task_broadcast_bridge_closure", selected_bridge_information)
 	var player_records: Array = story_engine.call(&"get_player_broadcast_records") as Array
-	_assert_equal(player_records.size(), 1, "电脑广播意图必须只生成一条权威玩家播出记录。")
-	computer_closeup.emit_signal(&"broadcast_requested", "broadcast_bridge_tanker_fire")
+	_assert_equal(player_records.size(), 1, "A+B 后中央麦克风双参数任务意图必须只生成一条权威玩家发布记录。")
+	if microphone_panel != null:
+		microphone_panel.emit_signal(&"broadcast_requested", "task_broadcast_bridge_closure", selected_bridge_information)
 	_assert_equal(
 		(story_engine.call(&"get_player_broadcast_records") as Array).size(),
 		1,
-		"重复广播意图必须由 StoryEngine 拒绝，不能重复记录。"
+		"重复发布同一任务必须由 StoryEngine 拒绝，不能重复记录。"
 	)
 
 	_cleanup(clock, story_engine, screen)
@@ -160,7 +183,7 @@ func _finish() -> void:
 		print("[测试][GameScreenStoryRouting] 失败。")
 		quit(1)
 		return
-	print("[测试][GameScreenStoryRouting] 通过：对话、终止锁定和玩家广播均经 GameScreen 路由。")
+	print("[测试][GameScreenStoryRouting] 通过：对话、终止锁定和中央麦克风公告均经 GameScreen 路由。")
 	quit(0)
 
 

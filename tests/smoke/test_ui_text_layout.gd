@@ -106,6 +106,16 @@ func _test_static_studio_views() -> void:
 		if view == null:
 			continue
 		root.add_child(view)
+		if view.name == &"StudioOverview":
+			await _wait_frames(4)
+			var microphone_hotspot: Button = view.get_node_or_null(NodePath("MicrophoneHotspot")) as Button
+			var microphone_panel: Control = view.get_node_or_null(NodePath("MicrophonePanel")) as Control
+			_assert_true(microphone_hotspot != null and microphone_panel != null, "工作室总览必须提供中央麦克风热点和公告面板。")
+			if microphone_hotspot != null and microphone_panel != null:
+				microphone_hotspot.emit_signal(&"pressed")
+				await _wait_frames(4)
+				_assert_true(microphone_panel.visible, "中央麦克风公告面板必须能打开。")
+				_assert_layout(microphone_panel, "中央麦克风公告面板")
 		if view.name == &"ComputerCloseup":
 			await _wait_frames(4)
 			_assert_computer_terminal_structure(view)
@@ -126,7 +136,7 @@ func _assert_computer_terminal_structure(computer: Control) -> void:
 	var content_scroll: ScrollContainer = information_view.find_child("ContentScroll", true, false) as ScrollContainer
 	_assert_true(terminal_layout != null and tab_bar != null and content_scroll != null, "电脑终端必须提供状态、页签与可滚动内容层级。")
 	if tab_bar != null:
-		_assert_true(tab_bar.get_child_count() == 5, "电脑终端必须恰好显示五个固定页签。")
+		_assert_true(tab_bar.get_child_count() == 4, "电脑终端必须恰好显示清单、新闻、短信和来电四个固定页签。")
 
 
 func _test_application_pages() -> void:
