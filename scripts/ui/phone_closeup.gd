@@ -16,6 +16,7 @@ var _dialogue_snapshot: Dictionary = {}
 var _is_phone_connected: bool = false
 var _is_story_connected: bool = false
 var _are_actions_enabled: bool = true
+var _actions_disabled_reason: String = ""
 var _is_return_enabled: bool = true
 var _is_motion_enabled: bool = true
 var _indicator_timer: Timer = null
@@ -30,6 +31,7 @@ const DIALOGUE_CHARACTERS_PER_SECOND: float = 34.0
 @onready var _caller_label: Label = %CallerLabel
 @onready var _dialogue_hint_label: Label = %DialogueHintLabel
 @onready var _dialogue_options: HFlowContainer = %DialogueOptions
+@onready var _action_availability_label: Label = %ActionAvailabilityLabel
 @onready var _answer_button: Button = %AnswerButton
 @onready var _dialogue_choice_button: Button = %DialogueChoiceButton
 @onready var _hang_up_button: Button = %HangUpButton
@@ -86,6 +88,7 @@ func set_actions_enabled(is_enabled: bool, disabled_reason: String = "") -> Dict
 	if not is_enabled and disabled_reason.strip_edges().is_empty():
 		return _make_error("禁用电话操作时必须提供中文原因。")
 	_are_actions_enabled = is_enabled
+	_actions_disabled_reason = "" if is_enabled else disabled_reason.strip_edges()
 	_refresh()
 	return {"ok": true}
 
@@ -263,14 +266,11 @@ func _refresh_caller_snapshot() -> void:
 		return
 	var caller_name: Variant = snapshot.get("caller_name")
 	var caller_number: Variant = snapshot.get("caller_number")
-	var event_id: Variant = snapshot.get("event_id")
-	if not caller_name is String or not caller_number is String or not event_id is String:
+	if not caller_name is String or not caller_number is String:
 		_caller_label.text = "来显：活动线路数据不完整。"
 		push_error("[电话][invalid_snapshot_fields] 活动线路快照缺少字符串来显字段。")
 		return
-	_caller_label.text = "来显：%s\n号码：%s\n线路编号：%s" % [
-		String(caller_name), String(caller_number), String(event_id),
-	]
+	_caller_label.text = "登记名：%s\n号码：%s" % [String(caller_name), String(caller_number)]
 
 
 func _refresh_dialogue_hint(state_name: String) -> void:
@@ -350,9 +350,11 @@ func _refresh_dialogue_options(state_name: String) -> void:
 		var button: Button = Button.new()
 		button.text = option_text
 		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		button.custom_minimum_size = Vector2(260.0, 70.0)
+		# 两列布局为 125% 字号保留足够行宽；更多选项由既有滚动区承载。
+		button.custom_minimum_size = Vector2(740.0, 94.0)
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		button.disabled = not _are_actions_enabled
-		button.tooltip_text = "不可用：当前界面已由系统锁定。" if button.disabled else "选择此回应。"
+		button.tooltip_text = _disabled_tooltip(_actions_disabled_reason) if button.disabled else "选择此回应。"
 		button.pressed.connect(_on_dialogue_option_button_pressed.bind(option_id))
 		_dialogue_options.add_child(button)
 
@@ -372,6 +374,25 @@ func _set_action_availability(state_name: String, allow_actions: bool) -> void:
 	_hang_up_button.tooltip_text = _action_tooltip(_hang_up_button.disabled, "仅在已接通或对话选择时可主动挂断。")
 	_finish_button.disabled = not allow_actions or state_name != "CONNECTED"
 	_finish_button.tooltip_text = _action_tooltip(_finish_button.disabled, "仅在已接通时可以正常结束通话。")
+	_refresh_action_availability_hint(state_name, allow_actions, has_completed_dialogue)
+
+
+func _refresh_action_availability_hint(state_name: String, allow_actions: bool, has_completed_dialogue: bool) -> void:
+	if not allow_actions and not _are_actions_enabled:
+		_action_availability_label.text = "操作已锁定：%s" % _actions_disabled_reason
+		return
+	if has_completed_dialogue:
+		_action_availability_label.text = "操作提示：本通对话已结束，请结束通话或主动挂断。"
+		return
+	match state_name:
+		"RINGING":
+			_action_availability_label.text = "操作提示：尚未接通；对话、挂断与结束通话暂不可用。"
+		"CONNECTED":
+			_action_availability_label.text = "操作提示：线路已接通；接听暂不可用。"
+		"DIALOGUE_CHOICE":
+			_action_availability_label.text = "操作提示：正在等待回应；其余线路操作暂不可用。"
+		_:
+			_action_availability_label.text = "操作提示：当前没有活动线路，电话操作暂不可用。"
 
 
 func _refresh_return_button(disabled_reason: String = "") -> void:
@@ -453,9 +474,16 @@ func _set_indicator_lit(is_lit: bool) -> void:
 func _action_tooltip(is_disabled: bool, enabled_text: String) -> String:
 	if is_disabled:
 		if not _are_actions_enabled:
-			return "不可用：当前界面已由系统锁定。"
+			return _disabled_tooltip(_actions_disabled_reason)
 		return "不可用：%s" % enabled_text
 	return enabled_text
+
+
+func _disabled_tooltip(reason: String) -> String:
+	var normalized_reason: String = reason.strip_edges()
+	if normalized_reason.is_empty():
+		normalized_reason = "当前界面已由系统锁定。"
+	return "不可用：%s" % normalized_reason
 
 
 func _format_state(state_name: String) -> String:

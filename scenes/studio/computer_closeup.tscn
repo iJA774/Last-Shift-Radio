@@ -4,23 +4,29 @@
 [ext_resource type="Texture2D" path="res://art/concept/style_baseline_v1/computer_closeup.png" id="2_background"]
 [ext_resource type="Script" path="res://scripts/ui/computer_information_view.gd" id="3_call_log"]
 [ext_resource type="PackedScene" path="res://scenes/ui/fx/ambient_fx.tscn" id="4_ambient_fx"]
-[ext_resource type="Theme" path="res://resources/app_ui_theme.tres" id="5_theme"]
+[ext_resource type="Theme" path="res://resources/legacy_game_ui_theme.tres" id="5_theme"]
 
 [sub_resource type="StyleBoxFlat" id="StyleTerminalSurface"]
 bg_color = Color(0.025, 0.085, 0.067, 0.91)
-border_width_left = 5
-border_width_top = 5
-border_width_right = 5
-border_width_bottom = 5
-border_color = Color(0.42, 0.58, 0.47, 0.92)
-corner_radius_top_left = 8
-corner_radius_top_right = 8
-corner_radius_bottom_right = 8
-corner_radius_bottom_left = 8
-content_margin_left = 8.0
-content_margin_top = 8.0
-content_margin_right = 8.0
-content_margin_bottom = 8.0
+border_width_left = 3
+border_width_top = 3
+border_width_right = 3
+border_width_bottom = 3
+border_color = Color(0.31, 0.43, 0.36, 0.96)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
+content_margin_left = 10.0
+content_margin_top = 10.0
+content_margin_right = 10.0
+content_margin_bottom = 10.0
+
+[sub_resource type="StyleBoxEmpty" id="StyleInformationView"]
+content_margin_left = 0.0
+content_margin_top = 0.0
+content_margin_right = 0.0
+content_margin_bottom = 0.0
 
 [node name="ComputerCloseup" type="Control"]
 layout_mode = 3
@@ -52,7 +58,7 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
-color = Color(0.0, 0.02, 0.01, 0.16)
+color = Color(0.0, 0.018, 0.012, 0.24)
 
 [node name="AmbientFx" parent="." instance=ExtResource("4_ambient_fx")]
 layout_mode = 1
@@ -60,43 +66,43 @@ layout_mode = 1
 [node name="TerminalLabel" type="Label" parent="."]
 layout_mode = 0
 offset_left = 514.0
-offset_top = 126.0
+offset_top = 116.0
 offset_right = 1418.0
-offset_bottom = 169.0
-theme_override_colors/font_color = Color(0.76, 0.91, 0.74, 1)
+offset_bottom = 160.0
+theme_override_colors/font_color = Color(0.71, 0.83, 0.69, 1)
 theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
 theme_override_constants/shadow_offset_x = 1
 theme_override_constants/shadow_offset_y = 1
-theme_override_font_sizes/font_size = 21
-text = "WMLH 新闻室终端／信息核实与播出"
+theme_override_font_sizes/font_size = 20
+text = "WMLH 780 AM  ·  夜间新闻资料终端"
 horizontal_alignment = 1
 
 [node name="TerminalSurface" type="PanelContainer" parent="."]
 layout_mode = 0
-offset_left = 438.0
-offset_top = 180.0
-offset_right = 1482.0
-offset_bottom = 794.0
+offset_left = 424.0
+offset_top = 160.0
+offset_right = 1496.0
+offset_bottom = 824.0
 theme_override_styles/panel = SubResource("StyleTerminalSurface")
 clip_contents = true
 
 [node name="ScreenGlow" type="ColorRect" parent="."]
 unique_name_in_owner = true
 layout_mode = 0
-offset_left = 454.0
-offset_top = 194.0
-offset_right = 1466.0
-offset_bottom = 780.0
+offset_left = 438.0
+offset_top = 174.0
+offset_right = 1482.0
+offset_bottom = 810.0
 mouse_filter = 2
 color = Color(0.16, 0.82, 0.48, 0.045)
 
 [node name="ScreenCursor" type="Label" parent="."]
 unique_name_in_owner = true
 layout_mode = 0
-offset_left = 1417.0
-offset_top = 734.0
-offset_right = 1455.0
-offset_bottom = 772.0
+offset_left = 1440.0
+offset_top = 770.0
+offset_right = 1474.0
+offset_bottom = 802.0
 mouse_filter = 2
 theme_override_colors/font_color = Color(0.62, 0.92, 0.68, 0.90)
 theme_override_font_sizes/font_size = 22
@@ -107,19 +113,20 @@ vertical_alignment = 1
 [node name="InformationView" type="PanelContainer" parent="TerminalSurface"]
 unique_name_in_owner = true
 layout_mode = 2
+theme_override_styles/panel = SubResource("StyleInformationView")
 script = ExtResource("3_call_log")
 
 [node name="BackButton" type="Button" parent="."]
 unique_name_in_owner = true
 layout_mode = 0
-offset_left = 1588.0
-offset_top = 120.0
-offset_right = 1872.0
-offset_bottom = 220.0
+offset_left = 1510.0
+offset_top = 126.0
+offset_right = 1868.0
+offset_bottom = 218.0
 theme_override_colors/font_color = Color(0.95, 0.93, 0.81, 1)
-theme_override_font_sizes/font_size = 20
+theme_override_font_sizes/font_size = 18
 text = "返回工作室总览"
 tooltip_text = "返回工作室总览。"
-autowrap_mode = 2
+autowrap_mode = 0
 
 [connection signal="pressed" from="BackButton" to="." method="_on_back_button_pressed"]

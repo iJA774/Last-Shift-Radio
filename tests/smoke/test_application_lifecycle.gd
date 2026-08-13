@@ -102,8 +102,8 @@ func _run() -> void:
 	if ending != null:
 		var ending_load: Button = ending.get_node_or_null(NodePath("Content/EndingPanel/Margin/Layout/LoadGameButton")) as Button
 		var ending_reason: Label = ending.get_node_or_null(NodePath("Content/EndingPanel/Margin/Layout/LoadDisabledReason")) as Label
-		_assert_true(ending_load != null and ending_load.disabled, "结束页读取存档必须禁用。")
-		_assert_true(ending_reason != null and ending_reason.visible and ending_reason.text.contains("存档系统尚未建立"), "结束页必须直接显示存档禁用原因。")
+		_assert_true(ending_load != null and not ending_load.disabled, "结束页必须允许进入已有的三槽读取页。")
+		_assert_true(ending_reason != null and not ending_reason.visible, "读取功能可用时不得残留过时的禁用原因。")
 
 	app.call(&"restart_shift")
 	await process_frame

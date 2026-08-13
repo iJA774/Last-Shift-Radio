@@ -3,8 +3,8 @@
 [ext_resource type="Script" uid="uid://b23nushu70u2h" path="res://scripts/ui/global_status.gd" id="1_script"]
 [ext_resource type="Texture2D" uid="uid://dknataj56qfti" path="res://UI美术/时间框.png" id="2_time_frame"]
 [ext_resource type="Texture2D" uid="uid://d0qvk7630aj8m" path="res://UI美术/电话铃响.png" id="3_ringing_panel"]
-[ext_resource type="Texture2D" path="res://UI美术/电话铃响（灭）.png" id="5_ringing_panel_dim"]
 [ext_resource type="Texture2D" uid="uid://b6k2vfsnvfrbv" path="res://UI美术/时间UI.png" id="4_time_digits"]
+[ext_resource type="Texture2D" uid="uid://cpg81mk860f08" path="res://UI美术/电话铃响（灭）.png" id="5_ringing_panel_dim"]
 
 [sub_resource type="AtlasTexture" id="AtlasTimeFrame"]
 atlas = ExtResource("2_time_frame")
@@ -71,10 +71,6 @@ layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -660.0
-offset_top = 17.0
-offset_right = -660.0
-offset_bottom = 17.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
@@ -82,10 +78,10 @@ script = ExtResource("1_script")
 
 [node name="TimeFrame" type="TextureRect" parent="." unique_id=338582456]
 layout_mode = 0
-offset_left = 704.0
-offset_top = 18.0
-offset_right = 1214.0
-offset_bottom = 194.0
+offset_left = 20.0
+offset_top = 33.0
+offset_right = 440.0
+offset_bottom = 178.0
 mouse_filter = 2
 texture = SubResource("AtlasTimeFrame")
 expand_mode = 1
@@ -102,25 +98,26 @@ mouse_filter = 2
 
 [node name="TimeTitle" type="Label" parent="Content" unique_id=723927606]
 layout_mode = 0
-offset_left = 868.0
-offset_top = 40.0
-offset_right = 1145.0
-offset_bottom = 81.0
+offset_left = 155.0
+offset_top = 51.0
+offset_right = 383.0
+offset_bottom = 85.0
 theme_override_colors/font_color = Color(0.98, 0.82, 0.45, 1)
 theme_override_colors/font_shadow_color = Color(0.02, 0.01, 0, 1)
 theme_override_constants/shadow_offset_x = 2
 theme_override_constants/shadow_offset_y = 2
-theme_override_font_sizes/font_size = 16
+theme_override_font_sizes/font_size = 14
 text = "1999年12月31日"
 horizontal_alignment = 1
 vertical_alignment = 1
 
 [node name="ClockDigits" type="Control" parent="Content" unique_id=1623642326]
 anchors_preset = 0
-offset_left = 790.0
-offset_top = 87.0
-offset_right = 1131.0
-offset_bottom = 156.0
+offset_left = 91.0
+offset_top = 91.0
+offset_right = 432.0
+offset_bottom = 160.0
+scale = Vector2(0.82, 0.82)
 mouse_filter = 2
 
 [node name="HourTens" type="TextureRect" parent="Content/ClockDigits" unique_id=362444089]
@@ -243,30 +240,28 @@ texture = SubResource("AtlasPm")
 
 [node name="RingingIndicator" type="Control" parent="Content" unique_id=1832384347]
 anchors_preset = 0
-offset_left = 1080.0
-offset_top = 216.0
-offset_right = 1570.0
-offset_bottom = 376.0
+offset_left = 48.0
+offset_top = 198.0
+offset_right = 398.0
+offset_bottom = 288.0
 mouse_filter = 2
 
 [node name="RingingIcon" type="TextureRect" parent="Content/RingingIndicator" unique_id=1142429799]
 layout_mode = 0
-offset_left = -368.0
-offset_top = 677.0
-offset_right = 122.0
-offset_bottom = 803.0
+offset_left = -20.0
+offset_top = 21.0
+offset_right = 330.0
+offset_bottom = 111.0
 mouse_filter = 2
 texture = SubResource("AtlasRingingPanel")
 expand_mode = 1
 stretch_mode = 6
 
-[node name="RingingDimTexture" type="TextureRect" parent="Content/RingingIndicator"]
+[node name="RingingDimTexture" type="TextureRect" parent="Content/RingingIndicator" unique_id=1599922354]
 visible = false
 layout_mode = 0
 mouse_filter = 2
 texture = SubResource("AtlasRingingPanelDim")
 
-[node name="RingingBlinkTimer" type="Timer" parent="."]
+[node name="RingingBlinkTimer" type="Timer" parent="." unique_id=2105840292]
 process_callback = 0
-wait_time = 1.0
-one_shot = false

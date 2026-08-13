@@ -41,6 +41,13 @@ const CATEGORY_TAB_TITLES: Dictionary[String, String] = {
 	CATEGORY_CALL_LOG: "来电",
 	CATEGORY_BROADCAST: "播出",
 }
+const COLOR_TEXT_PRIMARY: Color = Color("b7cdb4")
+const COLOR_TEXT_MUTED: Color = Color("809785")
+const COLOR_TEXT_BRIGHT: Color = Color("d2dfc8")
+const COLOR_SCREEN_PANEL: Color = Color("10251f")
+const COLOR_SCREEN_PANEL_ACTIVE: Color = Color("18342b")
+const COLOR_SCREEN_BORDER: Color = Color("405c4c")
+const COLOR_SCREEN_BORDER_ACTIVE: Color = Color("789276")
 
 var _phone_system: RefCounted = null
 var _story_engine: RefCounted = null
@@ -125,7 +132,7 @@ func show_broadcast_feedback(result: Dictionary) -> Dictionary:
 	if bool(result["ok"]):
 		var record_value: Variant = result.get("record", {})
 		if record_value is Dictionary and (record_value as Dictionary).has("broadcast_id"):
-			_feedback_text = "播出已发送：%s" % String((record_value as Dictionary)["broadcast_id"])
+			_feedback_text = "预制稿件已发送，播出记录已归档。"
 		else:
 			_feedback_text = "播出已发送。"
 	else:
@@ -188,35 +195,48 @@ func _exit_tree() -> void:
 
 func _build_interface() -> void:
 	var layout: VBoxContainer = VBoxContainer.new()
-	layout.add_theme_constant_override("separation", 8)
+	layout.name = "TerminalLayout"
+	layout.add_theme_constant_override("separation", 7)
 	layout.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	layout.offset_left = 20.0
-	layout.offset_top = 16.0
-	layout.offset_right = -20.0
-	layout.offset_bottom = -16.0
+	layout.offset_left = 16.0
+	layout.offset_top = 14.0
+	layout.offset_right = -16.0
+	layout.offset_bottom = -14.0
 	add_child(layout)
 
-	var title: Label = Label.new()
-	title.text = "WMLH 终端 / 信息核实与播出"
-	title.add_theme_font_size_override("font_size", 27)
-	title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	layout.add_child(title)
-
+	var status_bar: HBoxContainer = HBoxContainer.new()
+	status_bar.name = "StatusBar"
+	status_bar.add_theme_constant_override("separation", 12)
+	layout.add_child(status_bar)
+	var terminal_status: Label = _make_terminal_label("本地资料库：在线　｜　外部网络：未连接", 15, COLOR_TEXT_MUTED)
+	terminal_status.name = "TerminalStatusLabel"
+	terminal_status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	status_bar.add_child(terminal_status)
+	_summary_label.name = "SummaryLabel"
+	_summary_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_summary_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_summary_label.add_theme_font_size_override("font_size", 16)
-	layout.add_child(_summary_label)
+	_summary_label.add_theme_font_size_override("font_size", 15)
+	_summary_label.add_theme_color_override("font_color", COLOR_TEXT_PRIMARY)
+	_summary_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	status_bar.add_child(_summary_label)
 
+	var top_rule: HSeparator = HSeparator.new()
+	top_rule.modulate = COLOR_SCREEN_BORDER
+	layout.add_child(top_rule)
+
+	_tab_bar.name = "TabBar"
 	_tab_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_tab_bar.add_theme_constant_override("separation", 5)
+	_tab_bar.add_theme_constant_override("separation", 4)
 	layout.add_child(_tab_bar)
 	for category: String in PAGE_CATEGORIES:
 		var button: Button = Button.new()
 		button.name = "%sTab" % category.capitalize()
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		button.custom_minimum_size = Vector2(130.0, 58.0)
-		# 主题按钮的横向内边距服务于底图九宫格，会压窄 Button 自身的文字区域。
-		# 因此文字由鼠标穿透的子标签承载，按钮仍是唯一的点击、悬停与禁用控件。
+		button.custom_minimum_size = Vector2(0.0, 54.0)
+		button.toggle_mode = true
+		button.focus_mode = Control.FOCUS_ALL
 		button.text = ""
+		_style_terminal_button(button)
 		button.pressed.connect(_on_tab_pressed.bind(category))
 		_tab_buttons[category] = button
 		_tab_bar.add_child(button)
@@ -227,24 +247,37 @@ func _build_interface() -> void:
 		tab_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		tab_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		tab_label.autowrap_mode = TextServer.AUTOWRAP_OFF
-		tab_label.add_theme_font_size_override("font_size", 18)
+		tab_label.add_theme_font_size_override("font_size", 16)
+		tab_label.add_theme_color_override("font_color", COLOR_TEXT_PRIMARY)
 		button.add_child(tab_label)
 		_tab_labels[category] = tab_label
 
-	_page_title_label.add_theme_font_size_override("font_size", 22)
+	var page_header: HBoxContainer = HBoxContainer.new()
+	page_header.name = "PageHeader"
+	page_header.add_theme_constant_override("separation", 14)
+	layout.add_child(page_header)
+	_page_title_label.name = "PageTitleLabel"
+	_page_title_label.add_theme_font_size_override("font_size", 21)
+	_page_title_label.add_theme_color_override("font_color", COLOR_TEXT_BRIGHT)
 	_page_title_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	layout.add_child(_page_title_label)
-
-	_notice_label.add_theme_font_size_override("font_size", 16)
+	_page_title_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	page_header.add_child(_page_title_label)
+	_notice_label.name = "NoticeLabel"
+	_notice_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_notice_label.add_theme_font_size_override("font_size", 14)
+	_notice_label.add_theme_color_override("font_color", COLOR_TEXT_MUTED)
 	_notice_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	layout.add_child(_notice_label)
+	_notice_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	page_header.add_child(_notice_label)
 
 	var scroll: ScrollContainer = ScrollContainer.new()
+	scroll.name = "ContentScroll"
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	layout.add_child(scroll)
+	_content_box.name = "ContentBox"
 	_content_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_content_box.add_theme_constant_override("separation", 8)
+	_content_box.add_theme_constant_override("separation", 7)
 	scroll.add_child(_content_box)
 
 
@@ -387,11 +420,12 @@ func _refresh_tab_labels() -> void:
 			continue
 		var title: String = String(CATEGORY_TAB_TITLES.get(category, category))
 		if INFORMATION_CATEGORIES.has(category):
-			tab_label.text = "%s\n未读 %d" % [title, _get_unread_count(category)]
+			tab_label.text = "%s　[未读 %d]" % [title, _get_unread_count(category)]
 		else:
 			tab_label.text = title
 		button.disabled = _is_ending_locked and category != CATEGORY_BROADCAST
-		tab_label.modulate = Color(0.58, 0.56, 0.49, 0.92) if button.disabled else Color.WHITE
+		button.button_pressed = category == _active_category
+		tab_label.modulate = Color(0.48, 0.56, 0.49, 0.92) if button.disabled else Color.WHITE
 		if button.disabled:
 			button.tooltip_text = "不可用：02:00 强制收束中，只能查看播出记录。"
 		else:
@@ -403,19 +437,19 @@ func _refresh_summary() -> void:
 	for category: String in INFORMATION_CATEGORIES:
 		unread_total += _get_unread_count(category)
 	if _is_ending_locked:
-		_summary_label.text = "02:00 已锁定：未授权播出记录正在保留，返回与其他终端操作不可用。"
+		_summary_label.text = "02:00 收束锁定　｜　仅播出记录可读"
 		return
-	_summary_label.text = "信息终端：共 %d 条未读。新信息只更新计数，不会自动切换页面。" % unread_total
+	_summary_label.text = "未读合计：%d　｜　资料自动刷新" % unread_total
 
 
 func _refresh_notice() -> void:
 	if _is_ending_locked:
-		_notice_label.text = "02:00 强制收束：已切换到播出页，所有其他页签和发送操作均已锁定。"
+		_notice_label.text = "02:00 强制收束：其他操作已锁定"
 		return
 	if not _feedback_text.is_empty() and _active_category == CATEGORY_BROADCAST:
 		_notice_label.text = _feedback_text
 		return
-	_notice_label.text = "打开条目后才会标记为已读；未读数以文字显示。"
+	_notice_label.text = "查看详情后标记为已读"
 
 
 func _refresh_information_page(category: String) -> void:
@@ -427,6 +461,15 @@ func _refresh_information_page(category: String) -> void:
 		_content_box.add_child(_make_text_card("暂无已解锁%s。" % String(CATEGORY_TITLES[category])))
 		return
 	var opened_entry_id: String = _opened_entry_ids_by_category.get(category, "")
+	var opened_entry: Dictionary = {}
+	for raw_entry: Variant in entries:
+		if raw_entry is Dictionary and String((raw_entry as Dictionary).get("id", "")) == opened_entry_id:
+			opened_entry = raw_entry as Dictionary
+			break
+	if not opened_entry.is_empty():
+		_content_box.add_child(_make_section_title("当前详情"))
+		_content_box.add_child(_make_information_detail_card(category, opened_entry))
+	_content_box.add_child(_make_section_title("条目列表"))
 	for raw_entry: Variant in entries:
 		if not raw_entry is Dictionary:
 			_content_box.add_child(_make_text_card("条目数据损坏，无法展示。"))
@@ -474,29 +517,51 @@ func _refresh_broadcast_history() -> void:
 func _make_information_entry_card(category: String, entry: Dictionary, is_open: bool) -> Control:
 	var entry_id: String = String(entry.get("id", ""))
 	if entry_id.strip_edges().is_empty():
-		return _make_text_card("条目数据损坏：缺少稳定 ID。")
+		return _make_text_card("条目资料不完整，无法显示。")
 	var title: String = _get_entry_title(category, entry)
 	var header: String = _get_entry_header(category, entry)
 	var is_read: bool = bool(entry.get("read", false))
-	var state_text: String = "已读" if is_read else "未读（打开后标记）"
+	var state_text: String = "已读" if is_read else "未读"
 	var card: VBoxContainer = VBoxContainer.new()
 	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	card.add_theme_constant_override("separation", 5)
-	card.add_child(_make_wrapped_label("%s\n%s\n状态：%s" % [header, title, state_text]))
+	card.add_theme_constant_override("separation", 4)
+	var title_label: Label = _make_wrapped_label("%s　｜　%s" % [state_text, title])
+	title_label.add_theme_color_override("font_color", COLOR_TEXT_BRIGHT if is_open else COLOR_TEXT_PRIMARY)
+	card.add_child(title_label)
+	var metadata_label: Label = _make_wrapped_label(header)
+	metadata_label.add_theme_color_override("font_color", COLOR_TEXT_MUTED)
+	card.add_child(metadata_label)
 	if is_open:
-		var body: String = _get_entry_body(category, entry)
-		card.add_child(_make_wrapped_label(body if not body.is_empty() else "该条目没有可显示正文。"))
+		var current_label: Label = _make_terminal_label("当前已打开", 14, COLOR_TEXT_MUTED)
+		card.add_child(current_label)
 	else:
 		var open_button: Button = Button.new()
-		open_button.text = "打开并标记已读"
-		open_button.custom_minimum_size = Vector2(0.0, 48.0)
-		open_button.tooltip_text = "打开此条%s；内容将由 StoryEngine 标记为已读。" % String(CATEGORY_TITLES[category])
+		open_button.text = "查看详情"
+		open_button.custom_minimum_size = Vector2(0.0, 42.0)
+		open_button.tooltip_text = "查看此条%s；打开后标记为已读。" % String(CATEGORY_TITLES[category])
 		open_button.disabled = _is_ending_locked
 		if open_button.disabled:
 			open_button.tooltip_text = "不可用：02:00 强制收束中。"
+		_style_terminal_button(open_button)
 		open_button.pressed.connect(_on_entry_open_pressed.bind(category, entry_id))
 		card.add_child(open_button)
-	return _wrap_control_in_card(card)
+	return _wrap_control_in_card(card, is_open)
+
+
+func _make_information_detail_card(category: String, entry: Dictionary) -> Control:
+	var detail: VBoxContainer = VBoxContainer.new()
+	detail.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	detail.add_theme_constant_override("separation", 7)
+	var title: Label = _make_wrapped_label(_get_entry_title(category, entry))
+	title.add_theme_font_size_override("font_size", 20)
+	title.add_theme_color_override("font_color", COLOR_TEXT_BRIGHT)
+	detail.add_child(title)
+	var metadata: Label = _make_wrapped_label(_get_entry_header(category, entry))
+	metadata.add_theme_color_override("font_color", COLOR_TEXT_MUTED)
+	detail.add_child(metadata)
+	var body: String = _get_entry_body(category, entry)
+	detail.add_child(_make_wrapped_label(body if not body.is_empty() else "该条目没有可显示正文。"))
+	return _wrap_control_in_card(detail, true)
 
 
 func _get_entry_title(category: String, entry: Dictionary) -> String:
@@ -515,12 +580,12 @@ func _get_entry_header(category: String, entry: Dictionary) -> String:
 		var duration_value: Variant = entry.get("duration_ticks", -1)
 		if typeof(time_value) != TYPE_INT or typeof(duration_value) != TYPE_INT:
 			return "来电记录时间或时长无效"
-		return "%s　%s　时长：%d tick" % [
+		return "%s　｜　%s　｜　通话时长：%s" % [
 			_format_game_time(int(time_value)),
 			_format_outcome(String(entry.get("outcome", ""))),
-			int(duration_value),
+			_format_duration(int(duration_value)),
 		]
-	var source: String = String(entry.get("sender", entry.get("source", "终端记录")))
+	var source: String = String(entry.get("sender", entry.get("source", "内部值班台")))
 	return "来源：%s" % source
 
 
@@ -529,10 +594,7 @@ func _get_entry_body(category: String, entry: Dictionary) -> String:
 		# 来电记录不保存逐字稿。只展示 StoryEngine 已确认揭示、且与本通来源匹配的
 		# 陈述正文；即使装饰条目意外携带未知 ID，也不会让 UI 泄露未揭示内容。
 		var summary_bodies: PackedStringArray = _get_revealed_call_summary_bodies(entry)
-		var header: String = "事件：%s\n状态：%s\n本通已记录摘要：" % [
-			String(entry.get("event_id", entry.get("source_id", "未知事件"))),
-			_format_outcome(String(entry.get("outcome", ""))),
-		]
+		var header: String = "通话结果：%s\n本通已记录摘要：" % _format_outcome(String(entry.get("outcome", "")))
 		if summary_bodies.is_empty():
 			return "%s\n未记录可核对线索。\n本记录不包含通话逐字稿。" % header
 		var summary_lines: PackedStringArray = PackedStringArray()
@@ -580,15 +642,18 @@ func _make_broadcast_draft_card(draft: Dictionary) -> Control:
 		return _make_text_card("广播稿数据损坏：缺少必要字段。")
 	var card: VBoxContainer = VBoxContainer.new()
 	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	card.add_theme_constant_override("separation", 5)
-	card.add_child(_make_wrapped_label("来源：%s\n%s" % [String(draft["source"]), String(draft["body"])]))
+	card.add_theme_constant_override("separation", 6)
+	var source_label: Label = _make_terminal_label("稿件来源：%s" % String(draft["source"]), 15, COLOR_TEXT_MUTED)
+	card.add_child(source_label)
+	card.add_child(_make_wrapped_label(String(draft["body"])))
 	var button: Button = Button.new()
-	button.text = "发送预制稿件\n%s" % String(draft["id"])
+	button.text = "发送此预制稿件"
 	button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	button.custom_minimum_size = Vector2(0.0, 58.0)
+	button.custom_minimum_size = Vector2(0.0, 46.0)
 	button.disabled = not bool(draft["is_available_to_send"]) or _is_ending_locked
 	var disabled_reason: String = "02:00 强制收束中，不能发送玩家广播。" if _is_ending_locked else String(draft.get("disabled_reason", ""))
 	button.tooltip_text = "不可用：%s" % disabled_reason if button.disabled else "向外播出这条预制稿件。"
+	_style_terminal_button(button)
 	button.pressed.connect(_on_broadcast_button_pressed.bind(String(draft["id"])))
 	card.add_child(button)
 	if button.disabled:
@@ -603,25 +668,18 @@ func _make_broadcast_record_card(record: Dictionary, is_unauthorized: bool) -> C
 		return _make_text_card("播出记录损坏：缺少必要字段。")
 	var tick_value: Variant = record.get("sent_at_tick", record.get("time_tick", -1))
 	if typeof(tick_value) != TYPE_INT:
-		return _make_text_card("播出记录损坏：发送时间不是整数 tick。")
+		return _make_text_card("播出记录损坏：发送时间无法识别。")
 	var heading: String = "未授权播出记录" if is_unauthorized else "玩家播出记录"
-	var extra: String = ""
-	if is_unauthorized and record.has("fact_id"):
-		extra = "\n事实 ID：%s" % String(record["fact_id"])
-	return _make_text_card("%s\n时间：%s　来源：%s\n%s\n记录 ID：%s%s" % [
+	return _make_text_card("%s\n播出时间：%s　｜　来源：%s\n%s" % [
 		heading,
 		_format_game_time(int(tick_value)),
 		String(record["source"]),
 		String(record["body"]),
-		String(record["broadcast_id"]),
-		extra,
 	])
 
 
 func _make_section_title(text_value: String) -> Label:
-	var label: Label = Label.new()
-	label.text = text_value
-	label.add_theme_font_size_override("font_size", 20)
+	var label: Label = _make_terminal_label(text_value, 17, COLOR_TEXT_BRIGHT)
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	return label
 
@@ -630,14 +688,15 @@ func _make_text_card(text_value: String) -> Control:
 	return _wrap_control_in_card(_make_wrapped_label(text_value))
 
 
-func _wrap_control_in_card(content: Control) -> PanelContainer:
+func _wrap_control_in_card(content: Control, is_active: bool = false) -> PanelContainer:
 	var card: PanelContainer = PanelContainer.new()
 	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	card.add_theme_stylebox_override("panel", _make_panel_style(is_active))
 	var margin: MarginContainer = MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", 12)
-	margin.add_theme_constant_override("margin_top", 8)
-	margin.add_theme_constant_override("margin_right", 12)
-	margin.add_theme_constant_override("margin_bottom", 8)
+	margin.add_theme_constant_override("margin_left", 11)
+	margin.add_theme_constant_override("margin_top", 7)
+	margin.add_theme_constant_override("margin_right", 11)
+	margin.add_theme_constant_override("margin_bottom", 7)
 	margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	card.add_child(margin)
 	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -646,12 +705,58 @@ func _wrap_control_in_card(content: Control) -> PanelContainer:
 
 
 func _make_wrapped_label(text_value: String) -> Label:
-	var label: Label = Label.new()
-	label.text = text_value
+	var label: Label = _make_terminal_label(text_value, 18, COLOR_TEXT_PRIMARY)
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	label.add_theme_font_size_override("font_size", 18)
 	return label
+
+
+func _make_terminal_label(text_value: String, font_size: int, color: Color) -> Label:
+	var label: Label = Label.new()
+	label.text = text_value
+	label.add_theme_font_size_override("font_size", font_size)
+	label.add_theme_color_override("font_color", color)
+	label.add_theme_color_override("font_shadow_color", Color(0.0, 0.03, 0.02, 0.85))
+	label.add_theme_constant_override("shadow_offset_x", 1)
+	label.add_theme_constant_override("shadow_offset_y", 1)
+	return label
+
+
+func _style_terminal_button(button: Button) -> void:
+	button.add_theme_font_size_override("font_size", 16)
+	button.add_theme_color_override("font_color", COLOR_TEXT_PRIMARY)
+	button.add_theme_color_override("font_hover_color", COLOR_TEXT_BRIGHT)
+	button.add_theme_color_override("font_pressed_color", COLOR_TEXT_BRIGHT)
+	button.add_theme_color_override("font_focus_color", COLOR_TEXT_BRIGHT)
+	button.add_theme_color_override("font_disabled_color", Color(0.43, 0.51, 0.45, 0.92))
+	button.add_theme_stylebox_override("normal", _make_button_style(COLOR_SCREEN_PANEL, COLOR_SCREEN_BORDER, 1))
+	button.add_theme_stylebox_override("hover", _make_button_style(Color("18372e"), COLOR_SCREEN_BORDER_ACTIVE, 1))
+	button.add_theme_stylebox_override("pressed", _make_button_style(COLOR_SCREEN_PANEL_ACTIVE, COLOR_SCREEN_BORDER_ACTIVE, 2))
+	button.add_theme_stylebox_override("focus", _make_button_style(Color(0.0, 0.0, 0.0, 0.0), COLOR_TEXT_PRIMARY, 2))
+	button.add_theme_stylebox_override("disabled", _make_button_style(Color("0c1b17"), Color("293b31"), 1))
+
+
+func _make_button_style(background: Color, border: Color, border_width: int) -> StyleBoxFlat:
+	var style: StyleBoxFlat = StyleBoxFlat.new()
+	style.bg_color = background
+	style.border_color = border
+	style.set_border_width_all(border_width)
+	style.content_margin_left = 10.0
+	style.content_margin_top = 7.0
+	style.content_margin_right = 10.0
+	style.content_margin_bottom = 7.0
+	return style
+
+
+func _make_panel_style(is_active: bool) -> StyleBoxFlat:
+	var style: StyleBoxFlat = StyleBoxFlat.new()
+	style.bg_color = COLOR_SCREEN_PANEL_ACTIVE if is_active else Color(0.047, 0.12, 0.098, 0.94)
+	style.border_color = COLOR_SCREEN_BORDER_ACTIVE if is_active else COLOR_SCREEN_BORDER
+	style.border_width_left = 3 if is_active else 1
+	style.border_width_top = 1
+	style.border_width_right = 1
+	style.border_width_bottom = 1
+	return style
 
 
 func _read_story_entries(category: String) -> Array:
@@ -739,6 +844,18 @@ func _format_game_time(game_tick: int) -> String:
 	return "%02d:%02d" % [absolute_minutes / 60, absolute_minutes % 60]
 
 
+func _format_duration(duration_seconds: int) -> String:
+	if duration_seconds < 0:
+		return "无法识别"
+	var minutes: int = duration_seconds / 60
+	var seconds: int = duration_seconds % 60
+	if minutes == 0:
+		return "%d 秒" % seconds
+	if seconds == 0:
+		return "%d 分钟" % minutes
+	return "%d 分 %d 秒" % [minutes, seconds]
+
+
 func _format_outcome(outcome: String) -> String:
 	match outcome:
 		"answered":
@@ -749,7 +866,8 @@ func _format_outcome(outcome: String) -> String:
 			return "主动挂断"
 		"forced_end":
 			return "02:00 中断"
-	return "未知（%s）" % outcome
+	push_error("[电脑][unknown_call_outcome] 来电记录包含未知结果枚举：%s。" % outcome)
+	return "状态无法识别"
 
 
 func _make_error(message: String) -> Dictionary:

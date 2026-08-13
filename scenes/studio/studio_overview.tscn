@@ -21,12 +21,12 @@ content_margin_right = 12.0
 content_margin_bottom = 8.0
 
 [sub_resource type="StyleBoxFlat" id="StyleHotspotHover"]
-bg_color = Color(0.39, 0.39, 0.25, 0.10)
-border_width_left = 2
-border_width_top = 2
-border_width_right = 2
-border_width_bottom = 2
-border_color = Color(0.95, 0.80, 0.42, 0.82)
+bg_color = Color(0.45, 0.40, 0.24, 0.07)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.86, 0.74, 0.46, 0.54)
 corner_radius_top_left = 4
 corner_radius_top_right = 4
 corner_radius_bottom_right = 4
@@ -37,12 +37,12 @@ content_margin_right = 10.0
 content_margin_bottom = 6.0
 
 [sub_resource type="StyleBoxFlat" id="StyleHotspotPressed"]
-bg_color = Color(0.43, 0.32, 0.12, 0.18)
-border_width_left = 3
-border_width_top = 3
-border_width_right = 3
-border_width_bottom = 3
-border_color = Color(1, 0.91, 0.59, 0.94)
+bg_color = Color(0.20, 0.16, 0.08, 0.26)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.93, 0.81, 0.52, 0.70)
 corner_radius_top_left = 4
 corner_radius_top_right = 4
 corner_radius_bottom_right = 4
@@ -53,12 +53,12 @@ content_margin_right = 9.0
 content_margin_bottom = 5.0
 
 [sub_resource type="StyleBoxFlat" id="StyleHotspotDisabled"]
-bg_color = Color(0.08, 0.08, 0.08, 0.26)
-border_width_left = 2
-border_width_top = 2
-border_width_right = 2
-border_width_bottom = 2
-border_color = Color(0.62, 0.62, 0.62, 0.72)
+bg_color = Color(0.05, 0.06, 0.06, 0.32)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.52, 0.54, 0.52, 0.48)
 corner_radius_top_left = 4
 corner_radius_top_right = 4
 corner_radius_bottom_right = 4
@@ -69,12 +69,12 @@ content_margin_right = 12.0
 content_margin_bottom = 8.0
 
 [sub_resource type="StyleBoxFlat" id="StyleHotspotHint"]
-bg_color = Color(0.015, 0.035, 0.04, 0.88)
+bg_color = Color(0.018, 0.030, 0.034, 0.92)
 border_width_left = 1
 border_width_top = 1
 border_width_right = 1
 border_width_bottom = 1
-border_color = Color(0.82, 0.74, 0.48, 0.76)
+border_color = Color(0.62, 0.58, 0.44, 0.68)
 corner_radius_top_left = 3
 corner_radius_top_right = 3
 corner_radius_bottom_right = 3

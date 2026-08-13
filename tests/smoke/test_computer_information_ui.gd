@@ -153,6 +153,10 @@ func _test_call_log_remains_phone_authoritative(phone: RefCounted, computer_clos
 	_assert_equal(records.size(), 1, "阅读来电记录不得制造或重复 PhoneSystem 记录。")
 	_assert_equal(String((records[0] as Dictionary).get("outcome", "")), "answered", "电脑阅读不得改写真实来电结果。")
 	_assert_equal(int((information_view.call(&"get_ui_snapshot") as Dictionary).get("unread_by_category", {}).get("call_log", -1)), 0, "打开真实来电记录后才可将其标为已读。")
+	var player_text: String = _collect_visible_player_text(information_view)
+	_assert_true(player_text.contains("通话时长：1 秒"), "来电记录必须把内部时长换算为玩家可读的秒数。")
+	_assert_true(not player_text.contains("tick"), "来电记录不得向玩家显示内部 tick 单位。")
+	_assert_true(not player_text.contains("call_ui_record"), "来电记录不得向玩家显示 event_id、source_id 或记录 ID。")
 
 
 func _test_new_content_does_not_change_active_page(story_engine: RefCounted, information_view: Control) -> void:
@@ -192,10 +196,32 @@ func _test_ending_forces_broadcast_page(
 	_assert_equal(screen.get_current_view_id(), GameScreen.VIEW_COMPUTER, "02:00 必须立即切到电脑近景。")
 	_assert_equal(String(snapshot.get("active_category", "")), "broadcast", "02:00 必须立即切到播出页。")
 	_assert_true(bool(snapshot.get("is_ending_locked", false)), "02:00 后电脑信息页必须锁定。")
+	var player_text: String = _collect_visible_player_text(information_view)
+	_assert_true(player_text.contains("未授权播出记录"), "02:00 后必须以玩家可读标题展示未授权播出记录。")
+	for internal_id: String in ["broadcast_unauthorized_north_bridge_open", "fact_unauthorized_broadcast"]:
+		_assert_true(not player_text.contains(internal_id), "未授权播出详情不得向玩家显示内部 ID：%s。" % internal_id)
+	_assert_true(not player_text.contains("记录 ID") and not player_text.contains("事实 ID"), "播出记录不得提供内部字段标签。")
 	var rejected_page: Dictionary = information_view.call(&"select_category", "news") as Dictionary
 	_assert_true(not bool(rejected_page.get("ok", true)), "02:00 后不得返回其他信息页。")
 	var back_button: Button = screen.get_node_or_null(NodePath("ViewHost/ComputerCloseup/BackButton")) as Button
 	_assert_true(back_button != null and back_button.disabled, "02:00 后返回工作室按钮必须锁定。")
+
+
+func _collect_visible_player_text(root_node: Node) -> String:
+	var lines: PackedStringArray = PackedStringArray()
+	_collect_visible_player_text_recursive(root_node, lines)
+	return "\n".join(lines)
+
+
+func _collect_visible_player_text_recursive(node: Node, lines: PackedStringArray) -> void:
+	if node is Control and not (node as Control).is_visible_in_tree():
+		return
+	if node is Label:
+		lines.append((node as Label).text)
+	elif node is Button:
+		lines.append((node as Button).text)
+	for child: Node in node.get_children():
+		_collect_visible_player_text_recursive(child, lines)
 
 
 func _load_validated_story() -> Dictionary:

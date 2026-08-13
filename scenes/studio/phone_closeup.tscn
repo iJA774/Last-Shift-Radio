@@ -1,23 +1,24 @@
-[gd_scene load_steps=7 format=3]
+[gd_scene load_steps=8 format=3]
 
 [ext_resource type="Script" path="res://scripts/ui/phone_closeup.gd" id="1_script"]
 [ext_resource type="Texture2D" path="res://art/runtime/phone_closeup/phone_base.png" id="2_background"]
 [ext_resource type="PackedScene" path="res://scenes/ui/fx/ambient_fx.tscn" id="3_ambient_fx"]
 [ext_resource type="Texture2D" path="res://art/runtime/phone_closeup/phone_state_indicator_on.png" id="4_indicator_on"]
-[ext_resource type="Theme" path="res://resources/app_ui_theme.tres" id="5_theme"]
-[ext_resource type="Texture2D" path="res://art/ui/aged_newsroom_v1/runtime/dialogue_backdrop.png" id="6_dialogue"]
+[ext_resource type="Theme" path="res://resources/legacy_game_ui_theme.tres" id="5_theme"]
+[ext_resource type="Texture2D" path="res://art/ui/low_saturation_v1/panels/runtime/dialogue_backdrop.png" id="6_dialogue"]
+[ext_resource type="Texture2D" path="res://art/ui/low_saturation_v1/icons/runtime/icon_back.png" id="7_back_icon"]
 
 [sub_resource type="StyleBoxTexture" id="StyleBoxDialogue"]
 texture = ExtResource("6_dialogue")
-texture_margin_left = 160.0
-texture_margin_top = 120.0
-texture_margin_right = 160.0
-texture_margin_bottom = 120.0
-content_margin_left = 30.0
-content_margin_top = 24.0
-content_margin_right = 30.0
-content_margin_bottom = 24.0
-modulate_color = Color(0.60, 0.53, 0.38, 0.96)
+texture_margin_left = 112.0
+texture_margin_top = 112.0
+texture_margin_right = 112.0
+texture_margin_bottom = 112.0
+content_margin_left = 72.0
+content_margin_top = 70.0
+content_margin_right = 72.0
+content_margin_bottom = 70.0
+modulate_color = Color(0.72, 0.76, 0.76, 0.94)
 
 [node name="PhoneCloseup" type="Control"]
 layout_mode = 3
@@ -69,10 +70,10 @@ stretch_mode = 6
 
 [node name="HeaderPanel" type="PanelContainer" parent="."]
 layout_mode = 0
-offset_left = 48.0
-offset_top = 120.0
-offset_right = 790.0
-offset_bottom = 394.0
+offset_left = 1160.0
+offset_top = 250.0
+offset_right = 1872.0
+offset_bottom = 550.0
 clip_contents = true
 
 [node name="HeaderContent" type="VBoxContainer" parent="HeaderPanel"]
@@ -81,20 +82,20 @@ theme_override_constants/separation = 6
 
 [node name="TitleLabel" type="Label" parent="HeaderPanel/HeaderContent"]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.93, 0.9, 0.78, 1)
-theme_override_font_sizes/font_size = 29
-text = "电话线路／私下沟通"
+theme_override_colors/font_color = Color(0.77, 0.84, 0.83, 1)
+theme_override_font_sizes/font_size = 20
+text = "值班线路／私下沟通"
 
 [node name="PhoneStateLabel" type="Label" parent="HeaderPanel/HeaderContent"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_colors/font_color = Color(0.98, 0.9, 0.62, 1)
-theme_override_font_sizes/font_size = 23
+theme_override_colors/font_color = Color(0.91, 0.91, 0.84, 1)
+theme_override_font_sizes/font_size = 24
 text = "电话状态：初始化中"
 autowrap_mode = 2
 
 [node name="CallerScroll" type="ScrollContainer" parent="HeaderPanel/HeaderContent"]
-custom_minimum_size = Vector2(0, 76)
+custom_minimum_size = Vector2(0, 86)
 layout_mode = 2
 size_flags_vertical = 3
 horizontal_scroll_mode = 0
@@ -104,26 +105,32 @@ vertical_scroll_mode = 1
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_colors/font_color = Color(0.9, 0.89, 0.8, 1)
-theme_override_font_sizes/font_size = 19
+theme_override_colors/font_color = Color(0.84, 0.87, 0.85, 1)
+theme_override_font_sizes/font_size = 20
 text = "来显：等待电话系统提供活动线路。"
 autowrap_mode = 2
 
 [node name="DialoguePanel" type="PanelContainer" parent="."]
 layout_mode = 0
-offset_left = 104.0
-offset_top = 540.0
-offset_right = 1816.0
-offset_bottom = 1004.0
+offset_left = 80.0
+offset_top = 536.0
+offset_right = 1840.0
+offset_bottom = 1032.0
 theme_override_styles/panel = SubResource("StyleBoxDialogue")
 clip_contents = true
 
 [node name="DialogueContent" type="VBoxContainer" parent="DialoguePanel"]
 layout_mode = 2
-theme_override_constants/separation = 12
+theme_override_constants/separation = 10
+
+[node name="DialogueSectionLabel" type="Label" parent="DialoguePanel/DialogueContent"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.68, 0.79, 0.79, 1)
+theme_override_font_sizes/font_size = 17
+text = "通话内容／本通记录可在此回看"
 
 [node name="DialogueScroll" type="ScrollContainer" parent="DialoguePanel/DialogueContent"]
-custom_minimum_size = Vector2(0, 96)
+custom_minimum_size = Vector2(0, 132)
 layout_mode = 2
 size_flags_vertical = 3
 horizontal_scroll_mode = 0
@@ -139,8 +146,8 @@ theme_override_constants/separation = 12
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_colors/font_color = Color(0.92, 0.9, 0.81, 1)
-theme_override_font_sizes/font_size = 20
+theme_override_colors/font_color = Color(0.92, 0.92, 0.87, 1)
+theme_override_font_sizes/font_size = 21
 autowrap_mode = 2
 text = "对话：当前没有可操作的接通线路。"
 
@@ -151,6 +158,12 @@ size_flags_horizontal = 3
 theme_override_constants/h_separation = 12
 theme_override_constants/v_separation = 12
 
+[node name="ActionSectionLabel" type="Label" parent="DialoguePanel/DialogueContent"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.68, 0.79, 0.79, 1)
+theme_override_font_sizes/font_size = 17
+text = "线路操作"
+
 [node name="Actions" type="HFlowContainer" parent="DialoguePanel/DialogueContent"]
 layout_mode = 2
 theme_override_constants/h_separation = 12
@@ -158,63 +171,65 @@ theme_override_constants/v_separation = 12
 
 [node name="AnswerButton" type="Button" parent="DialoguePanel/DialogueContent/Actions"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(228, 86)
+custom_minimum_size = Vector2(252, 76)
 layout_mode = 2
-theme_override_colors/font_color = Color(0.95, 0.93, 0.81, 1)
-theme_override_colors/font_disabled_color = Color(0.76, 0.76, 0.76, 1)
-theme_override_font_sizes/font_size = 21
+theme_override_font_sizes/font_size = 20
 text = "接听"
 autowrap_mode = 2
 
 [node name="DialogueChoiceButton" type="Button" parent="DialoguePanel/DialogueContent/Actions"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(284, 86)
+custom_minimum_size = Vector2(312, 76)
 layout_mode = 2
-theme_override_colors/font_color = Color(0.95, 0.93, 0.81, 1)
-theme_override_colors/font_disabled_color = Color(0.76, 0.76, 0.76, 1)
-theme_override_font_sizes/font_size = 21
+theme_override_font_sizes/font_size = 20
 text = "进入一轮选择"
 autowrap_mode = 2
 
 [node name="HangUpButton" type="Button" parent="DialoguePanel/DialogueContent/Actions"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(228, 86)
+custom_minimum_size = Vector2(252, 76)
 layout_mode = 2
-theme_override_colors/font_color = Color(0.95, 0.93, 0.81, 1)
-theme_override_colors/font_disabled_color = Color(0.76, 0.76, 0.76, 1)
-theme_override_font_sizes/font_size = 21
+theme_override_font_sizes/font_size = 20
 text = "主动挂断"
 autowrap_mode = 2
 
 [node name="FinishButton" type="Button" parent="DialoguePanel/DialogueContent/Actions"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(228, 86)
+custom_minimum_size = Vector2(252, 76)
 layout_mode = 2
-theme_override_colors/font_color = Color(0.95, 0.93, 0.81, 1)
-theme_override_colors/font_disabled_color = Color(0.76, 0.76, 0.76, 1)
-theme_override_font_sizes/font_size = 21
+theme_override_font_sizes/font_size = 20
 text = "结束通话"
+autowrap_mode = 2
+
+[node name="ActionAvailabilityLabel" type="Label" parent="DialoguePanel/DialogueContent"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.78, 0.8, 0.77, 1)
+theme_override_font_sizes/font_size = 16
+text = "操作提示：当前没有活动线路，电话操作暂不可用。"
 autowrap_mode = 2
 
 [node name="OutboundStatusLabel" type="Label" parent="DialoguePanel/DialogueContent"]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.84, 0.84, 0.77, 1)
-theme_override_font_sizes/font_size = 18
+theme_override_colors/font_color = Color(0.67, 0.72, 0.71, 1)
+theme_override_font_sizes/font_size = 15
 text = "外拨线路维护中：MVP 不提供主动拨号。"
 autowrap_mode = 2
 
 [node name="BackButton" type="Button" parent="."]
 unique_name_in_owner = true
 layout_mode = 0
-offset_left = 1588.0
-offset_top = 120.0
+offset_left = 1460.0
+offset_top = 48.0
 offset_right = 1872.0
-offset_bottom = 220.0
-theme_override_colors/font_color = Color(0.95, 0.93, 0.81, 1)
+offset_bottom = 144.0
 theme_override_font_sizes/font_size = 20
 text = "返回工作室总览"
 tooltip_text = "返回工作室总览。"
-autowrap_mode = 2
+icon = ExtResource("7_back_icon")
+expand_icon = true
+icon_max_width = 30
+autowrap_mode = 0
 
 [connection signal="pressed" from="DialoguePanel/DialogueContent/Actions/AnswerButton" to="." method="_on_answer_button_pressed"]
 [connection signal="pressed" from="DialoguePanel/DialogueContent/Actions/DialogueChoiceButton" to="." method="_on_dialogue_choice_button_pressed"]

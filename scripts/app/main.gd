@@ -293,7 +293,7 @@ func _on_loading_transition_finished() -> void:
 
 
 func request_load_game() -> void:
-	if _app_state != AppState.MAIN_MENU:
+	if _app_state != AppState.MAIN_MENU and _app_state != AppState.ENDING:
 		return
 	if _save_manager == null:
 		_show_shell_error("SaveManager 不可用，不能读取存档。")
@@ -718,6 +718,7 @@ func _show_ending_screen() -> void:
 	_remove_game_screen()
 	var ending: Control = ENDING_SCREEN_SCENE.instantiate() as Control
 	ending.connect(&"restart_requested", Callable(self, "restart_shift"))
+	ending.connect(&"load_game_requested", Callable(self, "request_load_game"))
 	ending.connect(&"return_to_menu_requested", Callable(self, "return_to_main_menu"))
 	_replace_screen(ending)
 	_app_state = AppState.ENDING

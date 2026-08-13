@@ -3,6 +3,22 @@
 [ext_resource type="Script" path="res://scripts/app/ending_screen.gd" id="1_script"]
 [ext_resource type="Theme" path="res://resources/app_ui_theme.tres" id="2_theme"]
 
+[sub_resource type="StyleBoxFlat" id="StyleEndingPanel"]
+bg_color = Color(0.035, 0.055, 0.060, 0.96)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.56, 0.47, 0.30, 0.72)
+corner_radius_top_left = 5
+corner_radius_top_right = 5
+corner_radius_bottom_right = 5
+corner_radius_bottom_left = 5
+content_margin_left = 12.0
+content_margin_top = 12.0
+content_margin_right = 12.0
+content_margin_bottom = 12.0
+
 [node name="EndingScreen" type="Control"]
 layout_mode = 3
 anchors_preset = 15
@@ -21,7 +37,7 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
-color = Color(0.01, 0.019, 0.03, 1)
+color = Color(0.008, 0.014, 0.017, 1)
 
 [node name="EndRule" type="ColorRect" parent="."]
 layout_mode = 1
@@ -50,6 +66,7 @@ grow_vertical = 2
 [node name="EndingPanel" type="PanelContainer" parent="Content"]
 custom_minimum_size = Vector2(700, 0)
 layout_mode = 2
+theme_override_styles/panel = SubResource("StyleEndingPanel")
 
 [node name="Margin" type="MarginContainer" parent="Content/EndingPanel"]
 layout_mode = 2
@@ -64,7 +81,7 @@ theme_override_constants/separation = 16
 
 [node name="Title" type="Label" parent="Content/EndingPanel/Margin/Layout"]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.91, 0.97, 0.96, 1)
+theme_override_colors/font_color = Color(0.92, 0.88, 0.76, 1)
 theme_override_font_sizes/font_size = 34
 text = "本次值班已结束"
 horizontal_alignment = 1
@@ -74,7 +91,7 @@ autowrap_mode = 2
 layout_mode = 2
 theme_override_colors/font_color = Color(0.6, 0.72, 0.74, 1)
 theme_override_font_sizes/font_size = 19
-text = "夜已过去。"
+text = "02:00  /  线路已切断"
 horizontal_alignment = 1
 autowrap_mode = 2
 
@@ -103,6 +120,7 @@ theme_override_font_sizes/font_size = 16
 text = "存档系统尚未建立"
 horizontal_alignment = 1
 autowrap_mode = 2
+visible = false
 
 [node name="ReturnToMenuButton" type="Button" parent="Content/EndingPanel/Margin/Layout"]
 unique_name_in_owner = true
