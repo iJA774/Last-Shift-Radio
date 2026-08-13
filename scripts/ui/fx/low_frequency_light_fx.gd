@@ -9,6 +9,8 @@ signal light_state_changed(is_lit: bool, flicker_count: int)
 
 @export_node_path("TextureRect") var light_texture_rect_path: NodePath
 @export_node_path("TextureRect") var off_texture_rect_path: NodePath
+## 局部遮罩效果可保留稳定底图；默认仍为既有的亮/灭整层切换语义。
+@export var preserves_light_texture_visibility_when_off: bool = false
 @export var light_texture: Texture2D
 @export var off_texture: Texture2D
 @export_range(3.0, 90.0, 0.1) var minimum_wait_seconds: float = 4.0
@@ -147,6 +149,7 @@ func get_effect_snapshot() -> Dictionary:
 		"target_mode": "texture_rects",
 		"light_texture_rect_path": light_texture_rect_path,
 		"off_texture_rect_path": off_texture_rect_path,
+		"preserves_light_texture_visibility_when_off": preserves_light_texture_visibility_when_off,
 		"is_configured": _is_configured,
 		"schedule_timer_is_running": _schedule_timer != null and not _schedule_timer.is_stopped(),
 		"off_timer_is_running": _off_timer != null and not _off_timer.is_stopped(),
@@ -266,7 +269,7 @@ func _stop_timers() -> void:
 func _apply_lit_state(is_lit: bool) -> void:
 	_is_lit = is_lit
 	if _light_texture_rect != null:
-		_light_texture_rect.visible = is_lit
+		_light_texture_rect.visible = is_lit or preserves_light_texture_visibility_when_off
 	if _off_texture_rect != null:
 		_off_texture_rect.visible = not is_lit
 	light_state_changed.emit(_is_lit, _flicker_count)

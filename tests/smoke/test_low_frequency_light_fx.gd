@@ -36,7 +36,6 @@ func _run() -> void:
 	_state_transitions.clear()
 	var trigger_result: Dictionary = light_fx.call(&"trigger_flicker_for_verification") as Dictionary
 	_assert_true(bool(trigger_result.get("ok", false)), "验证接口必须能确定性触发一组快速连闪。")
-	await process_frame
 	var during: Dictionary = _snapshot(light_fx)
 	_assert_true(int(during["flicker_count"]) == 1, "一组异常只能计为一次触发。")
 	_assert_true(int(during["burst_flicker_count"]) >= 3, "一次异常必须包含多次快速断电。")

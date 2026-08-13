@@ -277,11 +277,12 @@ func _test_door_window_closeup() -> void:
 	await _assert_background_material_switch(
 		closeup,
 		NodePath("BackgroundZoom/Background"),
-		NodePath("BackgroundZoom/BackgroundLampOff"),
+		NodePath("BackgroundZoom/StreetLampDarkeningMask"),
 		NodePath("StreetLampMaterialSwitch"),
 		"door_window_closeup_v2.png",
-		"door_window_closeup_street_lamp_off_v3.png",
-		"门窗近景"
+		"street_lamp_darkening_mask.png",
+		"门窗近景",
+		true
 	)
 	_assert_true(closeup.has_method(&"set_motion_enabled"), "门窗近景必须公开 set_motion_enabled()。")
 	_assert_true(closeup.has_signal(&"return_requested"), "门窗近景必须公开 return_requested()。")
@@ -366,7 +367,8 @@ func _assert_background_material_switch(
 	switch_path: NodePath,
 	light_texture_name: String,
 	off_texture_name: String,
-	view_name: String
+	view_name: String,
+	keeps_light_background_visible: bool = false
 ) -> void:
 	var light_background: TextureRect = view.get_node_or_null(light_background_path) as TextureRect
 	var off_background: TextureRect = view.get_node_or_null(off_background_path) as TextureRect
@@ -383,21 +385,25 @@ func _assert_background_material_switch(
 	var initial: Dictionary = material_switch.call(&"get_effect_snapshot") as Dictionary
 	_assert_true(bool(initial.get("is_configured", false)), "%s素材切换组件必须已绑定亮灭 TextureRect。" % view_name)
 	_assert_true(bool(initial.get("is_lit", false)), "%s默认必须显示亮灯背景。" % view_name)
-	_assert_true(light_background.visible and not off_background.visible, "%s默认不得显示灭灯素材。" % view_name)
+	_assert_true(light_background.visible and not off_background.visible, "%s默认不得显示熄灯层。" % view_name)
+	_assert_true(light_background.get_global_rect() == off_background.get_global_rect(), "%s亮灯底图与熄灯层必须使用完全相同的 1920×1080 几何区域。" % view_name)
 	_assert_true(float(initial.get("minimum_wait_seconds", 0.0)) >= 3.0, "%s自动异常间隔不得低于 3 秒。" % view_name)
 	_assert_true(int(initial.get("minimum_burst_flickers", 0)) >= 3, "%s灯光异常必须包含连续快速连闪。" % view_name)
 	_assert_true(not initial.has("tween_is_running") and not initial.has("current_alpha"), "%s不得保留透明度 Tween 或光晕透明度状态。" % view_name)
 	var trigger_result: Variant = material_switch.call(&"trigger_flicker_for_verification")
-	_assert_true(trigger_result is Dictionary and bool((trigger_result as Dictionary).get("ok", false)), "%s必须能确定性切换到灭灯素材。" % view_name)
+	_assert_true(trigger_result is Dictionary and bool((trigger_result as Dictionary).get("ok", false)), "%s必须能确定性切换到熄灯状态。" % view_name)
 	await process_frame
 	var during: Dictionary = material_switch.call(&"get_effect_snapshot") as Dictionary
 	_assert_true(not bool(during.get("is_lit", true)), "%s触发后必须处于灭灯状态。" % view_name)
-	_assert_true(not light_background.visible and off_background.visible, "%s触发后必须直接显示灭灯背景素材。" % view_name)
+	if keeps_light_background_visible:
+		_assert_true(light_background.visible and off_background.visible, "%s熄灯时必须保留稳定底图，仅叠加局部暗化层。" % view_name)
+	else:
+		_assert_true(not light_background.visible and off_background.visible, "%s触发后必须直接显示灭灯背景素材。" % view_name)
 	var disable_result: Variant = view.call(&"set_motion_enabled", false)
 	_assert_true(disable_result is Dictionary and bool((disable_result as Dictionary).get("ok", false)), "%s必须能关闭背景素材切换动态。" % view_name)
 	var disabled: Dictionary = material_switch.call(&"get_effect_snapshot") as Dictionary
 	_assert_true(not bool(disabled.get("schedule_timer_is_running", true)) and not bool(disabled.get("off_timer_is_running", true)), "%s减少动态后不得保留亮灭 Timer。" % view_name)
-	_assert_true(bool(disabled.get("is_lit", false)) and light_background.visible and not off_background.visible, "%s减少动态后必须稳定回亮灯素材。" % view_name)
+	_assert_true(bool(disabled.get("is_lit", false)) and light_background.visible and not off_background.visible, "%s减少动态后必须稳定回亮灯状态。" % view_name)
 	var enable_result: Variant = view.call(&"set_motion_enabled", true)
 	_assert_true(enable_result is Dictionary and bool((enable_result as Dictionary).get("ok", false)), "%s必须能恢复背景素材切换动态。" % view_name)
 

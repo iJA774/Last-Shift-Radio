@@ -3,7 +3,7 @@
 [ext_resource type="Script" path="res://scripts/ui/door_window_closeup.gd" id="1_script"]
 [ext_resource type="Texture2D" path="res://art/concept/style_baseline_v1/door_window_closeup_v2.png" id="2_background"]
 [ext_resource type="PackedScene" path="res://scenes/ui/fx/low_frequency_light_fx.tscn" id="4_light_fx"]
-[ext_resource type="Texture2D" path="res://art/concept/style_baseline_v1/door_window_closeup_street_lamp_off_v3.png" id="5_background_lamp_off"]
+[ext_resource type="Texture2D" path="res://art/runtime/door_window/street_lamp_darkening_mask.png" id="5_street_lamp_mask"]
 [ext_resource type="Theme" path="res://resources/legacy_game_ui_theme.tres" id="6_theme"]
 [ext_resource type="Texture2D" path="res://art/ui/low_saturation_v1/icons/runtime/icon_back.png" id="7_back_icon"]
 
@@ -39,7 +39,7 @@ texture = ExtResource("2_background")
 expand_mode = 1
 stretch_mode = 6
 
-[node name="BackgroundLampOff" type="TextureRect" parent="BackgroundZoom"]
+[node name="StreetLampDarkeningMask" type="TextureRect" parent="BackgroundZoom"]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -47,7 +47,7 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
-texture = ExtResource("5_background_lamp_off")
+texture = ExtResource("5_street_lamp_mask")
 expand_mode = 1
 stretch_mode = 6
 visible = false
@@ -70,7 +70,8 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 light_texture_rect_path = NodePath("../BackgroundZoom/Background")
-off_texture_rect_path = NodePath("../BackgroundZoom/BackgroundLampOff")
+off_texture_rect_path = NodePath("../BackgroundZoom/StreetLampDarkeningMask")
+preserves_light_texture_visibility_when_off = true
 minimum_wait_seconds = 6.0
 maximum_wait_seconds = 12.0
 minimum_off_seconds = 0.055
