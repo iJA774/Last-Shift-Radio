@@ -1,0 +1,234 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "res://worldbooks/schema/worldbook_v1.schema.json",
+  "title": "Last Shift Radio WorldBook v1",
+  "description": "Author data only. WorldKernel fields, executable scripts, scenes and plugins are intentionally absent.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "worldbook_format_version",
+    "worldbook_id",
+    "lore",
+    "hidden_truths",
+    "relationships",
+    "goals",
+    "conditions",
+    "events",
+    "checklist_entries",
+    "news_entries",
+    "messages",
+    "broadcast_tasks",
+    "actors",
+    "statements",
+    "facts",
+    "opportunities",
+    "narrative_constraints"
+  ],
+  "properties": {
+    "worldbook_format_version": { "const": 1 },
+    "worldbook_id": { "$ref": "#/$defs/stableId" },
+    "lore": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["premise", "themes", "atmosphere", "director_notes"],
+      "properties": {
+        "premise": { "$ref": "#/$defs/nonEmptyText" },
+        "themes": { "$ref": "#/$defs/textArray" },
+        "atmosphere": { "$ref": "#/$defs/nonEmptyText" },
+        "director_notes": { "$ref": "#/$defs/textArray" }
+      }
+    },
+    "hidden_truths": { "type": "array", "maxItems": 512, "items": { "$ref": "#/$defs/hiddenTruth" } },
+    "relationships": { "type": "array", "maxItems": 512, "items": { "$ref": "#/$defs/relationship" } },
+    "goals": { "type": "array", "maxItems": 512, "items": { "$ref": "#/$defs/goal" } },
+    "conditions": { "type": "array", "maxItems": 512, "items": { "$ref": "#/$defs/idOnly" } },
+    "events": { "type": "array", "minItems": 1, "maxItems": 256, "items": { "$ref": "#/$defs/incomingCall" } },
+    "checklist_entries": { "type": "array", "maxItems": 512, "items": { "$ref": "#/$defs/informationEntry" } },
+    "news_entries": { "type": "array", "maxItems": 512, "items": { "$ref": "#/$defs/newsEntry" } },
+    "messages": { "type": "array", "maxItems": 512, "items": { "$ref": "#/$defs/message" } },
+    "broadcast_tasks": { "type": "array", "maxItems": 128, "items": { "$ref": "#/$defs/broadcastTask" } },
+    "actors": { "type": "array", "minItems": 1, "maxItems": 64, "items": { "$ref": "#/$defs/actor" } },
+    "statements": { "type": "array", "maxItems": 512, "items": { "$ref": "#/$defs/statement" } },
+    "facts": { "type": "array", "maxItems": 256, "items": { "$ref": "#/$defs/fact" } },
+    "opportunities": { "type": "array", "maxItems": 256, "items": { "$ref": "#/$defs/opportunity" } },
+    "narrative_constraints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["notes"],
+      "properties": { "notes": { "$ref": "#/$defs/textArray" } }
+    }
+  },
+  "$defs": {
+    "stableId": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$", "maxLength": 128 },
+    "nonEmptyText": { "type": "string", "minLength": 1, "maxLength": 4096 },
+    "textArray": { "type": "array", "maxItems": 512, "items": { "$ref": "#/$defs/nonEmptyText" } },
+    "idArray": { "type": "array", "maxItems": 512, "uniqueItems": true, "items": { "$ref": "#/$defs/stableId" } },
+    "idOnly": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": { "id": { "$ref": "#/$defs/stableId" } }
+    },
+    "goal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "actor_id", "description"],
+      "properties": {
+        "id": { "$ref": "#/$defs/stableId" },
+        "actor_id": { "$ref": "#/$defs/stableId" },
+        "description": { "$ref": "#/$defs/nonEmptyText" }
+      }
+    },
+    "hiddenTruth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "body"],
+      "properties": {
+        "id": { "$ref": "#/$defs/stableId" },
+        "body": { "$ref": "#/$defs/nonEmptyText" }
+      }
+    },
+    "relationship": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "actor_id", "target_actor_id", "description"],
+      "properties": {
+        "id": { "$ref": "#/$defs/stableId" },
+        "actor_id": { "$ref": "#/$defs/stableId" },
+        "target_actor_id": { "$ref": "#/$defs/stableId" },
+        "description": { "$ref": "#/$defs/nonEmptyText" }
+      }
+    },
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "display_name", "voice_profile_id", "profile", "initial_state"],
+      "properties": {
+        "id": { "$ref": "#/$defs/stableId" },
+        "display_name": { "$ref": "#/$defs/nonEmptyText" },
+        "voice_profile_id": { "$ref": "#/$defs/nonEmptyText" },
+        "profile": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["role", "personality", "speech_style"],
+          "properties": {
+            "role": { "$ref": "#/$defs/nonEmptyText" },
+            "personality": { "$ref": "#/$defs/nonEmptyText" },
+            "speech_style": { "$ref": "#/$defs/nonEmptyText" }
+          }
+        },
+        "initial_state": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["knowledge", "beliefs", "episodic_memory", "current_goal", "available_goal_ids", "trust", "stress", "heard_signal_ids", "private_information", "forbidden_knowledge"],
+          "properties": {
+            "knowledge": { "$ref": "#/$defs/textArray" },
+            "beliefs": { "$ref": "#/$defs/textArray" },
+            "episodic_memory": { "$ref": "#/$defs/textArray" },
+            "current_goal": { "type": "string", "maxLength": 128 },
+            "available_goal_ids": { "$ref": "#/$defs/idArray" },
+            "trust": { "type": "number", "minimum": 0, "maximum": 1 },
+            "stress": { "type": "number", "minimum": 0, "maximum": 1 },
+            "heard_signal_ids": { "$ref": "#/$defs/idArray" },
+            "private_information": { "$ref": "#/$defs/textArray" },
+            "forbidden_knowledge": { "$ref": "#/$defs/textArray" }
+          }
+        }
+      }
+    },
+    "incomingCall": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "priority", "window_start_minute", "window_end_minute", "when_busy", "on_expire", "condition_ids", "caller_display_name", "caller_number", "actor_id", "available_statement_ids", "line_profile_id", "call_reason", "opening_intent", "fallback_utterance"],
+      "properties": {
+        "id": { "$ref": "#/$defs/stableId" },
+        "kind": { "const": "incoming_call" },
+        "priority": { "enum": ["main", "normal"] },
+        "window_start_minute": { "type": "integer", "minimum": 0, "maximum": 59 },
+        "window_end_minute": { "type": "integer", "minimum": 0, "maximum": 59 },
+        "when_busy": { "enum": ["queue", "expire"] },
+        "on_expire": { "const": "mark_missed" },
+        "condition_ids": { "$ref": "#/$defs/idArray" },
+        "caller_display_name": { "$ref": "#/$defs/nonEmptyText" },
+        "caller_number": { "$ref": "#/$defs/nonEmptyText" },
+        "actor_id": { "$ref": "#/$defs/stableId" },
+        "available_statement_ids": { "$ref": "#/$defs/idArray" },
+        "line_profile_id": { "$ref": "#/$defs/nonEmptyText" },
+        "call_reason": { "$ref": "#/$defs/nonEmptyText" },
+        "opening_intent": { "$ref": "#/$defs/nonEmptyText" },
+        "fallback_utterance": { "$ref": "#/$defs/nonEmptyText" },
+        "session_state_patch": { "type": "object" }
+      }
+    },
+    "informationEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "body", "unlock_minute", "statement_ids", "fact_ids"],
+      "properties": {
+        "id": { "$ref": "#/$defs/stableId" }, "title": { "$ref": "#/$defs/nonEmptyText" }, "body": { "$ref": "#/$defs/nonEmptyText" },
+        "unlock_minute": { "type": "integer", "minimum": 0, "maximum": 59 }, "statement_ids": { "$ref": "#/$defs/idArray" }, "fact_ids": { "$ref": "#/$defs/idArray" }
+      }
+    },
+    "newsEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "body", "unlock_minute", "statement_ids", "fact_ids", "source", "topic_ids"],
+      "properties": {
+        "id": { "$ref": "#/$defs/stableId" }, "title": { "$ref": "#/$defs/nonEmptyText" }, "body": { "$ref": "#/$defs/nonEmptyText" }, "source": { "$ref": "#/$defs/nonEmptyText" },
+        "unlock_minute": { "type": "integer", "minimum": 0, "maximum": 59 }, "statement_ids": { "$ref": "#/$defs/idArray" }, "fact_ids": { "$ref": "#/$defs/idArray" }, "topic_ids": { "$ref": "#/$defs/idArray" }
+      }
+    },
+    "message": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "sender", "body", "unlock_minute", "statement_ids", "fact_ids"],
+      "properties": {
+        "id": { "$ref": "#/$defs/stableId" }, "sender": { "$ref": "#/$defs/nonEmptyText" }, "body": { "$ref": "#/$defs/nonEmptyText" },
+        "unlock_minute": { "type": "integer", "minimum": 0, "maximum": 59 }, "statement_ids": { "$ref": "#/$defs/idArray" }, "fact_ids": { "$ref": "#/$defs/idArray" }
+      }
+    },
+    "statement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "source_id", "body"],
+      "properties": {
+        "id": { "$ref": "#/$defs/stableId" }, "source_id": { "$ref": "#/$defs/stableId" }, "body": { "$ref": "#/$defs/nonEmptyText" },
+        "semantic_guard": { "type": "object", "additionalProperties": false, "properties": { "required_term_groups": { "type": "array", "maxItems": 512, "items": { "$ref": "#/$defs/textArray" } }, "forbidden_terms": { "$ref": "#/$defs/textArray" } } }
+      }
+    },
+    "fact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "initially_confirmed", "required_statement_ids"],
+      "properties": { "id": { "$ref": "#/$defs/stableId" }, "initially_confirmed": { "type": "boolean" }, "required_statement_ids": { "$ref": "#/$defs/idArray" } }
+    },
+    "requirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id"],
+      "properties": { "type": { "enum": ["statement_revealed", "fact_confirmed", "condition_true", "interaction_answered", "interaction_completed", "broadcast_sent", "message_read"] }, "id": { "$ref": "#/$defs/stableId" } }
+    },
+    "informationItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "source_label", "body", "statement_ids", "fact_ids"],
+      "properties": { "id": { "$ref": "#/$defs/stableId" }, "source_label": { "$ref": "#/$defs/nonEmptyText" }, "body": { "$ref": "#/$defs/nonEmptyText" }, "statement_ids": { "$ref": "#/$defs/idArray" }, "fact_ids": { "$ref": "#/$defs/idArray" } }
+    },
+    "broadcastTask": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "selection_mode", "channel", "source", "related_event_ids", "requirements", "sets_condition_id", "information_items"],
+      "properties": {
+        "id": { "$ref": "#/$defs/stableId" }, "name": { "$ref": "#/$defs/nonEmptyText" }, "selection_mode": { "enum": ["single", "multiple"] }, "channel": { "const": "microphone" }, "source": { "$ref": "#/$defs/nonEmptyText" },
+        "related_event_ids": { "$ref": "#/$defs/idArray" }, "requirements": { "type": "array", "maxItems": 512, "items": { "$ref": "#/$defs/requirement" } }, "sets_condition_id": { "type": "string", "maxLength": 128 },
+        "information_items": { "type": "array", "maxItems": 512, "items": { "$ref": "#/$defs/informationItem" } }
+      }
+    },
+    "opportunity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "summary", "actor_ids", "event_ids", "condition_ids", "goal_ids"],
+      "properties": { "id": { "$ref": "#/$defs/stableId" }, "summary": { "$ref": "#/$defs/nonEmptyText" }, "actor_ids": { "$ref": "#/$defs/idArray" }, "event_ids": { "$ref": "#/$defs/idArray" }, "condition_ids": { "$ref": "#/$defs/idArray" }, "goal_ids": { "$ref": "#/$defs/idArray" } }
+    }
+  }
+}

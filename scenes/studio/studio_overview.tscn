@@ -383,4 +383,6 @@ script = ExtResource("9_microphone_panel")
 [connection signal="button_down" from="MicrophoneHotspot" to="." method="_on_hotspot_button_down" binds= ["microphone"]]
 [connection signal="button_up" from="MicrophoneHotspot" to="." method="_on_hotspot_button_up" binds= ["microphone"]]
 [connection signal="broadcast_requested" from="MicrophonePanel" to="." method="_on_microphone_broadcast_requested"]
+[connection signal="broadcast_abandon_requested" from="MicrophonePanel" to="." method="_on_microphone_broadcast_abandon_requested"]
+[connection signal="broadcast_defer_requested" from="MicrophonePanel" to="." method="_on_microphone_broadcast_defer_requested"]
 [connection signal="close_requested" from="MicrophonePanel" to="." method="_on_microphone_panel_close_requested"]

@@ -15,12 +15,13 @@ signal exit_requested
 enum WorkState {
 	IDLE,
 	ACTIVE,
+	PAUSED,
 }
 
 const WORK_REASON_PHONE_RINGING: String = "phone_ringing"
 const WORK_REASON_PHONE_CONNECTED: String = "phone_connected"
 const WORK_REASON_DIALOGUE_CHOICE: String = "dialogue_choice"
-const WORK_REASON_BROADCAST_PENDING: String = "broadcast_pending"
+const WORK_REASON_BROADCAST_DECISION_PENDING: String = "broadcast_decision_pending"
 const WORK_REASON_COMPUTER_OPEN: String = "computer_open"
 const WORK_REASON_SETTINGS_OPEN: String = "settings_open"
 
@@ -44,6 +45,16 @@ const TRANSIENT_NOTICE_FADE_IN_SECONDS: float = 0.24
 const TRANSIENT_NOTICE_HOLD_SECONDS: float = 1.50
 const TRANSIENT_NOTICE_FADE_OUT_SECONDS: float = 0.24
 const TRANSIENT_NOTICE_MAX_LIFETIME_SECONDS: float = TRANSIENT_NOTICE_FADE_IN_SECONDS + TRANSIENT_NOTICE_HOLD_SECONDS + TRANSIENT_NOTICE_FADE_OUT_SECONDS
+const TASK_NOTICE_SLIDE_SECONDS: float = 0.35
+const TASK_NOTICE_HOLD_SECONDS: float = 5.0
+const TASK_NOTICE_TEXTURE: Texture2D = preload("res://UI美术/任务框.png")
+## 原始美术是 1536×1024 的编辑画布；有效任务框只在这一裁剪区域内。
+## 使用 AtlasTexture 避免把整张画布压扁进通知牌。
+const TASK_NOTICE_REGION: Rect2 = Rect2(32.0, 307.0, 1472.0, 372.0)
+const TASK_NOTICE_SIZE: Vector2 = Vector2(736.0, 186.0)
+## 避开左上独立时间牌（其底部约为 y=78），通知从其下方的安全区滑入。
+const TASK_NOTICE_HIDDEN_POSITION: Vector2 = Vector2(-772.0, 200.0)
+const TASK_NOTICE_VISIBLE_POSITION: Vector2 = Vector2(24.0, 200.0)
 const SAVE_SLOT_PANEL_SCENE: PackedScene = preload("res://scenes/ui/save_slot_panel.tscn")
 const SETTINGS_PANEL_SCENE: PackedScene = preload("res://scenes/ui/settings_panel.tscn")
 const SHIFT_CONTROL_BAR_SCENE: PackedScene = preload("res://scenes/ui/shift_control_bar.tscn")
@@ -51,6 +62,7 @@ const SHIFT_CONTROL_BAR_SCENE: PackedScene = preload("res://scenes/ui/shift_cont
 var _story_engine: RefCounted = null
 var _phone_system: RefCounted = null
 var _game_clock: Node = null
+var _interaction_coordinator: RefCounted = null
 var _views_by_id: Dictionary[String, Control] = {}
 var _current_view_id: String = VIEW_STUDIO
 var _is_ending: bool = false
@@ -69,6 +81,11 @@ var _text_speed_multiplier: float = 1.0
 var _system_message_tween: Tween = null
 var _system_message_serial: int = 0
 var _system_message_mode: String = "hidden"
+var _task_notification_panel: Control = null
+var _task_notification_label: Label = null
+var _task_notification_tween: Tween = null
+var _task_notification_queue: Array[Dictionary] = []
+var _current_task_notification_id: String = ""
 
 @onready var _studio_overview: Control = $ViewHost/StudioOverview
 @onready var _phone_closeup: Control = $ViewHost/PhoneCloseup
@@ -88,6 +105,7 @@ func _ready() -> void:
 		VIEW_DOOR: _door_window_closeup,
 	}
 	_hide_system_message_immediately()
+	_build_task_notification()
 	_show_view_internal(VIEW_STUDIO, true)
 
 
@@ -100,7 +118,12 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 ## 由应用壳在内容数据校验通过后注入。这个方法不读取文件，也不启动时钟。
-func bind_runtime(story_engine: RefCounted, phone_system: RefCounted, game_clock: Node) -> Dictionary:
+func bind_runtime(
+	story_engine: RefCounted,
+	phone_system: RefCounted,
+	game_clock: Node,
+	interaction_coordinator: RefCounted = null
+) -> Dictionary:
 	if story_engine == null:
 		return _make_error("StoryEngine 实例不能为空。")
 	if phone_system == null:
@@ -128,11 +151,11 @@ func bind_runtime(story_engine: RefCounted, phone_system: RefCounted, game_clock
 		if not phone_system.has_method(method_name):
 			return _make_error("PhoneSystem 缺少 %s() 接口。" % method_name)
 	var required_story_methods: PackedStringArray = [
-		"begin_active_call_dialogue",
-		"select_dialogue_option",
 		"send_broadcast_task",
-		"get_active_dialogue_snapshot",
 		"get_broadcast_tasks",
+		"has_pending_broadcast_decision",
+		"abandon_broadcast_task",
+		"defer_broadcast_task",
 		"get_computer_entries",
 		"get_computer_unread_count",
 		"mark_computer_entry_read",
@@ -140,15 +163,29 @@ func bind_runtime(story_engine: RefCounted, phone_system: RefCounted, game_clock
 	for method_name: String in required_story_methods:
 		if not story_engine.has_method(method_name):
 			return _make_error("StoryEngine 缺少 %s() 接口。" % method_name)
+	if interaction_coordinator != null:
+		for method_name: String in ["begin_active_phone_session", "submit_player_turn", "get_active_session_snapshot"]:
+			if not interaction_coordinator.has_method(method_name):
+				return _make_error("InteractionCoordinator 缺少 %s() 接口。" % method_name)
+		for signal_name: StringName in [
+			&"session_started",
+			&"session_changed",
+			&"session_ended",
+			&"actor_turn_request_started",
+			&"actor_turn_committed",
+			&"stale_response_discarded",
+			&"interaction_error",
+		]:
+			if not interaction_coordinator.has_signal(signal_name):
+				return _make_error("InteractionCoordinator 缺少 %s 信号。" % signal_name)
 
 	_story_engine = story_engine
 	_phone_system = phone_system
 	_game_clock = game_clock
+	_interaction_coordinator = interaction_coordinator
 	_is_ending = false
 	if not _bind_child_runtime(_phone_closeup, &"bind_phone_system", [_phone_system], "绑定电话近景"):
 		return {"ok": false, "message": "无法绑定电话近景。"}
-	if not _bind_child_runtime(_phone_closeup, &"bind_story_engine", [_story_engine], "绑定电话剧情"):
-		return {"ok": false, "message": "无法绑定电话剧情。"}
 	if not _bind_child_runtime(_studio_overview, &"bind_story_engine", [_story_engine], "绑定中央麦克风"):
 		return {"ok": false, "message": "无法绑定中央麦克风。"}
 	if not _bind_child_runtime(_computer_closeup, &"bind_phone_system", [_phone_system], "绑定电脑近景"):
@@ -160,6 +197,9 @@ func bind_runtime(story_engine: RefCounted, phone_system: RefCounted, game_clock
 	var signal_result: Dictionary = _connect_view_signals()
 	if not bool(signal_result.get("ok", false)):
 		return signal_result
+	var interaction_signal_result: Dictionary = _connect_interaction_signals()
+	if not bool(interaction_signal_result.get("ok", false)):
+		return interaction_signal_result
 	var work_state_signal_result: Dictionary = _connect_work_state_signals()
 	if not bool(work_state_signal_result.get("ok", false)):
 		return work_state_signal_result
@@ -266,6 +306,13 @@ func show_ending(record: Dictionary) -> Dictionary:
 	if record.is_empty():
 		return _make_error("02:00 收束缺少权威未授权播出记录。")
 	_is_ending = true
+	_task_notification_queue.clear()
+	_current_task_notification_id = ""
+	if _task_notification_tween != null and _task_notification_tween.is_valid():
+		_task_notification_tween.kill()
+	_task_notification_tween = null
+	if _task_notification_panel != null:
+		_task_notification_panel.visible = false
 	_close_save_panel()
 	_close_settings_panel(false)
 	_close_control_bar()
@@ -540,16 +587,23 @@ func toggle_control_bar() -> Dictionary:
 func release_runtime() -> Dictionary:
 	_cancel_view_transition()
 	_hide_system_message_immediately()
+	_task_notification_queue.clear()
+	_current_task_notification_id = ""
+	if _task_notification_tween != null and _task_notification_tween.is_valid():
+		_task_notification_tween.kill()
+	_task_notification_tween = null
 	_close_save_panel()
 	_close_settings_panel(false)
 	_close_control_bar()
 	if _phone_closeup != null and _phone_closeup.has_method(&"stop_text_presentation"):
 		_phone_closeup.call(&"stop_text_presentation")
 	_disconnect_view_signals()
+	_disconnect_interaction_signals()
 	_disconnect_work_state_signals()
 	_story_engine = null
 	_phone_system = null
 	_game_clock = null
+	_interaction_coordinator = null
 	_work_state = WorkState.IDLE
 	_work_state_reason_ids = PackedStringArray()
 	return {"ok": true}
@@ -561,14 +615,14 @@ func _connect_view_signals() -> Dictionary:
 	var contracts: Array[Dictionary] = [
 		{"source": _studio_overview, "signal": &"view_requested", "callback": Callable(self, "_on_overview_view_requested")},
 		{"source": _studio_overview, "signal": &"broadcast_requested", "callback": Callable(self, "_on_broadcast_requested")},
+		{"source": _studio_overview, "signal": &"broadcast_abandon_requested", "callback": Callable(self, "_on_broadcast_abandon_requested")},
+		{"source": _studio_overview, "signal": &"broadcast_defer_requested", "callback": Callable(self, "_on_broadcast_defer_requested")},
 		{"source": _studio_overview, "signal": &"microphone_panel_opened", "callback": Callable(self, "_on_microphone_panel_opened")},
 		{"source": _studio_overview, "signal": &"microphone_panel_closed", "callback": Callable(self, "_on_microphone_panel_closed")},
 		{"source": _phone_closeup, "signal": &"return_requested", "callback": Callable(self, "_on_closeup_return_requested")},
 		{"source": _phone_closeup, "signal": &"answer_requested", "callback": Callable(self, "_on_answer_requested")},
-		{"source": _phone_closeup, "signal": &"dialogue_choice_requested", "callback": Callable(self, "_on_dialogue_choice_requested")},
-		{"source": _phone_closeup, "signal": &"dialogue_option_requested", "callback": Callable(self, "_on_dialogue_option_requested")},
+		{"source": _phone_closeup, "signal": &"player_turn_requested", "callback": Callable(self, "_on_player_turn_requested")},
 		{"source": _phone_closeup, "signal": &"hang_up_requested", "callback": Callable(self, "_on_hang_up_requested")},
-		{"source": _phone_closeup, "signal": &"finish_call_requested", "callback": Callable(self, "_on_finish_call_requested")},
 		{"source": _computer_closeup, "signal": &"return_requested", "callback": Callable(self, "_on_closeup_return_requested")},
 		{"source": _computer_closeup, "signal": &"computer_entry_open_requested", "callback": Callable(self, "_on_computer_entry_open_requested")},
 		{"source": _door_window_closeup, "signal": &"return_requested", "callback": Callable(self, "_on_closeup_return_requested")},
@@ -594,14 +648,14 @@ func _disconnect_view_signals() -> void:
 	var contracts: Array[Dictionary] = [
 		{"source": _studio_overview, "signal": &"view_requested", "callback": Callable(self, "_on_overview_view_requested")},
 		{"source": _studio_overview, "signal": &"broadcast_requested", "callback": Callable(self, "_on_broadcast_requested")},
+		{"source": _studio_overview, "signal": &"broadcast_abandon_requested", "callback": Callable(self, "_on_broadcast_abandon_requested")},
+		{"source": _studio_overview, "signal": &"broadcast_defer_requested", "callback": Callable(self, "_on_broadcast_defer_requested")},
 		{"source": _studio_overview, "signal": &"microphone_panel_opened", "callback": Callable(self, "_on_microphone_panel_opened")},
 		{"source": _studio_overview, "signal": &"microphone_panel_closed", "callback": Callable(self, "_on_microphone_panel_closed")},
 		{"source": _phone_closeup, "signal": &"return_requested", "callback": Callable(self, "_on_closeup_return_requested")},
 		{"source": _phone_closeup, "signal": &"answer_requested", "callback": Callable(self, "_on_answer_requested")},
-		{"source": _phone_closeup, "signal": &"dialogue_choice_requested", "callback": Callable(self, "_on_dialogue_choice_requested")},
-		{"source": _phone_closeup, "signal": &"dialogue_option_requested", "callback": Callable(self, "_on_dialogue_option_requested")},
+		{"source": _phone_closeup, "signal": &"player_turn_requested", "callback": Callable(self, "_on_player_turn_requested")},
 		{"source": _phone_closeup, "signal": &"hang_up_requested", "callback": Callable(self, "_on_hang_up_requested")},
-		{"source": _phone_closeup, "signal": &"finish_call_requested", "callback": Callable(self, "_on_finish_call_requested")},
 		{"source": _computer_closeup, "signal": &"return_requested", "callback": Callable(self, "_on_closeup_return_requested")},
 		{"source": _computer_closeup, "signal": &"computer_entry_open_requested", "callback": Callable(self, "_on_computer_entry_open_requested")},
 		{"source": _door_window_closeup, "signal": &"return_requested", "callback": Callable(self, "_on_closeup_return_requested")},
@@ -613,6 +667,61 @@ func _disconnect_view_signals() -> void:
 		if source != null and source.is_connected(signal_name, callback):
 			source.disconnect(signal_name, callback)
 	_are_view_signals_connected = false
+
+
+func _connect_interaction_signals() -> Dictionary:
+	if _interaction_coordinator == null:
+		_phone_closeup.call(&"clear_conversation_snapshot")
+		return {"ok": true}
+	var contracts: Array[Dictionary] = [
+		{"signal": &"session_started", "callback": Callable(self, "_on_interaction_session_started")},
+		{"signal": &"session_changed", "callback": Callable(self, "_on_interaction_session_changed")},
+		{"signal": &"session_ended", "callback": Callable(self, "_on_interaction_session_ended")},
+		{"signal": &"actor_turn_request_started", "callback": Callable(self, "_on_actor_turn_request_started")},
+		{"signal": &"actor_turn_committed", "callback": Callable(self, "_on_actor_turn_committed")},
+		{"signal": &"stale_response_discarded", "callback": Callable(self, "_on_stale_response_discarded")},
+		{"signal": &"interaction_error", "callback": Callable(self, "_on_interaction_error")},
+	]
+	for contract: Dictionary in contracts:
+		var signal_name: StringName = contract["signal"] as StringName
+		var callback: Callable = contract["callback"] as Callable
+		if _interaction_coordinator.is_connected(signal_name, callback):
+			continue
+		var connect_result: Error = _interaction_coordinator.connect(signal_name, callback)
+		if connect_result != OK:
+			return _make_error("无法连接 InteractionCoordinator.%s，错误码=%d。" % [signal_name, connect_result])
+	var snapshot_value: Variant = _interaction_coordinator.call(&"get_active_session_snapshot")
+	if snapshot_value is Dictionary:
+		return _sync_phone_conversation_snapshot(snapshot_value as Dictionary)
+	return _make_error("InteractionCoordinator 未返回有效会话快照。")
+
+
+func _disconnect_interaction_signals() -> void:
+	if _interaction_coordinator == null:
+		return
+	var contracts: Array[Dictionary] = [
+		{"signal": &"session_started", "callback": Callable(self, "_on_interaction_session_started")},
+		{"signal": &"session_changed", "callback": Callable(self, "_on_interaction_session_changed")},
+		{"signal": &"session_ended", "callback": Callable(self, "_on_interaction_session_ended")},
+		{"signal": &"actor_turn_request_started", "callback": Callable(self, "_on_actor_turn_request_started")},
+		{"signal": &"actor_turn_committed", "callback": Callable(self, "_on_actor_turn_committed")},
+		{"signal": &"stale_response_discarded", "callback": Callable(self, "_on_stale_response_discarded")},
+		{"signal": &"interaction_error", "callback": Callable(self, "_on_interaction_error")},
+	]
+	for contract: Dictionary in contracts:
+		var signal_name: StringName = contract["signal"] as StringName
+		var callback: Callable = contract["callback"] as Callable
+		if _interaction_coordinator.is_connected(signal_name, callback):
+			_interaction_coordinator.disconnect(signal_name, callback)
+
+
+func _sync_phone_conversation_snapshot(snapshot: Dictionary) -> Dictionary:
+	if _phone_closeup == null or not _phone_closeup.has_method(&"set_conversation_snapshot"):
+		return _make_error("电话近景缺少 set_conversation_snapshot() 接口。")
+	var result: Variant = _phone_closeup.call(&"set_conversation_snapshot", snapshot)
+	if not _is_ok_result(result):
+		return _make_error("电话近景拒绝会话展示快照：%s" % _describe_operation_failure(result, "未知原因。"))
+	return {"ok": true}
 
 
 ## 工作状态是电话、待播稿件和当前视图的派生结果，不取代这些系统各自的
@@ -630,12 +739,17 @@ func _connect_work_state_signals() -> Dictionary:
 		if connect_result != OK:
 			return _make_error("无法连接 PhoneSystem.state_changed，错误码=%d。" % connect_result)
 	var broadcast_callback: Callable = Callable(self, "_on_broadcast_state_changed")
+	var decision_callback: Callable = Callable(self, "_on_broadcast_decision_required")
 	if not _story_engine.is_connected(&"broadcast_state_changed", broadcast_callback):
 		var broadcast_connect_result: Error = _story_engine.connect(&"broadcast_state_changed", broadcast_callback)
 		if broadcast_connect_result != OK:
 			if _phone_system.is_connected(&"state_changed", phone_callback):
 				_phone_system.disconnect(&"state_changed", phone_callback)
 			return _make_error("无法连接 StoryEngine.broadcast_state_changed，错误码=%d。" % broadcast_connect_result)
+	if _story_engine.has_signal(&"broadcast_decision_required") and not _story_engine.is_connected(&"broadcast_decision_required", decision_callback):
+		var decision_connect_result: Error = _story_engine.connect(&"broadcast_decision_required", decision_callback)
+		if decision_connect_result != OK:
+			return _make_error("无法连接 StoryEngine.broadcast_decision_required，错误码=%d。" % decision_connect_result)
 	_are_work_state_signals_connected = true
 	return {"ok": true}
 
@@ -651,6 +765,9 @@ func _disconnect_work_state_signals() -> void:
 		var broadcast_callback: Callable = Callable(self, "_on_broadcast_state_changed")
 		if _story_engine.is_connected(&"broadcast_state_changed", broadcast_callback):
 			_story_engine.disconnect(&"broadcast_state_changed", broadcast_callback)
+		var decision_callback: Callable = Callable(self, "_on_broadcast_decision_required")
+		if _story_engine.has_signal(&"broadcast_decision_required") and _story_engine.is_connected(&"broadcast_decision_required", decision_callback):
+			_story_engine.disconnect(&"broadcast_decision_required", decision_callback)
 	_are_work_state_signals_connected = false
 
 
@@ -662,6 +779,105 @@ func _on_phone_state_changed(_previous_state: int, _current_state: int, _event_i
 
 func _on_broadcast_state_changed() -> void:
 	_sync_work_state_or_show_error()
+
+
+func _on_broadcast_decision_required(task: Dictionary) -> void:
+	var task_name: String = String(task.get("name", "发布任务"))
+	_enqueue_task_notification(String(task.get("id", "")), "新信息可通过麦克风发送\n%s\n请前往中央麦克风发送、推迟或放弃。" % task_name)
+
+
+func _build_task_notification() -> void:
+	# 这是背景和文本的绝对叠放层；PanelContainer 会接管所有直接子节点的布局，
+	# 使标签安全区失效并裁切左侧首字，因此不能用作此处的容器。
+	_task_notification_panel = Control.new()
+	_task_notification_panel.name = "TaskDecisionNotification"
+	_task_notification_panel.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	_task_notification_panel.position = TASK_NOTICE_HIDDEN_POSITION
+	_task_notification_panel.size = TASK_NOTICE_SIZE
+	_task_notification_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_task_notification_panel.z_index = 35
+	var background: TextureRect = TextureRect.new()
+	background.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	background.stretch_mode = TextureRect.STRETCH_SCALE
+	background.texture = _create_task_notice_atlas_texture()
+	background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_task_notification_panel.add_child(background)
+	_task_notification_label = Label.new()
+	_task_notification_label.name = "TaskDecisionNotificationLabel"
+	_task_notification_label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	# 安全区避开左侧撕纸、右下印章和四角装订阴影；三行通知在 1920×1080
+	# 下保持完整可读，不依赖图片中的任何文字。
+	_task_notification_label.offset_left = 58.0
+	_task_notification_label.offset_top = 28.0
+	_task_notification_label.offset_right = -72.0
+	_task_notification_label.offset_bottom = -26.0
+	_task_notification_label.add_theme_font_size_override("font_size", 20)
+	_task_notification_label.add_theme_color_override("font_color", Color("30261b"))
+	_task_notification_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_task_notification_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_task_notification_panel.add_child(_task_notification_label)
+	_task_notification_panel.visible = false
+	add_child(_task_notification_panel)
+
+
+func _create_task_notice_atlas_texture() -> AtlasTexture:
+	var atlas_texture: AtlasTexture = AtlasTexture.new()
+	atlas_texture.atlas = TASK_NOTICE_TEXTURE
+	atlas_texture.region = TASK_NOTICE_REGION
+	return atlas_texture
+
+
+func _enqueue_task_notification(task_id: String, message: String) -> void:
+	if task_id.strip_edges().is_empty() or message.strip_edges().is_empty() or _is_ending:
+		return
+	_task_notification_queue.append({"task_id": task_id, "message": message})
+	if _task_notification_tween == null or not _task_notification_tween.is_valid():
+		_show_next_task_notification()
+
+
+func _show_next_task_notification() -> void:
+	if _task_notification_queue.is_empty() or _task_notification_panel == null:
+		return
+	var notice: Dictionary = _task_notification_queue.pop_front()
+	_current_task_notification_id = String(notice["task_id"])
+	var message: String = String(notice["message"])
+	_task_notification_label.text = message
+	_task_notification_panel.visible = true
+	_task_notification_panel.position = TASK_NOTICE_HIDDEN_POSITION
+	_task_notification_tween = create_tween()
+	_task_notification_tween.set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
+	_task_notification_tween.tween_property(_task_notification_panel, "position", TASK_NOTICE_VISIBLE_POSITION, TASK_NOTICE_SLIDE_SECONDS).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	_task_notification_tween.tween_interval(TASK_NOTICE_HOLD_SECONDS)
+	_task_notification_tween.tween_property(_task_notification_panel, "position", TASK_NOTICE_HIDDEN_POSITION, TASK_NOTICE_SLIDE_SECONDS).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	_task_notification_tween.tween_callback(_finish_task_notification)
+	_play_button_click("broadcast_decision_required")
+
+
+func _finish_task_notification() -> void:
+	_task_notification_tween = null
+	_current_task_notification_id = ""
+	if _task_notification_panel != null:
+		_task_notification_panel.visible = false
+	_show_next_task_notification()
+
+
+func _remove_task_notifications(task_id: String) -> void:
+	if task_id.strip_edges().is_empty():
+		return
+	var remaining: Array[Dictionary] = []
+	for notice: Dictionary in _task_notification_queue:
+		if String(notice.get("task_id", "")) != task_id:
+			remaining.append(notice)
+	_task_notification_queue = remaining
+	if _current_task_notification_id != task_id:
+		return
+	if _task_notification_tween != null and _task_notification_tween.is_valid():
+		_task_notification_tween.kill()
+	_task_notification_tween = null
+	_current_task_notification_id = ""
+	if _task_notification_panel != null:
+		_task_notification_panel.visible = false
+	_show_next_task_notification()
 
 
 func _sync_work_state_or_show_error() -> void:
@@ -695,16 +911,16 @@ func _sync_work_state_and_time_rate() -> Dictionary:
 			return _make_error("PhoneSystem 返回未知状态：%s。" % phone_state_name)
 	if _current_view_id == VIEW_COMPUTER:
 		next_reason_ids.append(WORK_REASON_COMPUTER_OPEN)
-	if is_settings_panel_open():
-		next_reason_ids.append(WORK_REASON_SETTINGS_OPEN)
-	var pending_result: Dictionary = _has_pending_player_broadcast()
-	if not bool(pending_result.get("ok", false)):
-		return pending_result
-	if bool(pending_result["has_pending_broadcast"]):
-		next_reason_ids.append(WORK_REASON_BROADCAST_PENDING)
-
-	var next_work_state: WorkState = WorkState.ACTIVE if not next_reason_ids.is_empty() else WorkState.IDLE
-	var target_rate: GameClockService.TimeRate = GameClockService.TimeRate.SLOW if next_work_state == WorkState.ACTIVE else GameClockService.TimeRate.FAST
+	elif _current_view_id == VIEW_DOOR:
+		next_reason_ids.append("door_open")
+	if _studio_overview.has_method(&"is_microphone_panel_open") and bool(_studio_overview.call(&"is_microphone_panel_open")):
+		next_reason_ids.append("microphone_open")
+	var has_pending_decision: bool = bool(_story_engine.call(&"has_pending_broadcast_decision"))
+	if has_pending_decision:
+		next_reason_ids.append(WORK_REASON_BROADCAST_DECISION_PENDING)
+	var is_connected_or_choice: bool = phone_state_name == "CONNECTED" or phone_state_name == "DIALOGUE_CHOICE"
+	var next_work_state: WorkState = WorkState.PAUSED if (has_pending_decision or is_connected_or_choice) else (WorkState.ACTIVE if not next_reason_ids.is_empty() else WorkState.IDLE)
+	var target_rate: GameClockService.TimeRate = GameClockService.TimeRate.PAUSED if next_work_state == WorkState.PAUSED else (GameClockService.TimeRate.SLOW if next_work_state == WorkState.ACTIVE else GameClockService.TimeRate.FAST)
 	var rate_result: Variant = _game_clock.call(&"set_time_rate_mode", target_rate)
 	if not _is_ok_result(rate_result):
 		return _make_error("GameClock 拒绝同步时间倍率：%s" % str(rate_result))
@@ -734,21 +950,6 @@ func _sync_work_state_and_time_rate() -> Dictionary:
 	}
 
 
-func _has_pending_player_broadcast() -> Dictionary:
-	var tasks_value: Variant = _story_engine.call(&"get_broadcast_tasks")
-	if not tasks_value is Array:
-		return _make_error("StoryEngine.get_broadcast_tasks() 必须返回 Array。")
-	for raw_task: Variant in tasks_value as Array:
-		if not raw_task is Dictionary:
-			return _make_error("StoryEngine 返回了非 Dictionary 的发布任务。")
-		var task: Dictionary = raw_task as Dictionary
-		if not task.has("is_publishable") or typeof(task["is_publishable"]) != TYPE_BOOL:
-			return _make_error("发布任务缺少布尔字段 is_publishable。")
-		if bool(task["is_publishable"]):
-			return {"ok": true, "has_pending_broadcast": true}
-	return {"ok": true, "has_pending_broadcast": false}
-
-
 func _bind_child_runtime(view: Object, method_name: StringName, arguments: Array, context: String) -> bool:
 	if view == null or not view.has_method(method_name):
 		show_system_error("%s失败：视图缺少 %s() 接口。" % [context, method_name])
@@ -773,10 +974,12 @@ func _on_closeup_return_requested() -> void:
 
 func _on_microphone_panel_opened() -> void:
 	_play_button_click("microphone_open")
+	_sync_work_state_or_show_error()
 
 
 func _on_microphone_panel_closed() -> void:
 	_play_button_click("microphone_close")
+	_sync_work_state_or_show_error()
 
 
 func _handle_view_request(view_id: String) -> void:
@@ -794,81 +997,91 @@ func _on_answer_requested() -> void:
 	if not _call_phone_action(&"answer_call", "接听", true):
 		return
 	_play_button_click("answer_call")
-	# 接听成功后立即进入首段权威对白；此时只展示对方发言，不展示回应选项。
-	if _is_ending or _phone_system == null or _story_engine == null:
+	if _is_ending or _phone_system == null:
 		show_system_error("这通电话暂时无法继续。")
+		return
+	# v1 内容仍可完成电话状态机和来电记录回归，但不再伪装成自由对话。
+	# 正式 Agent Dialogue v2 必须由 Main 注入已绑定的协调器。
+	if _interaction_coordinator == null:
+		show_system_error("当前剧情内容尚未启用自由对话。")
 		return
 	if not _call_phone_action(&"enter_dialogue_choice", "继续通话", false):
 		return
-	var dialogue_result: Variant = _story_engine.call(&"begin_active_call_dialogue")
-	if _is_ok_result(dialogue_result):
+	var session_value: Variant = _interaction_coordinator.call(&"begin_active_phone_session")
+	if _is_ok_result(session_value):
 		_hide_system_message_immediately()
+		var session_result: Dictionary = session_value as Dictionary
+		var snapshot: Dictionary = session_result.get("session", {}) as Dictionary
+		if not snapshot.is_empty():
+			var presentation_result: Dictionary = _sync_phone_conversation_snapshot(snapshot)
+			if not bool(presentation_result.get("ok", false)):
+				show_system_error("通话界面暂时无法显示。")
 		return
 	var restore_result: Variant = _phone_system.call(&"exit_dialogue_choice")
 	if typeof(restore_result) != TYPE_BOOL or not bool(restore_result):
-		push_error("[通话][answer_dialogue_restore_failed] 接听后无法恢复线路状态。")
+		push_error("[通话][answer_session_restore_failed] 接听后无法恢复线路状态。")
 	show_system_error("线路暂时无法继续，请稍后再试。")
 
 
-func _on_dialogue_choice_requested() -> void:
+func _on_player_turn_requested(text: String) -> void:
 	if _is_ending:
 		show_system_error("夜班已经结束。")
 		return
-	if _phone_system == null:
-		show_system_error("线路暂时不可用。")
+	if text.strip_edges().is_empty():
+		_phone_closeup.call(&"set_interaction_error", "请输入内容后再发送。")
 		return
-	if _story_engine == null:
-		show_system_error("这通电话暂时无法继续。")
-		return
-	var state_result: Variant = _phone_system.call(&"get_state_name")
-	if typeof(state_result) != TYPE_STRING:
-		show_system_error("线路暂时无法确认。")
-		return
-	var state_name: String = String(state_result)
-	if state_name == "DIALOGUE_CHOICE":
-		var reveal_result: Variant = _phone_closeup.call(&"reveal_dialogue_options") if _phone_closeup.has_method(&"reveal_dialogue_options") else {"ok": false}
-		if _is_ok_result(reveal_result):
-			_play_button_click("dialogue_choice_reveal")
-		else:
-			show_system_error("现在还没有可回应的内容。")
-	else:
-		show_system_error("现在还不能继续对话。")
-
-
-func _on_dialogue_option_requested(option_id: String) -> void:
-	if _is_ending:
-		show_system_error("夜班已经结束。")
-		return
-	if option_id.strip_edges().is_empty():
-		show_system_error("这句回应暂时不可用。")
-		return
-	if _story_engine == null or _phone_system == null:
+	if _interaction_coordinator == null:
 		show_system_error("线路暂时无法回应，请稍后再试。")
 		return
-	var selection_result: Variant = _story_engine.call(&"select_dialogue_option", option_id)
-	if not _is_ok_result(selection_result):
-		show_system_error("这句回应没有送出，请再试一次。")
+	_phone_closeup.call(&"set_agent_request_pending", true)
+	var submit_value: Variant = await _interaction_coordinator.call(&"submit_player_turn", text)
+	if not submit_value is Dictionary or not bool((submit_value as Dictionary).get("ok", false)):
+		var message: String = String((submit_value as Dictionary).get("message", "对方暂时没有回应。")) if submit_value is Dictionary else "对方暂时没有回应。"
+		_phone_closeup.call(&"set_interaction_error", message)
 		return
-	var selection: Dictionary = selection_result as Dictionary
-	# 只在 StoryEngine 接受稳定 option_id 后播放；02:00 等拒绝路径不产生假反馈。
-	_play_button_click("dialogue_option")
-	if not bool(selection.get("reached_terminal", false)):
-		return
-	var exit_result: Variant = _phone_system.call(&"exit_dialogue_choice")
-	if typeof(exit_result) != TYPE_BOOL or not bool(exit_result):
-		show_system_error("线路暂时无法继续，请稍后再试。")
-		return
-	_hide_system_message_immediately()
+	_phone_closeup.call(&"set_agent_request_pending", false)
+	_play_button_click("player_turn")
 
 
-func _is_active_dialogue_terminal() -> bool:
-	if _story_engine == null:
-		return false
-	var snapshot_value: Variant = _story_engine.call(&"get_active_dialogue_snapshot")
-	if not snapshot_value is Dictionary:
-		return false
-	var snapshot: Dictionary = snapshot_value as Dictionary
-	return not snapshot.is_empty() and bool(snapshot.get("is_terminal", false))
+func _on_interaction_session_started(snapshot: Dictionary) -> void:
+	var result: Dictionary = _sync_phone_conversation_snapshot(snapshot)
+	if not bool(result.get("ok", false)):
+		show_system_error("通话界面暂时无法建立。")
+		return
+	_phone_closeup.call_deferred(&"focus_player_input")
+
+
+func _on_interaction_session_changed(snapshot: Dictionary) -> void:
+	var result: Dictionary = _sync_phone_conversation_snapshot(snapshot)
+	if not bool(result.get("ok", false)):
+		show_system_error("通话界面暂时无法更新。")
+
+
+func _on_interaction_session_ended(_record: Dictionary) -> void:
+	_phone_closeup.call(&"clear_conversation_snapshot")
+
+
+func _on_actor_turn_request_started(_session_id: String, _request_serial: int) -> void:
+	_phone_closeup.call(&"set_agent_request_pending", true)
+
+
+func _on_actor_turn_committed(_entry: Dictionary) -> void:
+	_phone_closeup.call(&"set_agent_request_pending", false)
+	_phone_closeup.call_deferred(&"focus_player_input")
+
+
+func _on_stale_response_discarded(_session_id: String, _request_serial: int, _reason: String) -> void:
+	# stale 模型结果只能清理展示层等待状态，绝不能把返回内容写入 transcript。
+	_phone_closeup.call(&"set_agent_request_pending", false)
+	if _interaction_coordinator == null:
+		return
+	var snapshot_value: Variant = _interaction_coordinator.call(&"get_active_session_snapshot")
+	if snapshot_value is Dictionary:
+		_sync_phone_conversation_snapshot(snapshot_value as Dictionary)
+
+
+func _on_interaction_error(_error_code: String, message: String) -> void:
+	_phone_closeup.call(&"set_interaction_error", message)
 
 
 func _on_broadcast_requested(task_id: String, information_item_ids: Array[String]) -> void:
@@ -889,6 +1102,7 @@ func _on_broadcast_requested(task_id: String, information_item_ids: Array[String
 			broadcast_result = {"ok": false, "message": "播出暂时不可用。"}
 	# 只有 StoryEngine 真正接受任务与所选信息后才播放操作音；拒绝路径不得伪造成功反馈。
 	if bool(broadcast_result.get("ok", false)):
+		_remove_task_notifications(task_id)
 		_play_button_click("microphone_broadcast")
 	var feedback_result: Variant = _studio_overview.call(&"show_microphone_feedback", broadcast_result)
 	if not _is_ok_result(feedback_result):
@@ -897,6 +1111,35 @@ func _on_broadcast_requested(task_id: String, information_item_ids: Array[String
 		return
 	if not bool(broadcast_result.get("ok", false)):
 		show_system_error(String(broadcast_result.get("message", "播出没有成功，请稍后再试。")))
+
+
+func _on_broadcast_abandon_requested(task_id: String) -> void:
+	if _is_ending or _story_engine == null:
+		show_system_error("夜班已经结束，无法处理发布任务。")
+		return
+	var result: Variant = _story_engine.call(&"abandon_broadcast_task", task_id)
+	if _is_ok_result(result):
+		_remove_task_notifications(task_id)
+		_play_button_click("microphone_abandon")
+		var close_result: Variant = _studio_overview.call(&"close_microphone_panel")
+		if not _is_ok_result(close_result):
+			show_system_error("已放弃任务，但无法关闭中央麦克风面板。")
+			return
+		show_transient_notice("已放弃本局广播任务。")
+	else:
+		show_system_error(_describe_operation_failure(result, "无法放弃该发布任务。"))
+
+
+func _on_broadcast_defer_requested(task_id: String) -> void:
+	if _is_ending or _story_engine == null:
+		show_system_error("夜班已经结束，无法处理发布任务。")
+		return
+	var result: Variant = _story_engine.call(&"defer_broadcast_task", task_id)
+	if _is_ok_result(result):
+		_play_button_click("microphone_defer")
+		show_transient_notice("已推迟广播；新信息到达时会再次提醒。")
+	else:
+		show_system_error(_describe_operation_failure(result, "无法推迟该发布任务。"))
 
 
 ## 电脑只报告“玩家打开了哪一条”；StoryEngine 才能将其标记已读并推进陈述/事实。
@@ -927,11 +1170,6 @@ func _on_computer_entry_open_requested(category: String, entry_id: String) -> vo
 func _on_hang_up_requested() -> void:
 	if _call_phone_action(&"hang_up", "主动挂断", true):
 		_play_button_click("hang_up")
-
-
-func _on_finish_call_requested() -> void:
-	if _call_phone_action(&"finish_call", "结束通话", true):
-		_play_button_click("finish_call")
 
 
 func _on_control_bar_save_requested() -> void:

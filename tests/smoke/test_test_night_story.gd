@@ -1,8 +1,9 @@
 extends SceneTree
 
-## 测试夜班剧情与麦克风发布任务专项烟测。
-## 覆盖完整内容交叉引用、任务最低对话门槛、已揭示信息多选、等待后续相关电话、
-## 一次性任务记账、寻车条件来电，以及 02:00 异常记录同玩家任务记录的严格区分。
+## 正式测试夜班 Agent Dialogue v2 / 麦克风发布任务专项烟测。
+##
+## 不再通过 option graph 推进正式剧情；测试直接模拟 StoryEngine 已接受的 committed
+## ActorTurn，验证 Statement → Fact → semantic requirement → Broadcast Task 权威链。
 
 const CONTENT_LOADER_SCRIPT: GDScript = preload("res://scripts/core/content_loader.gd")
 const CONTENT_VALIDATOR_SCRIPT: GDScript = preload("res://scripts/core/content_validator.gd")
@@ -32,7 +33,7 @@ func _init() -> void:
 		print("[测试][TestNightStory] 失败。")
 		quit(1)
 		return
-	print("[测试][TestNightStory] 通过：统一发布任务、最低对话门槛、可选信息、条件来电与异常记录契约成立。")
+	print("[测试][TestNightStory] 通过：Agent Dialogue v2 内容、semantic requirements、可选信息与条件来电契约成立。")
 	quit(0)
 
 
@@ -52,20 +53,40 @@ func _load_validated_story() -> Dictionary:
 	if not validation_value is Dictionary:
 		return {}
 	var validation: Dictionary = validation_value as Dictionary
-	_assert_ok(validation, "test_night_story.json 必须通过完整严格校验。")
+	_assert_ok(validation, "test_night_story.json 必须通过完整严格 v2 校验。")
 	if not bool(validation.get("ok", false)):
 		return {}
 	return validation
 
 
 func _test_content_shape_and_rejections(validated_story: Dictionary) -> void:
+	_assert_equal(int(validated_story.get("content_format_version", -1)), 2, "正式测试夜班必须启用 content_format_version=2。")
 	_assert_equal((validated_story["events"] as Array).size(), 11, "测试剧情必须有 11 通来电。")
+	_assert_equal((validated_story["actors"] as Array).size(), 10, "Agent Dialogue v2 必须精确声明 10 个持久 Actor。")
 	_assert_equal((validated_story["messages"] as Array).size(), 6, "测试剧情必须有 6 条短信。")
 	_assert_equal((validated_story["broadcast_tasks"] as Array).size(), 2, "测试剧情必须有 2 个统一麦克风发布任务。")
+	_assert_true(not validated_story.has("dialogue_nodes"), "正式 v2 内容不得继续携带 dialogue_nodes。")
+
+	var ronnie_events: Array[String] = []
+	for raw_event: Variant in validated_story["events"] as Array:
+		var event: Dictionary = raw_event as Dictionary
+		_assert_true(not event.has("dialogue_start_id"), "v2 来电不得携带 dialogue_start_id：%s。" % String(event.get("id", "")))
+		if String(event.get("actor_id", "")) == "ronnie":
+			ronnie_events.append(String(event.get("id", "")))
+	ronnie_events.sort()
+	_assert_equal(ronnie_events, ["call_07_ronnie_1", "call_10_ronnie_2"], "Ronnie 两通电话必须共用唯一 actor_id=ronnie。")
+
 	var bridge_task: Dictionary = _find_definition(validated_story["broadcast_tasks"] as Array, TASK_BRIDGE)
 	_assert_true(not bridge_task.is_empty(), "必须配置北桥封锁发布任务。")
-	_assert_equal(bridge_task["required_dialogue_event_ids"], ["call_01_warren", "call_06_trucker"], "北桥任务最低门槛必须精确要求沃伦与东侧卡车司机。")
-	_assert_equal(bridge_task["related_dialogue_event_ids"], ["call_01_warren", "call_06_trucker", "call_09_southbound"], "南向年轻司机必须是可等待的相关对话，而不是最低必需对话。")
+	_assert_equal(
+		bridge_task["requirements"],
+		[
+			{"type": "interaction_answered", "id": "call_01_warren"},
+			{"type": "interaction_answered", "id": "call_06_trucker"},
+		],
+		"北桥最低门槛必须保持为 Warren + Trucker 实际参与，而不是强制 Statement reveal。"
+	)
+	_assert_equal(bridge_task["related_event_ids"], ["call_01_warren", "call_06_trucker", "call_09_southbound"], "南向年轻司机必须继续是可等待的相关事件。")
 	_assert_equal((bridge_task["information_items"] as Array).size(), 4, "北桥任务必须同时允许电话信息与米勒短信信息成为可选项。")
 
 	var validator: RefCounted = CONTENT_VALIDATOR_SCRIPT.new()
@@ -80,15 +101,26 @@ func _test_content_shape_and_rejections(validated_story: Dictionary) -> void:
 		"未声明条件必须被完整拒绝。"
 	)
 
-	var unknown_related_dialogue: Dictionary = validated_story.duplicate(true)
-	var invalid_task: Dictionary = (unknown_related_dialogue["broadcast_tasks"] as Array)[0] as Dictionary
-	invalid_task["related_dialogue_event_ids"] = ["call_missing", "call_06_trucker", "call_09_southbound"]
+	var unknown_related_event: Dictionary = validated_story.duplicate(true)
+	var invalid_task: Dictionary = (unknown_related_event["broadcast_tasks"] as Array)[0] as Dictionary
+	invalid_task["related_event_ids"] = ["call_missing", "call_06_trucker", "call_09_southbound"]
 	_assert_error(
-		validator.call(&"validate_test_night_story", unknown_related_dialogue, "memory://unknown_related_dialogue"),
-		"unknown_dialogue_event_id",
+		validator.call(&"validate_test_night_story", unknown_related_event, "memory://unknown_related_event"),
+		"unknown_event_id",
 		TASK_BRIDGE,
-		"related_dialogue_event_ids",
-		"发布任务引用不存在的相关对话必须被拒绝。"
+		"related_event_ids",
+		"发布任务引用不存在的相关事件必须被拒绝。"
+	)
+
+	var legacy_requirement: Dictionary = validated_story.duplicate(true)
+	var legacy_task: Dictionary = (legacy_requirement["broadcast_tasks"] as Array)[0] as Dictionary
+	legacy_task["required_dialogue_event_ids"] = ["call_01_warren", "call_06_trucker"]
+	_assert_error(
+		validator.call(&"validate_test_night_story", legacy_requirement, "memory://legacy_requirement"),
+		"legacy_dialogue_requirement_forbidden",
+		TASK_BRIDGE,
+		"required_dialogue_event_ids",
+		"v2 任务重新引入 terminal-dialogue 门槛必须被拒绝。"
 	)
 
 	var unknown_statement: Dictionary = validated_story.duplicate(true)
@@ -119,27 +151,26 @@ func _test_content_shape_and_rejections(validated_story: Dictionary) -> void:
 
 
 func _test_bridge_task_minimum_gate_and_send_once(validated_story: Dictionary) -> void:
-	var engine: RefCounted = STORY_ENGINE_SCRIPT.new()
-	var phone: RefCounted = PHONE_SYSTEM_SCRIPT.new()
-	_assert_ok(engine.call(&"set_phone_system", phone), "A+B 门槛测试必须绑定 PhoneSystem。")
-	_assert_ok(engine.call(&"configure_test_night_story", validated_story), "A+B 门槛测试必须配置完整剧情。")
+	var runtime: Dictionary = _make_story_runtime(validated_story)
+	var engine: RefCounted = runtime["engine"] as RefCounted
+	var phone: RefCounted = runtime["phone"] as RefCounted
 
-	_complete_warren(engine, phone)
+	_complete_agent_call(engine, phone, 60, "call_01_warren", "warren", ["statement_warren_tanker_fire_claim"], "酒吧有人说北桥那边一辆油罐车翻了还冒烟；我没亲眼看见。")
 	var after_a: Dictionary = _find_task_snapshot(engine, TASK_BRIDGE)
-	_assert_equal(int(after_a.get("completed_required_dialogue_count", -1)), 1, "完成 A=沃伦后，北桥任务必要通话进度必须为 1/2。")
+	_assert_equal(int(after_a.get("satisfied_requirement_count", -1)), 1, "完成 A=沃伦后，北桥 semantic requirement 进度必须为 1/2。")
 	_assert_true(not bool(after_a.get("prerequisites_met", true)), "只完成 A 时不得满足发布门槛。")
-	_assert_equal(_available_information_ids(after_a), [INFO_WARREN], "A 路径只追问到沃伦传闻时只能收集 1 号信息。")
+	_assert_equal(_available_information_ids(after_a), [INFO_WARREN], "A 路径揭示沃伦传闻时只能收集 1 号信息。")
 	var premature: Dictionary = engine.call(&"send_broadcast_task", TASK_BRIDGE, [INFO_WARREN]) as Dictionary
 	_assert_error_code(premature, "broadcast_task_prerequisites_unmet", "只完成 A 时，即使已有 1 号信息也必须拒绝发布。")
 
-	_complete_trucker(engine, phone)
+	_complete_agent_call(engine, phone, 1980, "call_06_trucker", "trucker", ["statement_trucker_bridge_queue"], "北桥东侧堵得像停车场，大家都停在封闭区域前等着。")
 	var after_b: Dictionary = _find_task_snapshot(engine, TASK_BRIDGE)
-	_assert_equal(int(after_b.get("completed_required_dialogue_count", -1)), 2, "完成 B=卡车司机后，北桥任务必要通话进度必须为 2/2。")
-	_assert_true(bool(after_b.get("prerequisites_met", false)), "完成 A+B 后必须满足最低对话门槛。")
+	_assert_equal(int(after_b.get("satisfied_requirement_count", -1)), 2, "完成 B=卡车司机后，北桥 semantic requirement 进度必须为 2/2。")
+	_assert_true(bool(after_b.get("prerequisites_met", false)), "完成 A+B 后必须满足最低 interaction_answered 门槛。")
 	_assert_true(bool(after_b.get("is_publishable", false)), "A+B 后且已有信息时任务必须可发布。")
 	_assert_equal(_available_information_ids(after_b), [INFO_TRUCKER, INFO_WARREN], "未读取米勒短信、未等待 C 时必须恰好可选 1/2 两条电话信息。")
 	var empty_selection: Dictionary = engine.call(&"send_broadcast_task", TASK_BRIDGE, []) as Dictionary
-	_assert_error_code(empty_selection, "broadcast_task_empty_selection", "达到 A+B 门槛后仍必须至少选择一条已收集信息。")
+	_assert_error_code(empty_selection, "information_selection_count_invalid", "达到 A+B 门槛后仍必须至少选择一条已收集信息。")
 	var duplicate_selection: Dictionary = engine.call(&"send_broadcast_task", TASK_BRIDGE, [INFO_WARREN, INFO_WARREN]) as Dictionary
 	_assert_error_code(duplicate_selection, "broadcast_task_duplicate_information", "同一信息项不得在一次任务发布中重复选择。")
 	var unavailable_selection: Dictionary = engine.call(&"send_broadcast_task", TASK_BRIDGE, [INFO_WARREN, INFO_SOUTHBOUND]) as Dictionary
@@ -159,17 +190,16 @@ func _test_bridge_task_minimum_gate_and_send_once(validated_story: Dictionary) -
 
 
 func _test_bridge_task_waits_for_optional_c(validated_story: Dictionary) -> void:
-	var engine: RefCounted = STORY_ENGINE_SCRIPT.new()
-	var phone: RefCounted = PHONE_SYSTEM_SCRIPT.new()
-	_assert_ok(engine.call(&"set_phone_system", phone), "等待 C 测试必须绑定 PhoneSystem。")
-	_assert_ok(engine.call(&"configure_test_night_story", validated_story), "等待 C 测试必须配置完整剧情。")
-	_complete_warren(engine, phone)
-	_complete_trucker(engine, phone)
+	var runtime: Dictionary = _make_story_runtime(validated_story)
+	var engine: RefCounted = runtime["engine"] as RefCounted
+	var phone: RefCounted = runtime["phone"] as RefCounted
+	_complete_agent_call(engine, phone, 60, "call_01_warren", "warren", ["statement_warren_tanker_fire_claim"], "北桥那边有人说油罐车翻了还冒烟，我没亲眼见。")
+	_complete_agent_call(engine, phone, 1980, "call_06_trucker", "trucker", ["statement_trucker_bridge_queue"], "北桥东边严重拥堵，封闭区域前全是车。")
 	var ready_before_c: Dictionary = _find_task_snapshot(engine, TASK_BRIDGE)
 	_assert_true(bool(ready_before_c.get("is_publishable", false)), "A+B 后玩家必须已经可以选择立即发布。")
 	_assert_equal(_available_information_ids(ready_before_c), [INFO_TRUCKER, INFO_WARREN], "等待 C 前只应有 1/2 两条电话信息。")
 
-	_complete_southbound(engine, phone)
+	_complete_agent_call(engine, phone, 2940, "call_09_southbound", "southbound", ["statement_southbound_bridge_claim"], "我按临时路牌驶过北桥，已经下桥到城南路口了。")
 	var after_c: Dictionary = _find_task_snapshot(engine, TASK_BRIDGE)
 	_assert_true(bool(after_c.get("prerequisites_met", false)), "等待 C 不应改变已经满足的 A+B 最低门槛。")
 	_assert_equal(_available_information_ids(after_c), [INFO_TRUCKER, INFO_SOUTHBOUND, INFO_WARREN], "完成 C 后必须额外出现第 3 条南向司机信息。")
@@ -180,23 +210,12 @@ func _test_bridge_task_waits_for_optional_c(validated_story: Dictionary) -> void
 
 
 func _test_wagon_task_condition_flow(validated_story: Dictionary) -> void:
-	var engine: RefCounted = STORY_ENGINE_SCRIPT.new()
-	var phone: RefCounted = PHONE_SYSTEM_SCRIPT.new()
-	_assert_ok(engine.call(&"set_phone_system", phone), "寻车任务测试必须绑定 PhoneSystem。")
-	_assert_ok(engine.call(&"configure_test_night_story", validated_story), "寻车任务测试必须配置完整剧情。")
-	_assert_ok(engine.call(&"advance_to_game_tick", 1020), "01:17 应触发玛莎来电。")
-	_assert_equal(String(phone.call(&"get_active_event_id")), "call_03_martha", "玛莎必须成为当前活动线路。")
-	_assert_true(bool(phone.call(&"answer_call", 1020)), "玛莎来电应可接听。")
-	_assert_true(bool(phone.call(&"enter_dialogue_choice")), "玛莎通话应可进入对话选择。")
-	_assert_ok(engine.call(&"begin_active_call_dialogue"), "玛莎来电必须能开始预制对话。")
-	_assert_ok(engine.call(&"select_dialogue_option", "opt_martha_vehicle"), "追问玛莎车辆信息必须可提交。")
-	var finish_result: Dictionary = engine.call(&"select_dialogue_option", "opt_martha_follow_request") as Dictionary
-	_assert_ok(finish_result, "玛莎第二轮必须可完成。")
-	_assert_true(bool(finish_result.get("reached_terminal", false)), "玛莎第二轮后必须抵达终止节点。")
-	_assert_true(bool(phone.call(&"exit_dialogue_choice")), "玛莎终止对白后必须回到 Connected。")
-	_assert_true(bool(phone.call(&"finish_call", 1020)), "玛莎通话必须正常结束。")
+	var runtime: Dictionary = _make_story_runtime(validated_story)
+	var engine: RefCounted = runtime["engine"] as RefCounted
+	var phone: RefCounted = runtime["phone"] as RefCounted
+	_complete_agent_call(engine, phone, 1020, "call_03_martha", "martha", ["statement_martha_wagon_route"], "丹尼开的是深色旧旅行车，右后灯接触不好，常从北桥回城南。")
 	var wagon_task: Dictionary = _find_task_snapshot(engine, TASK_WAGON)
-	_assert_true(bool(wagon_task.get("is_publishable", false)), "完成玛莎对话并揭示路线后，寻车任务必须可发布。")
+	_assert_true(bool(wagon_task.get("is_publishable", false)), "玛莎 interaction 已回答且路线 Statement 已揭示后，寻车任务必须可发布。")
 	_assert_equal(_available_information_ids(wagon_task), [INFO_WAGON], "寻车任务必须只显示真正收集的玛莎信息。")
 	_assert_ok(engine.call(&"send_broadcast_task", TASK_WAGON, [INFO_WAGON]), "寻车任务必须可发送。")
 	_assert_true(bool(engine.call(&"is_condition_met", "condition_wagon_witness_request_sent")), "寻车任务必须通过稳定条件 ID 解锁后续来电。")
@@ -214,10 +233,9 @@ func _test_wagon_task_condition_flow(validated_story: Dictionary) -> void:
 
 
 func _test_unqualified_conditional_call_is_not_missed(validated_story: Dictionary) -> void:
-	var engine: RefCounted = STORY_ENGINE_SCRIPT.new()
-	var phone: RefCounted = PHONE_SYSTEM_SCRIPT.new()
-	_assert_ok(engine.call(&"set_phone_system", phone), "条件失效测试必须连接电话系统。")
-	_assert_ok(engine.call(&"configure_test_night_story", validated_story), "条件失效测试必须配置完整剧情。")
+	var runtime: Dictionary = _make_story_runtime(validated_story)
+	var engine: RefCounted = runtime["engine"] as RefCounted
+	var phone: RefCounted = runtime["phone"] as RefCounted
 	# 不执行寻车发布任务，直接越过 call_04 的窗口。未取得资格的条件来电不得伪造漏接记录。
 	_assert_ok(engine.call(&"advance_to_game_tick", 1680), "越过条件来电窗口的时间推进必须成功。")
 	var records: Array = phone.call(&"get_call_records") as Array
@@ -231,46 +249,50 @@ func _test_unqualified_conditional_call_is_not_missed(validated_story: Dictionar
 	)
 
 
-func _complete_warren(engine: RefCounted, phone: RefCounted) -> void:
-	_assert_ok(engine.call(&"advance_to_game_tick", 60), "01:01 应触发 A=沃伦来电。")
-	_assert_equal(String(phone.call(&"get_active_event_id")), "call_01_warren", "A 必须是沃伦。")
-	_assert_true(bool(phone.call(&"answer_call", 60)), "A=沃伦必须可接听。")
-	_assert_true(bool(phone.call(&"enter_dialogue_choice")), "A=沃伦必须能进入对话选择。")
-	_assert_ok(engine.call(&"begin_active_call_dialogue"), "A=沃伦必须能开始预制对话。")
-	_assert_ok(engine.call(&"select_dialogue_option", "opt_warren_song"), "A 第一轮必须可提交。")
-	var finish_result: Dictionary = engine.call(&"select_dialogue_option", "opt_warren_follow_report") as Dictionary
-	_assert_ok(finish_result, "A 第二轮必须可追问事故传闻。")
-	_assert_true(bool(finish_result.get("reached_terminal", false)), "A 必须真实抵达终止节点后才算完成对话。")
-	_assert_true(bool(phone.call(&"exit_dialogue_choice")), "A 终止对白后必须回到 Connected。")
-	_assert_true(bool(phone.call(&"finish_call", 60)), "A 通话必须正常结束。")
+func _make_story_runtime(validated_story: Dictionary) -> Dictionary:
+	var engine: RefCounted = STORY_ENGINE_SCRIPT.new()
+	var phone: RefCounted = PHONE_SYSTEM_SCRIPT.new()
+	_assert_ok(engine.call(&"set_phone_system", phone), "测试剧情必须绑定 PhoneSystem。")
+	_assert_ok(engine.call(&"configure_test_night_story", validated_story), "测试剧情必须配置完整 v2 内容。")
+	_assert_true(bool(engine.call(&"is_agent_dialogue_v2")), "正式测试剧情必须被 StoryEngine 识别为 Agent Dialogue v2。")
+	return {"engine": engine, "phone": phone}
 
 
-func _complete_trucker(engine: RefCounted, phone: RefCounted) -> void:
-	_assert_ok(engine.call(&"advance_to_game_tick", 1980), "01:33 应推进到 B=东侧卡车司机时间窗。")
-	_assert_equal(String(phone.call(&"get_active_event_id")), "call_06_trucker", "B 必须是东侧卡车司机；之前非必要来电应按真实窗口处理。")
-	_assert_true(bool(phone.call(&"answer_call", 1980)), "B=卡车司机必须可接听。")
-	_assert_true(bool(phone.call(&"enter_dialogue_choice")), "B=卡车司机必须能进入对话选择。")
-	_assert_ok(engine.call(&"begin_active_call_dialogue"), "B=卡车司机必须能开始预制对话。")
-	_assert_ok(engine.call(&"select_dialogue_option", "opt_trucker_closure"), "B 第一轮必须可确认官方封闭通知。")
-	var finish_result: Dictionary = engine.call(&"select_dialogue_option", "opt_trucker_follow_wait") as Dictionary
-	_assert_ok(finish_result, "B 第二轮必须可让司机等待现场人员处理。")
-	_assert_true(bool(finish_result.get("reached_terminal", false)), "B 必须真实抵达终止节点后才算完成对话。")
-	_assert_true(bool(phone.call(&"exit_dialogue_choice")), "B 终止对白后必须回到 Connected。")
-	_assert_true(bool(phone.call(&"finish_call", 1980)), "B 通话必须正常结束。")
-
-
-func _complete_southbound(engine: RefCounted, phone: RefCounted) -> void:
-	_assert_ok(engine.call(&"advance_to_game_tick", 2940), "01:49 应推进到 C=南向年轻司机时间窗。")
-	_assert_equal(String(phone.call(&"get_active_event_id")), "call_09_southbound", "C 必须是南向年轻司机；中间来电应按真实窗口处理。")
-	_assert_true(bool(phone.call(&"answer_call", 2940)), "C=南向年轻司机必须可接听。")
-	_assert_true(bool(phone.call(&"enter_dialogue_choice")), "C=南向年轻司机必须能进入对话选择。")
-	_assert_ok(engine.call(&"begin_active_call_dialogue"), "C=南向年轻司机必须能开始预制对话。")
-	_assert_ok(engine.call(&"select_dialogue_option", "opt_southbound_confirm"), "C 第一轮必须确认他指的是北桥并揭示 3 号信息。")
-	var finish_result: Dictionary = engine.call(&"select_dialogue_option", "opt_southbound_follow_bridge") as Dictionary
-	_assert_ok(finish_result, "C 第二轮必须可完成桥面位置追问。")
-	_assert_true(bool(finish_result.get("reached_terminal", false)), "C 必须真实抵达终止节点。")
-	_assert_true(bool(phone.call(&"exit_dialogue_choice")), "C 终止对白后必须回到 Connected。")
-	_assert_true(bool(phone.call(&"finish_call", 2940)), "C 通话必须正常结束。")
+func _complete_agent_call(
+	engine: RefCounted,
+	phone: RefCounted,
+	tick: int,
+	event_id: String,
+	actor_id: String,
+	asserted_statement_ids: Array,
+	utterance: String
+) -> void:
+	_assert_ok(engine.call(&"advance_to_game_tick", tick), "%s 时间推进必须成功。" % event_id)
+	_assert_equal(String(phone.call(&"get_active_event_id")), event_id, "%s 必须成为当前活动线路。" % event_id)
+	_assert_true(bool(phone.call(&"answer_call", tick)), "%s 必须可接听。" % event_id)
+	_assert_true(bool(phone.call(&"enter_dialogue_choice")), "%s 必须进入自由对话线路状态。" % event_id)
+	var session_id: String = "test_%s" % event_id
+	_assert_ok(engine.call(&"begin_agent_interaction", session_id, event_id, actor_id), "%s 必须能建立 Agent interaction。" % event_id)
+	var actor_turn: Dictionary = {
+		"speech_act": "answer",
+		"utterance": utterance,
+		"asserted_claim_ids": asserted_statement_ids.duplicate(),
+		"withheld_claim_ids": [],
+		"session_intent": "continue",
+		"world_action": null,
+	}
+	var commit_result: Dictionary = engine.call(&"commit_agent_turn", {
+		"session_id": session_id,
+		"event_id": event_id,
+		"actor_id": actor_id,
+		"request_serial": 1,
+		"turn_index": 1,
+		"actor_turn": actor_turn,
+	}) as Dictionary
+	_assert_ok(commit_result, "%s committed ActorTurn 必须能由 StoryEngine 权威提交。" % event_id)
+	_assert_ok(engine.call(&"complete_agent_interaction", session_id, event_id, "smoke_call_complete"), "%s Agent interaction 必须能正式完成。" % event_id)
+	_assert_true(bool(phone.call(&"exit_dialogue_choice")), "%s 完成 interaction 后必须回到 Connected。" % event_id)
+	_assert_true(bool(phone.call(&"finish_call", tick)), "%s 必须由 PhoneSystem 正式结束。" % event_id)
 
 
 func _find_task_snapshot(engine: RefCounted, task_id: String) -> Dictionary:

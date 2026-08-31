@@ -8,6 +8,7 @@ extends SceneTree
 const GAME_CLOCK_SCRIPT: GDScript = preload("res://scripts/core/game_clock.gd")
 const GAME_SCREEN_SCENE: PackedScene = preload("res://scenes/studio/game_screen.tscn")
 const PHONE_SYSTEM_SCRIPT: GDScript = preload("res://scripts/systems/phone_system.gd")
+const AGENT_DIALOGUE_TEST_DRIVER_SCRIPT: GDScript = preload("res://tests/smoke/agent_dialogue_test_driver.gd")
 const STORY_ENGINE_SCRIPT: GDScript = preload("res://scripts/core/story_engine.gd")
 
 var _has_failed: bool = false
@@ -51,10 +52,12 @@ func _run() -> void:
 
 	_assert_true(phone.answer_call(0), "测试来电必须可接听。")
 	_assert_equal(phone.get_state_name(), "CONNECTED", "接听后必须处于 Connected。")
-	_assert_rate(clock, GameClockService.TimeRate.SLOW, "已接通电话必须使用 SLOW 倍率。")
+	_assert_work_state(screen, GameScreen.WorkState.PAUSED, "已接通电话必须暂停。")
+	_assert_rate(clock, GameClockService.TimeRate.PAUSED, "已接通电话必须使用 PAUSED 倍率。")
 	_assert_true(phone.enter_dialogue_choice(), "已接通电话必须能进入对话选择。")
 	_assert_equal(phone.get_state_name(), "DIALOGUE_CHOICE", "进入选择后必须处于 DialogueChoice。")
-	_assert_rate(clock, GameClockService.TimeRate.SLOW, "对话选择期间必须保持 SLOW 倍率。")
+	_assert_work_state(screen, GameScreen.WorkState.PAUSED, "对话选择期间必须暂停。")
+	_assert_rate(clock, GameClockService.TimeRate.PAUSED, "对话选择期间必须保持 PAUSED 倍率。")
 	_assert_true(phone.exit_dialogue_choice(), "对话选择必须能恢复通话。")
 	_assert_true(phone.finish_call(0), "测试通话必须能正常结束。")
 	_assert_equal(phone.get_state_name(), "IDLE", "通话结束后电话必须回到 Idle。")
@@ -73,26 +76,53 @@ func _run() -> void:
 	_assert_equal(String(phone.get_active_event_id()), "call_03_martha", "01:17 必须由真实剧情触发玛莎来电。")
 	_assert_true(phone.answer_call(17 * GameClockService.GAME_TICKS_PER_MINUTE), "玛莎来电必须可接听。")
 	_assert_true(phone.enter_dialogue_choice(), "玛莎来电必须进入对话选择。")
-	_assert_ok(story_engine.begin_active_call_dialogue(), "玛莎预制对话必须能开始。")
-	_assert_ok(story_engine.select_dialogue_option("opt_martha_vehicle"), "玛莎第一轮必须揭示寻车信息。")
-	_assert_ok(story_engine.select_dialogue_option("opt_martha_follow_request"), "玛莎第二轮必须完成必要对话。")
+	var dialogue_driver: RefCounted = AGENT_DIALOGUE_TEST_DRIVER_SCRIPT.new()
+	_assert_ok(
+		dialogue_driver.call(&"commit_active_call", story_engine, "call_03_martha", "martha", ["statement_martha_wagon_route"], "丹尼开的是深色旧旅行车，请帮我征集安全目击信息。"),
+		"玛莎 committed ActorTurn 必须揭示寻车信息并满足 interaction 前置。"
+	)
 	_assert_true(phone.exit_dialogue_choice(), "玛莎终止对白后必须恢复接通状态。")
 	_assert_true(phone.finish_call(17 * GameClockService.GAME_TICKS_PER_MINUTE), "玛莎通话必须真实结束。")
 	_assert_equal(phone.get_state_name(), "IDLE", "玛莎通话结束后电话必须空闲。")
-	_assert_work_state(screen, GameScreen.WorkState.ACTIVE, "存在 is_publishable 发布任务时，即使电话空闲也必须保持 ACTIVE。")
-	_assert_rate(clock, GameClockService.TimeRate.SLOW, "待发布任务未处理时必须与现实 1:1 推进。")
+	_assert_work_state(screen, GameScreen.WorkState.PAUSED, "任务首次进入待决时，即使电话空闲也必须暂停。")
+	_assert_rate(clock, GameClockService.TimeRate.PAUSED, "待决任务必须暂停时间。")
 	var active_snapshot: Dictionary = screen.get_work_state_snapshot()
 	_assert_true(
-		(active_snapshot["reason_ids"] as PackedStringArray).has(GameScreen.WORK_REASON_BROADCAST_PENDING),
-		"ACTIVE 快照必须公开稳定的 broadcast_pending 原因。"
+		(active_snapshot["reason_ids"] as PackedStringArray).has(GameScreen.WORK_REASON_BROADCAST_DECISION_PENDING),
+		"PAUSED 快照必须公开稳定的 broadcast_decision_pending 原因。"
 	)
+	_assert_ok(story_engine.defer_broadcast_task("task_broadcast_wagon_witness_request"), "待决任务必须允许推迟。")
+	_assert_work_state(screen, GameScreen.WorkState.IDLE, "推迟任务且电话空闲后必须恢复 IDLE。")
+	_assert_rate(clock, GameClockService.TimeRate.FAST, "推迟任务且在总览时必须恢复 FAST 倍率。")
+	var overview: StudioOverview = screen.get_node(NodePath("ViewHost/StudioOverview")) as StudioOverview
+	_assert_true(overview != null, "时间路由测试必须取得工作室总览。")
+	if overview != null:
+		overview.call(&"_on_microphone_hotspot_pressed")
+		await process_frame
+		_assert_true(overview.is_microphone_panel_open(), "推迟后重新打开麦克风必须保留任务卡。")
+		_assert_work_state(screen, GameScreen.WorkState.ACTIVE, "推迟任务保持麦克风页打开时必须恢复 ACTIVE。")
+		_assert_rate(clock, GameClockService.TimeRate.SLOW, "推迟任务保持麦克风页打开时必须恢复 SLOW。")
+		# 队列按稳定任务 ID 保存；放弃必须同时撤掉已显示与尚未显示的同任务通知。
+		screen.call(&"_enqueue_task_notification", "task_broadcast_wagon_witness_request", "新信息可通过麦克风发送")
+		await process_frame
+		var notification_panel: Control = screen.get_node_or_null("TaskDecisionNotification") as Control
+		_assert_true(notification_panel != null and notification_panel.visible, "任务通知必须能显示在真实 GameScreen 中。")
+		var abandon_button: Button = overview.find_child("AbandonTask_task_broadcast_wagon_witness_request", true, false) as Button
+		_assert_true(abandon_button != null, "推迟任务卡必须仍提供放弃广播按钮。")
+		if abandon_button != null:
+			abandon_button.emit_signal(&"pressed")
+			await process_frame
+		_assert_true(not overview.is_microphone_panel_open(), "放弃任务成功后必须自动关闭麦克风面板。")
+		_assert_work_state(screen, GameScreen.WorkState.IDLE, "放弃任务并关闭面板后必须恢复 IDLE。")
+		_assert_rate(clock, GameClockService.TimeRate.FAST, "放弃任务并关闭面板后必须恢复 FAST。")
+		_assert_true(notification_panel != null and not notification_panel.visible, "放弃任务必须安全移除正在显示的同任务通知。")
+		_assert_true(screen._task_notification_queue.is_empty(), "放弃任务必须剔除尚未显示的同任务通知。")
 	var selected_information_ids: Array[String] = ["info_wagon_martha_route"]
-	_assert_ok(
-		story_engine.send_broadcast_task("task_broadcast_wagon_witness_request", selected_information_ids),
-		"发送唯一可发布的寻车任务后必须清除待发布状态。"
+	_assert_true(
+		not bool(story_engine.send_broadcast_task("task_broadcast_wagon_witness_request", selected_information_ids).get("ok", false)),
+		"放弃后的寻车任务发送必须被拒绝。"
 	)
-	_assert_work_state(screen, GameScreen.WorkState.IDLE, "待发布任务处理完且未看电脑时必须恢复 IDLE。")
-	_assert_rate(clock, GameClockService.TimeRate.FAST, "所有非空闲原因清除后必须恢复快速倍率。")
+	_assert_true((story_engine.get_player_broadcast_records() as Array).is_empty(), "放弃后的寻车任务不得生成玩家播出记录。")
 
 	screen.release_runtime()
 	root.remove_child(screen)

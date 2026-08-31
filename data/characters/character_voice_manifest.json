@@ -1,0 +1,16 @@
+{
+  "format_version": 1,
+  "kind": "character_voice_manifest",
+  "characters": [
+    {"character_id": "warren", "display_name": "沃伦", "profile": "酒吧附近的常客，语气迟疑而压低。", "event_ids": ["call_01_warren"], "voice_stream_path": "res://音效/对话音效/超低沉男性.mp3"},
+    {"character_id": "wrong_number_caller", "display_name": "夜班烘焙工", "profile": "拨错号码的夜班烘焙工，困惑而音色不稳定。", "event_ids": ["call_02_wrong_number"], "voice_stream_path": "res://音效/对话音效/高频古怪的配音.mp3"},
+    {"character_id": "martha_klein", "display_name": "玛莎·克莱恩", "profile": "寻找丹尼的女性来电者，克制但焦急。", "event_ids": ["call_03_martha"], "voice_stream_path": "res://音效/对话音效/中频女性.mp3"},
+    {"character_id": "riverside_dog_walker", "display_name": "河边遛狗者", "profile": "雨夜河堤的目击者，谨慎回忆细节。", "event_ids": ["call_04_dog_walker"], "voice_stream_path": "res://音效/对话音效/高频女性配音.mp3"},
+    {"character_id": "starlight_cinema_attendant", "display_name": "星光小影院值班员", "profile": "影院夜班人员，疲惫又有些神经质。", "event_ids": ["call_05_cinema"], "voice_stream_path": "res://音效/对话音效/中高频古怪配音.mp3"},
+    {"character_id": "eastside_trucker", "display_name": "东侧卡车司机", "profile": "堵在北桥东侧的卡车司机，嗓音厚重。", "event_ids": ["call_06_trucker"], "voice_stream_path": "res://音效/对话音效/低沉男性2.mp3"},
+    {"character_id": "ronnie_hart", "display_name": "罗尼·哈特", "profile": "哈特拖车司机；两通来电均为同一人，必须保持同一音色。", "event_ids": ["call_07_ronnie_1", "call_10_ronnie_2"], "voice_stream_path": "res://音效/对话音效/低沉男性3.mp3"},
+    {"character_id": "west_warehouse_guard", "display_name": "西仓门卫", "profile": "西仓夜班门卫，随口询问冰球比分。", "event_ids": ["call_08_score"], "voice_stream_path": "res://音效/对话音效/低沉声音男性.mp3"},
+    {"character_id": "southbound_young_driver", "display_name": "路过的年轻司机", "profile": "刚驶离北桥附近的年轻司机，语速偏快。", "event_ids": ["call_09_southbound"], "voice_stream_path": "res://音效/对话音效/中高频古怪配音.mp3"},
+    {"character_id": "amy", "display_name": "艾米", "profile": "被困在北桥附近的年轻女性，明显恐惧。", "event_ids": ["call_11_final_amy"], "voice_stream_path": "res://音效/对话音效/高频女性配音.mp3"}
+  ]
+}

@@ -18,7 +18,7 @@ const BLACK_BANNER_STYLE: StyleBoxFlat = preload("res://resources/black_banner_s
 
 const LONG_CALLER_TEXT: String = "来显：玛莎·克莱恩正在确认北桥附近的情况，雨声很大，信号反复中断。\n号码：555-0199-EXT-北桥东侧临时公话\n线路编号：call_story_martha_klein_north_bridge_signal_interrupted"
 const LONG_DIALOGUE_TEXT: String = "沃伦先是笑了一声，又说雨把酒吧门口的台阶冲得发亮。他想点一首旧歌，顺口提起北桥那边有消防车和拖车，没人说得清是油罐车起火、桥面塌陷，还是两件事同时发生。请把这条来电当作未经证实的听闻。"
-const LONG_OPTION_TEXT: String = "先照常答应点歌，并提醒听众北桥附近路况尚未得到官方确认。"
+const LONG_PLAYER_TEXT: String = "请从你亲眼看见的部分开始说：车辆、桥面、灯光和时间分别是什么情况？"
 const LONG_ERROR_TEXT: String = "剧情数据校验失败：示例中的长错误说明用于确认页面能在不裁切、不越出安全区的前提下完整显示文件路径、稳定事件 ID、字段名和建议的后续处理方式。请返回主菜单后修复数据，再重新开始值班。"
 
 var _failures: int = 0
@@ -46,27 +46,34 @@ func _test_phone_long_text() -> void:
 		return
 	root.add_child(phone)
 	await _wait_frames(4)
+	var phone_system: RefCounted = PHONE_SYSTEM_SCRIPT.new()
+	_assert_true(bool((phone.call(&"bind_phone_system", phone_system) as Dictionary).get("ok", false)), "电话页必须能绑定只读 PhoneSystem。")
+	var event_data: Dictionary = {"id": "layout_probe_call", "caller_display_name": "玛莎·克莱恩", "caller_number": "555-0199"}
+	_assert_true(bool(phone_system.call(&"begin_incoming_call", event_data, 0, 60)), "电话长文本测试必须能建立响铃。")
+	_assert_true(bool(phone_system.call(&"answer_call", 1)) and bool(phone_system.call(&"enter_dialogue_choice")), "电话长文本测试必须进入自由会话等待状态。")
 	var caller_label: Label = phone.get_node_or_null(NodePath("CallerLabel")) as Label
 	var dialogue_label: Label = phone.get_node_or_null(NodePath("DialogueScroll/DialogueScrollContent/DialogueHintLabel")) as Label
 	var dialogue_scroll: ScrollContainer = phone.get_node_or_null(NodePath("DialogueScroll")) as ScrollContainer
-	var dialogue_overlay: Control = phone.get_node_or_null(NodePath("DialogueChoiceOverlay")) as Control
-	var dialogue_options: VBoxContainer = phone.get_node_or_null(NodePath("DialogueChoiceOverlay/ChoiceScroll/DialogueOptions")) as VBoxContainer
+	var conversation_overlay: Control = phone.get_node_or_null(NodePath("ConversationOverlay")) as Control
+	var player_input: LineEdit = phone.get_node_or_null(NodePath("ConversationOverlay/PlayerInput")) as LineEdit
 	_assert_true(caller_label != null, "电话页必须提供来电人信息标签。")
-	_assert_true(dialogue_label != null and dialogue_scroll != null and dialogue_overlay != null and dialogue_options != null, "电话页长台词必须可滚动，分支选项必须位于独立的屏幕中央纵向选择区。")
-	if caller_label != null:
-		caller_label.text = "登记名：玛莎·克莱恩    号码：555-0199"
-	if dialogue_label != null:
-		dialogue_label.text = LONG_DIALOGUE_TEXT
-	if dialogue_options != null and dialogue_overlay != null:
-		dialogue_overlay.visible = true
-		for option_index: int in 2:
-			var option: Button = Button.new()
-			option.name = "LayoutProbeOption%d" % option_index
-			option.custom_minimum_size = Vector2(0.0, 86.0)
-			option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			option.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-			option.text = "%d. %s" % [option_index + 1, LONG_OPTION_TEXT]
-			dialogue_options.add_child(option)
+	_assert_true(dialogue_label != null and dialogue_scroll != null and conversation_overlay != null and player_input != null, "电话页长 transcript 必须可滚动，并保留独立自由输入区。")
+	var transcript: Array[Dictionary] = []
+	for turn_index: int in 4:
+		transcript.append({"kind": "player", "text": "%s（第 %d 次确认）" % [LONG_PLAYER_TEXT, turn_index + 1]})
+		transcript.append({"kind": "actor", "turn": {"utterance": LONG_DIALOGUE_TEXT}})
+	var session_snapshot: Dictionary = {
+		"session_id": "session_layout_probe",
+		"event_id": "layout_probe_call",
+		"actor_id": "layout_probe_actor",
+		"status": "active",
+		"turn_index": 4,
+		"request_serial": 4,
+		"transcript": transcript,
+	}
+	_assert_true(bool((phone.call(&"set_conversation_snapshot", session_snapshot) as Dictionary).get("ok", false)), "电话页必须接受 committed 长 transcript 展示快照。")
+	if player_input != null:
+		player_input.text = LONG_PLAYER_TEXT
 	await _wait_frames(5)
 	_assert_scroll_exposes_overflow(dialogue_scroll, "电话长台词")
 	_assert_layout(phone, "电话近景（长文本）")

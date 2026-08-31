@@ -8,7 +8,12 @@ const STORY_ENGINE_SCRIPT: GDScript = preload("res://scripts/core/story_engine.g
 const PHONE_SYSTEM_SCRIPT: GDScript = preload("res://scripts/systems/phone_system.gd")
 const CONTENT_LOADER_SCRIPT: GDScript = preload("res://scripts/core/content_loader.gd")
 const CONTENT_VALIDATOR_SCRIPT: GDScript = preload("res://scripts/core/content_validator.gd")
+const WORLD_BOOK_VALIDATOR_SCRIPT: GDScript = preload("res://scripts/core/worldbook_validator.gd")
+const WORLD_BOOK_COMPILER_SCRIPT: GDScript = preload("res://scripts/core/worldbook_compiler.gd")
 const SAVE_MANAGER_SCRIPT: GDScript = preload("res://scripts/systems/save_manager.gd")
+const INTERACTION_COORDINATOR_SCRIPT: GDScript = preload("res://scripts/systems/interaction_coordinator.gd")
+const CHARACTER_VOICE_PLAYER_PATH: NodePath = NodePath("CharacterVoicePlayer")
+const AGENT_RUNTIME_PATH: NodePath = NodePath("AgentRuntime")
 const GAME_SCREEN_SCENE: PackedScene = preload("res://scenes/studio/game_screen.tscn")
 const MAIN_MENU_SCENE: PackedScene = preload("res://scenes/app/main_menu.tscn")
 const SAVE_SLOT_PANEL_SCENE: PackedScene = preload("res://scenes/ui/save_slot_panel.tscn")
@@ -16,6 +21,9 @@ const SETTINGS_PANEL_SCENE: PackedScene = preload("res://scenes/ui/settings_pane
 const LOADING_SCREEN_SCENE: PackedScene = preload("res://scenes/app/loading_screen.tscn")
 const ENDING_SCREEN_SCENE: PackedScene = preload("res://scenes/app/ending_screen.tscn")
 const TEST_NIGHT_STORY_PATH: String = "res://data/story/test_night_story.json"
+const DEFAULT_WORLD_BOOK_MANIFEST_PATH: String = "res://worldbooks/default/manifest.json"
+const TEST_NIGHT_CONTENT_KIND: String = "test_night_story"
+const TEST_NIGHT_CONTENT_FORMAT_VERSION: int = 2
 const DEFAULT_ENDING_TRANSITION_DELAY_SECONDS: float = 0.85
 
 enum AppState {
@@ -43,9 +51,13 @@ var _game_clock: Node = null
 var _game_screen: GameScreen = null
 var _current_screen: Control = null
 var _content_validation_result: Dictionary = {}
+var _compiled_world_definition: Dictionary = {}
 var _save_manager: SaveManager = null
 var _load_slot_panel: SaveSlotPanel = null
 var _settings_manager: Node = null
+var _agent_runtime: Node = null
+var _interaction_coordinator: RefCounted = null
+var _runtime_serial: int = 0
 var _settings_panel: SettingsPanel = null
 var _loading_screen: Control = null
 var _loading_target: LoadingTarget = LoadingTarget.START_SHIFT
@@ -68,6 +80,9 @@ func _ready() -> void:
 	if _save_manager == null:
 		_show_shell_error("读取和保存暂时不可用。")
 	_game_clock = get_tree().root.get_node_or_null(NodePath("GameClock")) as Node
+	_agent_runtime = get_tree().root.get_node_or_null(AGENT_RUNTIME_PATH) as Node
+	if _agent_runtime == null:
+		push_error("[应用][agent_runtime_missing] 找不到 AgentRuntime 自动加载节点；预制剧情仍可运行，但 Agent 决策不可用。")
 	var settings_result: Dictionary = _bind_settings_manager()
 	if not bool(settings_result.get("ok", false)):
 		_has_settings_load_error = true
@@ -331,7 +346,7 @@ func _on_load_slots_return_requested() -> void:
 func _refresh_load_slot_summaries() -> void:
 	if _save_manager == null or _load_slot_panel == null or not is_instance_valid(_load_slot_panel):
 		return
-	var summaries: Array[Dictionary] = _save_manager.get_slot_summaries("test_night_story", 1)
+	var summaries: Array[Dictionary] = _save_manager.get_slot_summaries(TEST_NIGHT_CONTENT_KIND, TEST_NIGHT_CONTENT_FORMAT_VERSION)
 	var result: Dictionary = _load_slot_panel.set_slot_summaries(summaries)
 	if not bool(result.get("ok", false)):
 		push_error("[应用][load_slot_summary_error] %s" % String(result.get("message", "未知错误。")))
@@ -340,7 +355,7 @@ func _refresh_load_slot_summaries() -> void:
 func _on_load_slot_requested(slot_id: String) -> void:
 	if _app_state != AppState.LOAD_SLOTS or _save_manager == null:
 		return
-	var load_result: Dictionary = _save_manager.load_slot(slot_id, "test_night_story", 1)
+	var load_result: Dictionary = _save_manager.load_slot(slot_id, TEST_NIGHT_CONTENT_KIND, TEST_NIGHT_CONTENT_FORMAT_VERSION)
 	if not bool(load_result.get("ok", false)):
 		_show_load_slot_message("读取失败：%s" % String(load_result.get("message", "未知原因。")))
 		_refresh_load_slot_summaries()
@@ -360,7 +375,7 @@ func _restore_loaded_shift(document: Dictionary) -> Dictionary:
 	if _is_creating_shift:
 		return {"ok": false, "message": "运行时仍在创建中，请稍后再试。"}
 	_is_creating_shift = true
-	var structural_result: Dictionary = _save_manager.validate_document(document, "test_night_story", 1)
+	var structural_result: Dictionary = _save_manager.validate_document(document, TEST_NIGHT_CONTENT_KIND, TEST_NIGHT_CONTENT_FORMAT_VERSION)
 	if not bool(structural_result.get("ok", false)):
 		_is_creating_shift = false
 		return structural_result
@@ -375,6 +390,18 @@ func _restore_loaded_shift(document: Dictionary) -> Dictionary:
 	if not bool(story_content_result.get("ok", false)):
 		_is_creating_shift = false
 		return story_content_result
+	if not story_content_result.get("worldbook_id") is String or typeof(story_content_result.get("worldbook_version")) != TYPE_INT:
+		_is_creating_shift = false
+		return {"ok": false, "message": "当前内容没有正式 WorldBook 存档身份，拒绝恢复槽位。"}
+	var identity_result: Dictionary = _save_manager.validate_worldbook_identity(
+		document,
+		String(story_content_result["worldbook_id"]),
+		int(story_content_result["worldbook_version"])
+	)
+	if not bool(identity_result.get("ok", false)):
+		_is_creating_shift = false
+		return identity_result
+	# 只有当前内容与槽位的 WorldBook identity 精确一致后，才更新恢复 staging。
 	_content_validation_result = story_content_result
 	var phone: RefCounted = PHONE_SYSTEM_SCRIPT.new()
 	var story: RefCounted = STORY_ENGINE_SCRIPT.new()
@@ -439,7 +466,7 @@ func _restore_loaded_shift(document: Dictionary) -> Dictionary:
 		screen.queue_free()
 		_is_creating_shift = false
 		return {"ok": false, "message": "恢复后的电话没有返回真实来电记录，拒绝继续。"}
-	var record_event_ids: PackedStringArray = PackedStringArray()
+	var record_event_ids: Array[String] = []
 	for raw_record: Variant in records_value as Array:
 		if raw_record is Dictionary:
 			record_event_ids.append(String((raw_record as Dictionary).get("event_id", "")))
@@ -458,12 +485,27 @@ func _restore_loaded_shift(document: Dictionary) -> Dictionary:
 		screen.queue_free()
 		_is_creating_shift = false
 		return {"ok": false, "message": "恢复剧情状态失败：%s" % _describe_result(story_restore)}
+	var voice_stage_result: Dictionary = _prepare_and_bind_character_voice(story, false)
+	if not bool(voice_stage_result.get("ok", false)):
+		_discard_staged_loaded_runtime(screen, story)
+		_is_creating_shift = false
+		return {"ok": false, "message": "恢复人物配音失败：%s" % String(voice_stage_result.get("message", "未知原因。"))}
 	var clock_restore: Variant = _game_clock.callv(&"restore_snapshot", [document["game_clock_state"], {"defer_running": true}])
 	if not _is_ok_result(clock_restore):
 		screen.queue_free()
 		_is_creating_shift = false
 		return {"ok": false, "message": "恢复游戏时钟失败：%s" % _describe_result(clock_restore)}
-	var bind_result: Dictionary = screen.bind_runtime(story, phone, _game_clock)
+	var interaction_result: Dictionary = _prepare_agent_interaction_runtime(
+		story,
+		phone,
+		_game_clock,
+		document["agent_runtime_state"] as Dictionary
+	)
+	if not bool(interaction_result.get("ok", false)):
+		_discard_staged_loaded_runtime(screen, story)
+		_is_creating_shift = false
+		return interaction_result
+	var bind_result: Dictionary = screen.bind_runtime(story, phone, _game_clock, _interaction_coordinator)
 	if not bool(bind_result.get("ok", false)):
 		_discard_staged_loaded_runtime(screen, story)
 		_is_creating_shift = false
@@ -513,6 +555,13 @@ func _restore_loaded_shift(document: Dictionary) -> Dictionary:
 	_is_shift_started = true
 	_commit_staged_game_screen()
 	_bind_phone_audio(phone)
+	var voice_sync_result: Dictionary = _sync_character_voice_after_runtime_commit()
+	if not bool(voice_sync_result.get("ok", false)):
+		# staging 已通过同一快照与总线预检；若此处仍失败，不能假装读取成功。
+		_dispose_runtime()
+		_show_main_menu()
+		_is_creating_shift = false
+		return {"ok": false, "message": "提交人物配音失败：%s" % String(voice_sync_result.get("message", "未知原因。"))}
 	var resume_result: Variant = _game_clock.call(&"resume_restored_clock")
 	if not _is_ok_result(resume_result):
 		_is_creating_shift = false
@@ -536,12 +585,22 @@ func _commit_staged_game_screen() -> void:
 ## 读取恢复尚未提交到 ScreenHost 前的回滚路径。调用者仍停在 LOAD_SLOTS，
 ## 因此不得调用 _show_main_menu() 或替换 _current_screen。
 func _discard_staged_loaded_runtime(screen: GameScreen, story: RefCounted) -> void:
+	# 读取 staging 可能已经把持久配音服务订阅到这个尚未提交的 StoryEngine；
+	# 回滚必须先断开，不能让槽位页继续保留旧对白或失效对象引用。
+	if _interaction_coordinator != null:
+		if _interaction_coordinator.has_method(&"release_runtime"):
+			_interaction_coordinator.call(&"release_runtime", "load_staging_discarded")
+		_interaction_coordinator = null
+	# 先让隐藏 GameScreen 丢弃 coordinator/session 展示引用，再解除 AgentRuntime world。
 	if screen != null and is_instance_valid(screen):
 		if screen.has_method(&"release_runtime"):
 			screen.call(&"release_runtime")
 		if screen.get_parent() == _screen_host:
 			_screen_host.remove_child(screen)
 		screen.queue_free()
+	if _agent_runtime != null and is_instance_valid(_agent_runtime) and _agent_runtime.has_method(&"unbind_world"):
+		_agent_runtime.call(&"unbind_world")
+	_unbind_character_voice()
 	if story != null and story.has_method(&"release_runtime"):
 		story.call(&"release_runtime")
 	_story_engine = null
@@ -589,13 +648,17 @@ func _start_new_shift() -> void:
 		return
 	if not _check_runtime_result(_story_engine.call(&"configure_test_night_story", story_content_result), "配置已校验测试剧情"):
 		return
+	if not _check_runtime_result(_prepare_and_bind_character_voice(_story_engine, true), "准备人物配音"):
+		return
+	if not _check_runtime_result(_prepare_agent_interaction_runtime(_story_engine, _phone_system, _game_clock), "准备 Agent 交互运行时"):
+		return
 
 	_game_screen = GAME_SCREEN_SCENE.instantiate() as GameScreen
 	if _game_screen == null:
 		_fail_shift_creation("无法实例化 GameScreen。")
 		return
 	_replace_screen(_game_screen)
-	if not _check_runtime_result(_game_screen.bind_runtime(_story_engine, _phone_system, _game_clock), "注入 GameScreen 运行时"):
+	if not _check_runtime_result(_game_screen.bind_runtime(_story_engine, _phone_system, _game_clock, _interaction_coordinator), "注入 GameScreen 运行时"):
 		return
 	_connect_game_screen_save_signals()
 	if not _check_runtime_result(_story_engine.call(&"connect_game_clock", _game_clock), "连接 GameClock"):
@@ -634,7 +697,7 @@ func _on_shift_save_panel_opened() -> void:
 func _refresh_shift_save_slot_summaries() -> void:
 	if _save_manager == null or _game_screen == null or not is_instance_valid(_game_screen):
 		return
-	var summaries: Array[Dictionary] = _save_manager.get_slot_summaries("test_night_story", 1)
+	var summaries: Array[Dictionary] = _save_manager.get_slot_summaries(TEST_NIGHT_CONTENT_KIND, TEST_NIGHT_CONTENT_FORMAT_VERSION)
 	var result: Dictionary = _game_screen.set_save_slot_summaries(summaries)
 	if not bool(result.get("ok", false)):
 		push_error("[应用][shift_save_slot_summary_error] %s" % String(result.get("message", "未知错误。")))
@@ -648,6 +711,7 @@ func _on_shift_save_slot_requested(slot_id: String) -> void:
 		_content_validation_result,
 		_game_clock,
 		_story_engine,
+		_agent_runtime,
 		_phone_system,
 		_game_screen
 	)
@@ -657,6 +721,9 @@ func _on_shift_save_slot_requested(slot_id: String) -> void:
 
 
 func _load_validated_test_story() -> Dictionary:
+	_compiled_world_definition.clear()
+	if content_source_path == TEST_NIGHT_STORY_PATH:
+		return _load_default_worldbook_story()
 	var loader = CONTENT_LOADER_SCRIPT.new()
 	var load_result: Variant = loader.load_json(content_source_path)
 	if not _is_ok_result(load_result):
@@ -674,6 +741,58 @@ func _load_validated_test_story() -> Dictionary:
 	if not events_value is Array:
 		return _startup_error("测试剧情数据校验失败：成功结果缺少 events 数组。")
 	return validated.duplicate(true)
+
+
+func _load_default_worldbook_story() -> Dictionary:
+	var worldbook_validator: WorldBookValidator = WORLD_BOOK_VALIDATOR_SCRIPT.new() as WorldBookValidator
+	if worldbook_validator == null:
+		return _startup_error("无法创建 WorldBookValidator。")
+	var worldbook_result: Dictionary = worldbook_validator.load_and_validate(DEFAULT_WORLD_BOOK_MANIFEST_PATH)
+	if not bool(worldbook_result.get("ok", false)):
+		return _startup_error("所选 WorldBook 校验失败：%s" % _describe_worldbook_result(worldbook_result))
+	var compiler: WorldBookCompiler = WORLD_BOOK_COMPILER_SCRIPT.new() as WorldBookCompiler
+	if compiler == null:
+		return _startup_error("无法创建 WorldBookCompiler。")
+	var compile_result: Dictionary = compiler.compile(worldbook_result)
+	if not bool(compile_result.get("ok", false)):
+		return _startup_error("所选 WorldBook 编译失败：%s" % _describe_result(compile_result))
+	if not compile_result.has("compiled") or not compile_result["compiled"] is Dictionary:
+		return _startup_error("所选 WorldBook 编译失败：成功结果缺少 CompiledWorldDefinition。")
+	var compiled: Dictionary = compile_result["compiled"] as Dictionary
+	if not compiled.has("runtime_story") or not compiled["runtime_story"] is Dictionary:
+		return _startup_error("所选 WorldBook 编译失败：CompiledWorldDefinition 缺少 runtime_story。")
+	var validator = CONTENT_VALIDATOR_SCRIPT.new()
+	var validation_result: Variant = validator.validate_test_night_story(
+		compiled["runtime_story"],
+		String(worldbook_result.get("source_path", DEFAULT_WORLD_BOOK_MANIFEST_PATH))
+	)
+	if not _is_ok_result(validation_result):
+		return _startup_error("所选 WorldBook 编译结果未通过现有 v2 合同：%s" % _describe_result(validation_result))
+	var validated: Dictionary = validation_result as Dictionary
+	if not validated.get("events") is Array:
+		return _startup_error("所选 WorldBook 编译结果校验失败：成功结果缺少 events 数组。")
+	if not compiled.get("manifest") is Dictionary:
+		return _startup_error("所选 WorldBook 编译结果缺少 manifest，无法建立存档世界身份。")
+	var worldbook_id: String = String(compiled.get("worldbook_id", ""))
+	var worldbook_version_value: Variant = compiled.get("worldbook_version")
+	if worldbook_id.is_empty() or typeof(worldbook_version_value) != TYPE_INT or int(worldbook_version_value) < 1:
+		return _startup_error("所选 WorldBook 缺少有效 worldbook_id/worldbook_version，无法建立存档世界身份。")
+	validated["worldbook_id"] = worldbook_id
+	validated["worldbook_version"] = int(worldbook_version_value)
+	_compiled_world_definition = compiled.duplicate(true)
+	return validated.duplicate(true)
+
+
+func _describe_worldbook_result(result: Dictionary) -> String:
+	var parts: Array[String] = []
+	for key: String in ["source_path", "worldbook_id", "object_id", "field", "error_code"]:
+		var value: String = String(result.get(key, "")).strip_edges()
+		if not value.is_empty():
+			parts.append("%s=%s" % [key, value])
+	var message: String = String(result.get("message", "WorldBook 无效。"))
+	if parts.is_empty():
+		return message
+	return "%s（%s）" % [message, ", ".join(parts)]
 
 
 func _connect_ending_signal() -> bool:
@@ -783,8 +902,17 @@ func _remove_game_screen() -> void:
 
 func _dispose_runtime() -> void:
 	_cancel_pending_ending_transition()
-	_unbind_phone_audio()
+	if _interaction_coordinator != null:
+		if _interaction_coordinator.has_method(&"release_runtime"):
+			_interaction_coordinator.call(&"release_runtime", "main_runtime_disposed")
+		_interaction_coordinator = null
+	# coordinator 先使旧 request/session 失效；GameScreen 随后丢弃展示引用。只有这两步
+	# 完成后才解除 AgentRuntime world，避免迟到响应碰到仍绑定旧运行时的 UI。
 	_remove_game_screen()
+	if _agent_runtime != null and is_instance_valid(_agent_runtime) and _agent_runtime.has_method(&"unbind_world"):
+		_agent_runtime.call(&"unbind_world")
+	_unbind_character_voice()
+	_unbind_phone_audio()
 	if _story_engine != null:
 		var ending_callback: Callable = Callable(self, "_on_ending_forced")
 		if _story_engine.is_connected(&"ending_forced", ending_callback):
@@ -801,6 +929,109 @@ func _dispose_runtime() -> void:
 			var stop_result: Variant = _game_clock.call(&"stop_for_runtime_disposal")
 			if not _is_ok_result(stop_result):
 				push_error("[应用][clock_dispose_failed] %s" % _describe_result(stop_result))
+
+
+func _prepare_agent_interaction_runtime(
+	story: RefCounted,
+	phone: RefCounted,
+	clock: Node,
+	agent_snapshot: Dictionary = {}
+) -> Dictionary:
+	var is_agent_dialogue_v2: bool = story.has_method(&"is_agent_dialogue_v2") and bool(story.call(&"is_agent_dialogue_v2"))
+	if not is_agent_dialogue_v2:
+		# v1 仍只把 AgentRuntime 当可选扩展：尝试绑定以保留旧 Director/Actor 回归能力，
+		# 但配置缺失或服务未启用不能阻止确定性预制剧情启动。
+		_interaction_coordinator = null
+		var optional_world_result: Dictionary = _bind_agent_runtime_world(story, phone, clock)
+		if not bool(optional_world_result.get("ok", false)):
+			push_error("[应用][agent_runtime_soft_bind_failed] v1 夜班继续启动：%s" % String(optional_world_result.get("message", "AgentRuntime 绑定失败。")))
+			return {"ok": true, "agent_dialogue_v2": false, "agent_runtime_bound": false}
+		return {"ok": true, "agent_dialogue_v2": false, "agent_runtime_bound": true}
+
+	# v2 的每一句电话回复都依赖 AgentRuntime；这里必须原子失败，不能把故障推迟到
+	# 玩家提交第一句 PlayerTurn 后才暴露 agent_runtime_disabled。
+	var world_result: Dictionary = _bind_agent_runtime_world(story, phone, clock)
+	if not bool(world_result.get("ok", false)):
+		return world_result
+	if not _agent_runtime.has_method(&"is_enabled") or not bool(_agent_runtime.call(&"is_enabled")):
+		return {"ok": false, "message": "Agent Dialogue v2 已启用，但 AgentRuntime 配置未启用。"}
+	if not agent_snapshot.is_empty():
+		if not _agent_runtime.has_method(&"validate_snapshot") or not _agent_runtime.has_method(&"restore_snapshot"):
+			return {"ok": false, "message": "AgentRuntime 缺少存档校验或恢复接口。"}
+		var agent_validation: Variant = _agent_runtime.call(&"validate_snapshot", agent_snapshot)
+		if not _is_ok_result(agent_validation):
+			return {"ok": false, "message": "AgentRuntime 存档校验失败：%s" % _describe_result(agent_validation)}
+		var agent_restore: Variant = _agent_runtime.call(&"restore_snapshot", agent_snapshot)
+		if not _is_ok_result(agent_restore):
+			return {"ok": false, "message": "AgentRuntime 存档恢复失败：%s" % _describe_result(agent_restore)}
+	var coordinator: RefCounted = INTERACTION_COORDINATOR_SCRIPT.new() as RefCounted
+	if coordinator == null:
+		return {"ok": false, "message": "无法创建 InteractionCoordinator。"}
+	_runtime_serial += 1
+	var bind_value: Variant = coordinator.call(&"bind_runtime", story, phone, clock, _agent_runtime, _runtime_serial)
+	if not bind_value is Dictionary or not bool((bind_value as Dictionary).get("ok", false)):
+		return {
+			"ok": false,
+			"message": "InteractionCoordinator 绑定失败：%s" % _describe_result(bind_value),
+		}
+	_interaction_coordinator = coordinator
+	return {"ok": true, "agent_dialogue_v2": true, "runtime_serial": _runtime_serial}
+
+
+func _bind_agent_runtime_world(story: RefCounted, phone: RefCounted, clock: Node) -> Dictionary:
+	if _agent_runtime == null or not is_instance_valid(_agent_runtime):
+		return {"ok": false, "message": "找不到 AgentRuntime 自动加载节点。"}
+	if not _agent_runtime.has_method(&"bind_world"):
+		return {"ok": false, "message": "AgentRuntime 缺少 bind_world()。"}
+	var director_lore: Dictionary = {}
+	if _compiled_world_definition.has("director_lore") and _compiled_world_definition["director_lore"] is Dictionary:
+		director_lore = (_compiled_world_definition["director_lore"] as Dictionary).duplicate(true)
+	var bind_result: Variant = _agent_runtime.call(&"bind_world", story, phone, clock, director_lore, _compiled_world_definition.duplicate(true))
+	if not bind_result is Dictionary:
+		return {"ok": false, "message": "AgentRuntime.bind_world() 未返回 Dictionary。"}
+	if not bool((bind_result as Dictionary).get("ok", false)):
+		return bind_result as Dictionary
+	return {"ok": true}
+
+
+## 人物配音是自动加载服务，但绑定对象必须严格随本局 StoryEngine 生命周期更换。
+## `sync_initial_dialogue=false` 只用于隐藏读取 staging：先验证，提交页面后才发声。
+func _prepare_and_bind_character_voice(story_engine: RefCounted, sync_initial_dialogue: bool) -> Dictionary:
+	var player: Node = get_tree().root.get_node_or_null(CHARACTER_VOICE_PLAYER_PATH) as Node
+	if player == null:
+		return {"ok": false, "message": "找不到人物电话配音服务。"}
+	for method_name: String in ["prepare_manifest", "bind_story_engine", "validate_bound_story_dialogue", "sync_from_bound_story", "unbind_story_engine"]:
+		if not player.has_method(method_name):
+			return {"ok": false, "message": "人物电话配音服务缺少 %s() 接口。" % method_name}
+	var prepare_result: Variant = player.call(&"prepare_manifest")
+	if not _is_ok_result(prepare_result):
+		return {"ok": false, "message": "人物配音信息表校验失败：%s" % _describe_result(prepare_result)}
+	var bind_result: Variant = player.call(&"bind_story_engine", story_engine, sync_initial_dialogue)
+	if not _is_ok_result(bind_result):
+		return {"ok": false, "message": "人物配音无法绑定剧情运行时：%s" % _describe_result(bind_result)}
+	if not sync_initial_dialogue:
+		var staging_result: Variant = player.call(&"validate_bound_story_dialogue")
+		if not _is_ok_result(staging_result):
+			player.call(&"unbind_story_engine")
+			return {"ok": false, "message": "读取存档的人物配音预检失败：%s" % _describe_result(staging_result)}
+	return {"ok": true}
+
+
+func _sync_character_voice_after_runtime_commit() -> Dictionary:
+	var player: Node = get_tree().root.get_node_or_null(CHARACTER_VOICE_PLAYER_PATH) as Node
+	if player == null or not player.has_method(&"sync_from_bound_story"):
+		return {"ok": false, "message": "人物电话配音服务在提交时不可用。"}
+	var result: Variant = player.call(&"sync_from_bound_story")
+	if not _is_ok_result(result):
+		return {"ok": false, "message": _describe_result(result)}
+	return {"ok": true}
+
+
+func _unbind_character_voice() -> void:
+	var player: Node = get_tree().root.get_node_or_null(CHARACTER_VOICE_PLAYER_PATH) as Node
+	if player == null or not player.has_method(&"unbind_story_engine"):
+		return
+	player.call(&"unbind_story_engine")
 
 
 ## 电话音效绑定在本局运行时正式提交后才发生：隐藏的读取 staging 即使恢复为

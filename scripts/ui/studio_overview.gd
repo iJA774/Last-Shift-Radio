@@ -5,6 +5,8 @@ extends Control
 
 signal view_requested(view_id: String)
 signal broadcast_requested(task_id: String, information_item_ids: Array[String])
+signal broadcast_abandon_requested(task_id: String)
+signal broadcast_defer_requested(task_id: String)
 signal microphone_panel_opened
 signal microphone_panel_closed
 
@@ -86,6 +88,14 @@ func set_microphone_enabled(is_enabled: bool, disabled_reason: String = "") -> D
 
 func is_microphone_panel_open() -> bool:
 	return _microphone_panel != null and bool(_microphone_panel.call(&"is_open"))
+
+
+## 由 GameScreen 在放弃任务成功后调用；总览只关闭自身面板，不决定剧情结果。
+func close_microphone_panel() -> Dictionary:
+	if _microphone_panel == null:
+		return _make_error("中央麦克风面板尚未就绪。")
+	_close_microphone_panel()
+	return {"ok": true}
 
 
 ## 由设置层传播“减少动态”状态，只影响视觉反馈，不改变导航或剧情真相。
@@ -191,6 +201,14 @@ func _on_microphone_panel_close_requested() -> void:
 
 func _on_microphone_broadcast_requested(task_id: String, information_item_ids: Array[String]) -> void:
 	broadcast_requested.emit(task_id, information_item_ids)
+
+
+func _on_microphone_broadcast_abandon_requested(task_id: String) -> void:
+	broadcast_abandon_requested.emit(task_id)
+
+
+func _on_microphone_broadcast_defer_requested(task_id: String) -> void:
+	broadcast_defer_requested.emit(task_id)
 
 
 func show_microphone_feedback(result: Dictionary) -> Dictionary:

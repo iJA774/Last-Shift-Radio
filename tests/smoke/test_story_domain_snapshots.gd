@@ -10,6 +10,7 @@ const CONTENT_LOADER_SCRIPT: GDScript = preload("res://scripts/core/content_load
 const CONTENT_VALIDATOR_SCRIPT: GDScript = preload("res://scripts/core/content_validator.gd")
 const STORY_ENGINE_SCRIPT: GDScript = preload("res://scripts/core/story_engine.gd")
 const PHONE_SYSTEM_SCRIPT: GDScript = preload("res://scripts/systems/phone_system.gd")
+const AGENT_DIALOGUE_TEST_DRIVER_SCRIPT: GDScript = preload("res://tests/smoke/agent_dialogue_test_driver.gd")
 const STORY_PATH: String = "res://data/story/test_night_story.json"
 
 var _has_failed: bool = false
@@ -55,6 +56,9 @@ func _test_ringing_snapshot_round_trip(content: Dictionary) -> void:
 	_assert_true(source_story.is_statement_revealed("statement_warren_tanker_fire_claim"), "保存前必须有已揭示来源陈述。")
 	_assert_true(source_story.is_fact_confirmed("fact_accounts_conflict"), "保存前必须有根据陈述确认的事实。")
 	_assert_equal(source_story.get_player_broadcast_records().size(), 1, "保存前应有一条真实完成的玩家发布任务记录。")
+	var source_signal_state: Dictionary = source_story.get_signal_state()
+	_assert_true(bool(source_signal_state.get("available", false)), "SignalSystem 落地后保存前必须可观察 committed state。")
+	_assert_equal((source_signal_state.get("records", []) as Array).size(), 1, "一条 committed 玩家广播必须对应一条 SignalRecord。")
 	var saved_publication: Dictionary = source_story.get_player_broadcast_records()[0]
 	_assert_equal(String(saved_publication.get("task_id", "")), "task_broadcast_wagon_witness_request", "保存前玩家记录必须使用稳定 task_id。")
 	_assert_equal(saved_publication.get("information_item_ids", []), ["info_wagon_martha_route"], "保存前玩家记录必须精确保存所选信息项。")
@@ -94,15 +98,21 @@ func _test_ringing_snapshot_round_trip(content: Dictionary) -> void:
 	var repeated_statement_signals: int = 0
 	var repeated_fact_signals: int = 0
 	var repeated_broadcast_signals: int = 0
+	var repeated_world_signal_signals: int = 0
+	var repeated_actor_perception_signals: int = 0
 	var repeated_event_signals: int = 0
 	destination_story.statement_revealed.connect(func(_statement: Dictionary) -> void: repeated_statement_signals += 1)
 	destination_story.fact_confirmed.connect(func(_fact: Dictionary) -> void: repeated_fact_signals += 1)
 	destination_story.player_broadcast_sent.connect(func(_record: Dictionary) -> void: repeated_broadcast_signals += 1)
+	destination_story.world_signal_committed.connect(func(_record: Dictionary) -> void: repeated_world_signal_signals += 1)
+	destination_story.actor_signal_perceived.connect(func(_actor_id: String, _signal_id: String) -> void: repeated_actor_perception_signals += 1)
 	destination_story.event_ready.connect(func(_event: Dictionary) -> void: repeated_event_signals += 1)
 	_assert_ok(destination_story.advance_to_game_tick(1381), "读取后应能继续推进到下一个 tick。")
 	_assert_equal(repeated_statement_signals, 0, "恢复后推进不得重复派发既有陈述。")
 	_assert_equal(repeated_fact_signals, 0, "恢复后推进不得重复确认既有事实。")
 	_assert_equal(repeated_broadcast_signals, 0, "恢复后推进不得重复记账既有广播。")
+	_assert_equal(repeated_world_signal_signals, 0, "恢复后推进不得重放既有 SignalRecord。")
+	_assert_equal(repeated_actor_perception_signals, 0, "恢复后推进不得重新触发历史 Actor perception。")
 	_assert_equal(repeated_event_signals, 0, "恢复后推进不得重新触发已在响铃的事件。")
 	_assert_ok(destination_story.advance_to_game_tick(1439), "响铃截止前应继续保留活动线路。")
 	_assert_equal(destination_phone.get_active_event_id(), "call_04_dog_walker", "响铃截止前不能凭空漏接。")
@@ -121,12 +131,11 @@ func _test_ringing_snapshot_round_trip(content: Dictionary) -> void:
 
 
 func _prepare_0123_ringing_state(story: StoryEngine, phone: PhoneSystem) -> void:
+	var dialogue_driver: RefCounted = AGENT_DIALOGUE_TEST_DRIVER_SCRIPT.new()
 	_assert_ok(story.advance_to_game_tick(60), "01:01 应触发沃伦来电。")
 	_assert_true(phone.answer_call(60), "沃伦来电应能接听。")
 	_assert_true(phone.enter_dialogue_choice(), "沃伦来电应能进入对话选择。")
-	_assert_ok(story.begin_active_call_dialogue(), "沃伦对话应能开始。")
-	_assert_ok(story.select_dialogue_option("opt_warren_song"), "沃伦第一轮应能选择。")
-	_assert_ok(story.select_dialogue_option("opt_warren_follow_report"), "沃伦追问应能完成对话。")
+	_assert_ok(dialogue_driver.call(&"commit_active_call", story, "call_01_warren", "warren", ["statement_warren_tanker_fire_claim"], "酒吧有人说北桥那边一辆油罐车翻了还冒烟；我没有亲眼看见。"), "沃伦 committed ActorTurn 应能提交。")
 	_assert_true(phone.exit_dialogue_choice(), "沃伦终止台词后应返回接通状态。")
 	_assert_true(phone.finish_call(60), "沃伦来电应结束并写入真实记录。")
 	_assert_ok(story.advance_to_game_tick(480), "01:08 应触发错号来电。")
@@ -141,9 +150,7 @@ func _prepare_0123_ringing_state(story: StoryEngine, phone: PhoneSystem) -> void
 	_assert_ok(story.advance_to_game_tick(1020), "01:17 应触发玛莎来电。")
 	_assert_true(phone.answer_call(1020), "玛莎来电应能接听。")
 	_assert_true(phone.enter_dialogue_choice(), "玛莎来电应能进入对话选择。")
-	_assert_ok(story.begin_active_call_dialogue(), "玛莎对话应能开始。")
-	_assert_ok(story.select_dialogue_option("opt_martha_vehicle"), "玛莎车辆追问应能选择。")
-	_assert_ok(story.select_dialogue_option("opt_martha_follow_request"), "玛莎征集请求应能完成对话。")
+	_assert_ok(dialogue_driver.call(&"commit_active_call", story, "call_03_martha", "martha", ["statement_martha_wagon_route"], "丹尼开的是深色旧旅行车，常走北桥回城；请帮我安全征集目击信息。"), "玛莎 committed ActorTurn 应能提交。")
 	_assert_true(phone.exit_dialogue_choice(), "玛莎终止台词后应返回接通状态。")
 	_assert_true(phone.finish_call(1020), "玛莎来电应结束并写入真实记录。")
 	var wagon_information_ids: Array[String] = ["info_wagon_martha_route"]
@@ -170,6 +177,20 @@ func _test_atomic_rejections(story: StoryEngine, phone: PhoneSystem, context: Di
 		(broadcast_records[0] as Dictionary)["body"] = "被篡改的播放器记录"
 	_assert_true(not bool(story.restore_snapshot(corrupt_broadcast, context).get("ok", false)), "广播记录与稿件冲突必须拒绝恢复。")
 	_assert_equal(story.create_snapshot(), baseline, "广播记录冲突失败后必须原子保留状态。")
+
+	var corrupt_signal_relationship: Dictionary = baseline.duplicate(true)
+	var signal_records: Array = ((corrupt_signal_relationship["signal"] as Dictionary)["records"] as Array)
+	if not signal_records.is_empty():
+		(signal_records[0] as Dictionary)["created_at_tick"] = int((signal_records[0] as Dictionary)["created_at_tick"]) + 1
+	_assert_true(not bool(story.restore_snapshot(corrupt_signal_relationship, context).get("ok", false)), "SignalRecord 与来源玩家广播 tick 不一致必须拒绝恢复。")
+	_assert_equal(story.create_snapshot(), baseline, "Signal/Broadcast 关系失败后必须原子保留状态。")
+
+	var corrupt_signal_recipients: Dictionary = baseline.duplicate(true)
+	var recipient_records: Array = ((corrupt_signal_recipients["signal"] as Dictionary)["records"] as Array)
+	if not recipient_records.is_empty():
+		((recipient_records[0] as Dictionary)["committed_recipients"] as Array).append("actor_missing")
+	_assert_true(not bool(story.restore_snapshot(corrupt_signal_recipients, context).get("ok", false)), "SignalRecord 不得伪造 committed recipients。")
+	_assert_equal(story.create_snapshot(), baseline, "Signal recipients 失败后必须原子保留状态。")
 
 	var corrupt_computer: Dictionary = baseline.duplicate(true)
 	var computer_snapshot: Dictionary = corrupt_computer["computer"] as Dictionary

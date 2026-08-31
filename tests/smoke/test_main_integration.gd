@@ -75,7 +75,11 @@ func _run() -> void:
 	_assert_true(phone_closeup != null, "GameScreen 必须持有电话近景场景。")
 	if phone_closeup != null:
 		phone_closeup.emit_signal(&"answer_requested")
-		_assert_equal(String(phone_system.call(&"get_state_name")), "DIALOGUE_CHOICE", "接听后必须由 GameScreen 自动进入首段权威对白。")
+		_assert_equal(String(phone_system.call(&"get_state_name")), "DIALOGUE_CHOICE", "v2 内容接听后必须进入 Agent 自由会话状态。")
+		var coordinator: RefCounted = app.get("_interaction_coordinator") as RefCounted
+		var session_snapshot: Dictionary = coordinator.call(&"get_active_session_snapshot") as Dictionary if coordinator != null else {}
+		_assert_true(not session_snapshot.is_empty() and String(session_snapshot.get("event_id", "")) == "call_01_warren", "Main 必须为接听的 v2 来电建立 ConversationSession。")
+		_assert_true(phone_closeup.has_signal(&"player_turn_requested"), "电话近景必须暴露自由文本 PlayerTurn 意图。")
 		phone_closeup.emit_signal(&"hang_up_requested")
 		_assert_equal(String(phone_system.call(&"get_state_name")), "IDLE", "第一通电话结束后若无同窗事件，线路必须恢复空闲。")
 

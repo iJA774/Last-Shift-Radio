@@ -7,8 +7,11 @@ extends RefCounted
 class_name ContentValidator
 
 const CONTENT_FORMAT_VERSION: int = 1
+const TEST_NIGHT_CONTENT_FORMAT_VERSION: int = 2
+const TEST_NIGHT_ACTOR_COUNT: int = 10
 const CONTENT_KIND: String = "incoming_call_events"
 const TEST_NIGHT_CONTENT_KIND: String = "test_night_story"
+const TEST_NIGHT_V2_VALIDATOR_SCRIPT: GDScript = preload("res://scripts/core/test_night_story_v2_validator.gd")
 const SHIFT_DURATION_MINUTES: int = 60
 const ENDING_ONLY_FACT_IDS: PackedStringArray = ["fact_unauthorized_broadcast", "fact_anomaly_cause_unknown"]
 const NORTH_BRIDGE_TOPIC_ID: String = "north_bridge"
@@ -122,6 +125,12 @@ func validate_incoming_call_events(document: Variant, source_path: String) -> Di
 ## 不把多个 JSON 文件在运行时松散拼接：来电、短信、广播、条件与对话树必须在
 ## 同一份文档内同时通过结构和交叉引用校验，任一项目损坏即拒绝开始新游戏。
 func validate_test_night_story(document: Variant, source_path: String) -> Dictionary:
+	if document is Dictionary:
+		var v2_root: Dictionary = document as Dictionary
+		var format_probe: Dictionary = _read_exact_integer(v2_root.get("content_format_version", null))
+		if bool(format_probe.get("ok", false)) and int(format_probe["value"]) == TEST_NIGHT_CONTENT_FORMAT_VERSION:
+			var v2_validator: RefCounted = TEST_NIGHT_V2_VALIDATOR_SCRIPT.new()
+			return v2_validator.call(&"validate", document, source_path) as Dictionary
 	if typeof(document) != TYPE_DICTIONARY:
 		return _make_error(source_path, "", "$", "invalid_top_level_type", "内容顶层必须是 JSON 对象。")
 	var root: Dictionary = document as Dictionary
@@ -467,7 +476,7 @@ func _validate_test_broadcast_tasks(raw_tasks: Array, event_by_id: Dictionary, s
 			return _make_error(source_path, "", "broadcast_tasks", "invalid_broadcast_task_type", "broadcast_tasks 中的每一项必须是对象。")
 		var task: Dictionary = raw_task as Dictionary
 		var provisional_id: String = _read_event_id_or_empty(task)
-		for field_name: String in ["id", "name", "channel", "source", "related_dialogue_event_ids", "required_dialogue_event_ids", "sets_condition_id", "information_items"]:
+		for field_name: String in ["id", "name", "selection_mode", "channel", "source", "related_dialogue_event_ids", "required_dialogue_event_ids", "sets_condition_id", "information_items"]:
 			if not task.has(field_name):
 				return _make_error(source_path, provisional_id, field_name, "missing_field", "发布任务缺少必填字段：%s。" % field_name)
 		if typeof(task["id"]) != TYPE_STRING or not _is_stable_id(String(task["id"])):
@@ -481,6 +490,8 @@ func _validate_test_broadcast_tasks(raw_tasks: Array, event_by_id: Dictionary, s
 				return _make_error(source_path, task_id, text_field, "invalid_broadcast_task_text", "%s 必须是非空字符串。" % text_field)
 		if typeof(task["channel"]) != TYPE_STRING or String(task["channel"]) != "microphone":
 			return _make_error(source_path, task_id, "channel", "invalid_broadcast_task_channel", "当前发布任务 channel 必须精确为 microphone。")
+		if typeof(task["selection_mode"]) != TYPE_STRING or not ["single", "multiple"].has(String(task["selection_mode"])):
+			return _make_error(source_path, task_id, "selection_mode", "invalid_broadcast_task_selection_mode", "发布任务 selection_mode 必须精确为 single 或 multiple。")
 		var related_result: Dictionary = _validate_stable_id_array(task["related_dialogue_event_ids"], source_path, task_id, "related_dialogue_event_ids")
 		if not bool(related_result.get("ok", false)):
 			return related_result

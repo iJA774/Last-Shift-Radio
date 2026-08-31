@@ -1,6 +1,8 @@
 # 第六阶段测试夜班剧情契约 v1
 
-适用文件：`data/story/test_night_story.json`。该文件是 UTF-8 标准 JSON；任一来电、短信、发布任务、信息项、条件或对话引用损坏时，`ContentValidator.validate_test_night_story()` 必须拒绝整份文件。
+适用文件：当前仍为 `content_format_version=1` 的 `data/story/test_night_story.json`。该文件是 UTF-8 标准 JSON；任一来电、短信、发布任务、信息项、条件或对话引用损坏时，`ContentValidator.validate_test_night_story()` 必须拒绝整份文件。
+
+> 迁移状态（2026-08-29）：Agent Dialogue v2 validator 与目标 schema 已新增，见 [`test_night_story_v2.md`](./test_night_story_v2.md)，但正式剧情数据尚未从本 v1 合同迁移。v1 继续作为当前数据与旧 smoke 的历史/兼容合同；迁移完成后不要长期维持 v1 dialogue tree 与 v2 Agent Dialogue 双轨。
 
 ## 顶层
 
@@ -25,7 +27,7 @@
 - `checklist_entries`：值班清单来源，字段为 `id`、`title`、`body`、0～59 的整数 `unlock_minute`、`statement_ids` 与 `fact_ids`。
 - `news_entries`：地方新闻来源，字段为 `id`、`title`、`source`、`body`、0～59 的整数 `unlock_minute`、非空 `topic_ids`、`statement_ids` 与 `fact_ids`。至少 5 条，其中至少 2 条不含固定 topic ID `north_bridge`；由显式 `topic_ids` 而非正文搜索判定。
 - `messages`：短信对象，字段为 `id`、`sender`、`body`、0～59 的整数 `unlock_minute`、`statement_ids` 与 `fact_ids`。短信可以提供任务信息项所需陈述，但不计入“完成必要对话”的门槛。
-- `broadcast_tasks`：精确 2 项；字段为 `id`、`name`、`channel`、`source`、`related_dialogue_event_ids`、`required_dialogue_event_ids`、`sets_condition_id` 与 `information_items`。`channel` 当前必须为 `microphone`；`sets_condition_id` 可为空字符串。
+- `broadcast_tasks`：精确 2 项；字段为 `id`、`name`、`selection_mode`、`channel`、`source`、`related_dialogue_event_ids`、`required_dialogue_event_ids`、`sets_condition_id` 与 `information_items`。`selection_mode` 必须为 `single` 或 `multiple`，`channel` 当前必须为 `microphone`；`sets_condition_id` 可为空字符串。
 - 每个 `information_items` 项字段为 `id`、`source_label`、`body`、`statement_ids`、`fact_ids`。信息项 ID 在整份内容中全局唯一；`statement_ids` 至少一项，且必须全部真实揭示后该信息项才可供玩家选择。
 - `dialogue_nodes`：预制对话树节点，字段为 `id`、`event_id`、`speaker`、`text`、`is_terminal`、`reveals_statement_ids`、`options`。选项字段为 `id`、`text`、`next_node_id`、`reveals_statement_ids`。两个 `reveals_statement_ids` 都必须显式存在（可为空数组），并且只能引用以该节点 `event_id` 为 `source_id` 的陈述。
 - `statements`：来源陈述，字段为 `id`、`source_id`、`body`。`source_id` 必须是一个电脑来源条目或来电事件 ID；解锁来源不等于揭示陈述，电脑来源必须由玩家阅读，电话来源必须经过明确的对话节点/选项。
@@ -47,6 +49,7 @@
 - 北桥任务的必要对话固定为 `call_01_warren` + `call_06_trucker`；`call_09_southbound` 是可等待的相关对话，可额外提供 `info_bridge_southbound_crossing`。
 - `sets_condition_id` 非空时必须指向 `conditions` 中的 ID。条件事件只在窗口内实际满足过条件后才会成为来电；从未满足条件的事件安静失效，不生成漏接记录。
 - 每个发布任务本局只允许成功发送一次。一次发送必须至少选择一个当前可用信息项，并以一个原子操作记账；任务发送后不得追加、拆分或再次发送。
+- 任务第一次达到可发布门槛时进入 `pending` 决策状态；可选择发送、`deferred`（推迟，解除暂停）或 `abandoned`（本局永久放弃）。推迟任务只在新增可用信息项时再次进入 `pending`；放弃任务不得再显示、通知、触发或发送。任务快照和存档必须保存稳定 `task_id` 的决策状态及当时可用信息 ID，读取不得伪造旧通知。
 - 玩家发布记录由 `BroadcastSystem` 创建，包含 `task_id`、`information_item_ids`、`source`、`sent_at_tick`、由所选信息正文组合得到的 `body`、`is_unauthorized=false`。02:00 的异常记录由 `StoryEngine` 单独创建，固定使用 `broadcast_id=broadcast_unauthorized_north_bridge_open`、`fact_id=fact_unauthorized_broadcast` 与 `is_unauthorized=true`；它不属于玩家发布任务。
 
 ## 对话可达性

@@ -13,7 +13,7 @@ var _failures: int = 0
 var _view_requests: Array[String] = []
 var _return_requests: int = 0
 var _answer_requests: int = 0
-var _choice_requests: int = 0
+var _player_turn_requests: Array[String] = []
 var _hang_up_requests: int = 0
 var _finish_requests: int = 0
 
@@ -153,11 +153,12 @@ func _test_phone_closeup() -> void:
 	_assert_true(closeup.has_method(&"set_motion_enabled"), "电话近景必须公开 set_motion_enabled()。")
 	_assert_true(closeup.has_signal(&"return_requested"), "电话近景必须公开 return_requested()。")
 	_assert_true(closeup.has_signal(&"answer_requested"), "电话近景必须公开 answer_requested()。")
-	_assert_true(closeup.has_signal(&"dialogue_choice_requested"), "电话近景必须公开 dialogue_choice_requested()。")
+	_assert_true(closeup.has_signal(&"player_turn_requested"), "电话近景必须公开 player_turn_requested(text)。")
+	_assert_true(not closeup.has_signal(&"dialogue_choice_requested"), "电话近景不得遗留预制分支选择信号。")
 	_assert_true(closeup.has_signal(&"hang_up_requested"), "电话近景必须公开 hang_up_requested()。")
 	_connect_signal(closeup, &"return_requested", "_on_return_requested", "电话近景返回")
 	_connect_signal(closeup, &"answer_requested", "_on_answer_requested", "电话近景接听意图")
-	_connect_signal(closeup, &"dialogue_choice_requested", "_on_choice_requested", "电话近景选择意图")
+	_connect_signal(closeup, &"player_turn_requested", "_on_player_turn_requested", "电话近景 PlayerTurn 意图")
 	_connect_signal(closeup, &"hang_up_requested", "_on_hang_up_requested", "电话近景挂断意图")
 	var phone_system: RefCounted = PHONE_SYSTEM_SCRIPT.new()
 	var bind_result: Variant = closeup.call(&"bind_phone_system", phone_system)
@@ -180,16 +181,30 @@ func _test_phone_closeup() -> void:
 	_assert_equal(String(phone_system.call(&"get_state_name")), "RINGING", "电话页发出接听意图后不得自行推进电话状态。")
 	_assert_true(bool(phone_system.call(&"answer_call", 12)), "测试控制器必须能将电话推进为已接通。")
 	await process_frame
-	var choice_button: Button = closeup.get_node_or_null(NodePath("DialogueChoiceButton")) as Button
 	var hang_up_button: Button = closeup.get_node_or_null(NodePath("HangUpButton")) as Button
-	_assert_true(choice_button != null and not choice_button.disabled, "接通后必须能请求进入对话选择。")
 	_assert_true(hang_up_button != null and not hang_up_button.disabled, "接通后必须能请求主动挂断。")
-	_assert_true(closeup.get_node_or_null(NodePath("FinishButton")) == null, "通话美术只保留接通、继续对话与挂断三个电话操作按钮。")
-	if choice_button != null:
-		choice_button.emit_signal(&"pressed")
+	_assert_true(closeup.get_node_or_null(NodePath("DialogueChoiceButton")) == null, "自由输入电话 UI 不得保留预制分支按钮。")
+	_assert_true(bool(phone_system.call(&"enter_dialogue_choice")), "测试控制器必须能进入自由会话等待状态。")
+	var session_snapshot: Dictionary = {
+		"session_id": "session_view_smoke",
+		"event_id": "call_view_smoke",
+		"actor_id": "view_smoke_actor",
+		"status": "active",
+		"turn_index": 0,
+		"request_serial": 0,
+		"transcript": [],
+	}
+	var session_result: Dictionary = closeup.call(&"set_conversation_snapshot", session_snapshot) as Dictionary
+	_assert_true(bool(session_result.get("ok", false)), "电话近景必须接受 committed ConversationSession 展示快照。")
+	var player_input: LineEdit = closeup.get_node_or_null(NodePath("ConversationOverlay/PlayerInput")) as LineEdit
+	var send_button: Button = closeup.get_node_or_null(NodePath("ConversationOverlay/SendButton")) as Button
+	_assert_true(player_input != null and player_input.editable and send_button != null and not send_button.disabled, "活动自由会话必须启用文本输入和发送按钮。")
+	if player_input != null and send_button != null:
+		player_input.text = "你在桥边看见了什么？"
+		send_button.emit_signal(&"pressed")
 	if hang_up_button != null:
 		hang_up_button.emit_signal(&"pressed")
-	_assert_equal(_choice_requests, 1, "电话近景选择按钮必须发意图。")
+	_assert_equal(_player_turn_requests, ["你在桥边看见了什么？"], "电话近景必须只提交玩家输入的自由文本意图。")
 	_assert_equal(_hang_up_requests, 1, "电话近景挂断按钮必须发意图。")
 	var back_button: Button = closeup.get_node_or_null(NodePath("BackButton")) as Button
 	_assert_true(back_button != null, "电话近景必须有明确返回按钮。")
@@ -483,8 +498,8 @@ func _on_answer_requested() -> void:
 	_answer_requests += 1
 
 
-func _on_choice_requested() -> void:
-	_choice_requests += 1
+func _on_player_turn_requested(text: String) -> void:
+	_player_turn_requests.append(text)
 
 
 func _on_hang_up_requested() -> void:

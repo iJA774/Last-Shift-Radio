@@ -82,7 +82,9 @@ func show_work_state(snapshot: Dictionary) -> Dictionary:
 		return _make_error("工作状态快照字段类型无效。")
 	var state_name: String = String(snapshot["state_name"])
 	var uses_realtime_rate: bool = bool(snapshot["uses_realtime_rate"])
-	if (state_name != "ACTIVE" or not uses_realtime_rate) and (state_name != "IDLE" or uses_realtime_rate):
+	if (state_name == "ACTIVE" and uses_realtime_rate) or (state_name == "IDLE" and not uses_realtime_rate) or (state_name == "PAUSED" and not uses_realtime_rate):
+		pass
+	else:
 		return _make_error("工作状态与时间倍率标志不一致：%s。" % state_name)
 	_last_work_state_snapshot = {
 		"state_name": state_name,

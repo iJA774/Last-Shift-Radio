@@ -6,6 +6,7 @@ extends SceneTree
 
 const MAIN_SCENE: PackedScene = preload("res://scenes/app/main.tscn")
 const SAVE_DIRECTORY: String = "user://phase7_smoke_slots"
+const AGENT_DIALOGUE_TEST_DRIVER_SCRIPT: GDScript = preload("res://tests/smoke/agent_dialogue_test_driver.gd")
 
 var _has_failed: bool = false
 
@@ -34,8 +35,10 @@ func _run() -> void:
 	var phone: RefCounted = app.get("_phone_system") as RefCounted
 	var story: RefCounted = app.get("_story_engine") as RefCounted
 	var screen: GameScreen = app.get("_game_screen") as GameScreen
+	var agent_runtime: Node = root.get_node_or_null(NodePath("AgentRuntime")) as Node
 	_assert_true(phone != null and story != null and screen != null, "新班次必须具备完整运行时。")
-	if phone == null or story == null or screen == null:
+	_assert_true(agent_runtime != null, "Agent Dialogue v2 存档必须具备 AgentRuntime。")
+	if phone == null or story == null or screen == null or agent_runtime == null:
 		_finish()
 		return
 
@@ -46,9 +49,8 @@ func _run() -> void:
 	_assert_save_rejected(save_manager, app, "Connected 时 SaveManager 必须拒绝写档。")
 	_assert_true(bool(phone.call(&"enter_dialogue_choice")), "必须进入对话选择状态。")
 	_assert_save_rejected(save_manager, app, "DialogueChoice 时 SaveManager 必须拒绝写档。")
-	_assert_true(bool(story.call(&"begin_active_call_dialogue").get("ok", false)), "必须开始预制对话。")
-	_assert_true(bool(story.call(&"select_dialogue_option", "opt_warren_song").get("ok", false)), "第一轮应能选择沃伦对话。")
-	_assert_true(bool(story.call(&"select_dialogue_option", "opt_warren_follow_report").get("ok", false)), "第二轮应能追问沃伦。")
+	var dialogue_driver: RefCounted = AGENT_DIALOGUE_TEST_DRIVER_SCRIPT.new()
+	_assert_true(bool((dialogue_driver.call(&"commit_active_call", story, "call_01_warren", "warren", ["statement_warren_tanker_fire_claim"], "酒吧有人说北桥附近一辆油罐车冒烟；我没有亲眼看见。") as Dictionary).get("ok", false)), "沃伦 committed ActorTurn 必须成功。")
 	_assert_true(bool(phone.call(&"exit_dialogue_choice")), "终止对白后必须退出对话选择。")
 	_assert_true(bool(phone.call(&"finish_call", int(game_clock.call(&"get_current_game_tick")))), "第一通电话必须正常结束。")
 	var bridge_after_warren: Dictionary = _find_broadcast_task(story.call(&"get_broadcast_tasks") as Array, "task_broadcast_bridge_closure")
@@ -59,13 +61,18 @@ func _run() -> void:
 	_assert_equal(String(phone.call(&"get_active_event_id")), "call_03_martha", "01:17 必须是玛莎来电。")
 	_assert_true(bool(phone.call(&"answer_call", int(game_clock.call(&"get_current_game_tick")))), "必须接通玛莎。")
 	_assert_true(bool(phone.call(&"enter_dialogue_choice")), "玛莎电话必须进入选择。")
-	_assert_true(bool(story.call(&"begin_active_call_dialogue").get("ok", false)), "必须开始玛莎对话。")
-	_assert_true(bool(story.call(&"select_dialogue_option", "opt_martha_vehicle").get("ok", false)), "追问车辆应揭示来源陈述。")
-	_assert_true(bool(story.call(&"select_dialogue_option", "opt_martha_follow_request").get("ok", false)), "玛莎第二轮必须终止。")
+	_assert_true(bool((dialogue_driver.call(&"commit_active_call", story, "call_03_martha", "martha", ["statement_martha_wagon_route"], "丹尼开的是深色旧旅行车，请帮我安全征集目击信息。") as Dictionary).get("ok", false)), "玛莎 committed ActorTurn 必须成功。")
 	_assert_true(bool(phone.call(&"exit_dialogue_choice")), "玛莎终止对白后必须恢复接通。")
 	_assert_true(bool(phone.call(&"finish_call", int(game_clock.call(&"get_current_game_tick")))), "玛莎通话必须结束。")
 	var wagon_information_ids: Array[String] = ["info_wagon_martha_route"]
 	_assert_true(bool(story.call(&"send_broadcast_task", "task_broadcast_wagon_witness_request", wagon_information_ids).get("ok", false)), "征集目击发布任务必须成功发送。")
+	var signal_state: Dictionary = story.call(&"get_signal_state") as Dictionary
+	_assert_true(bool(signal_state.get("available", false)) and (signal_state.get("records", []) as Array).size() == 1, "广播提交后必须同步产生一条 committed SignalRecord。")
+	var martha_signal_snapshot: Dictionary = agent_runtime.call(&"get_actor_snapshot", "martha") as Dictionary
+	_assert_true(bool(martha_signal_snapshot.get("ok", false)), "广播提交后必须仍可读取玛莎 Actor snapshot。")
+	if bool(martha_signal_snapshot.get("ok", false)):
+		var heard_signal_ids: Array = (((martha_signal_snapshot["snapshot"] as Dictionary)["state"] as Dictionary)["heard_signal_ids"] as Array)
+		_assert_true(heard_signal_ids.has("signal_player_broadcast_task_broadcast_wagon_witness_request"), "committed 广播 Signal 必须通过 AgentRuntime 进入 Actor heard_signal_ids。")
 	_assert_true(bool(game_clock.call(&"advance_ticks_for_verification", 360)), "必须推进至 01:23。")
 	_assert_equal(String(phone.call(&"get_state_name")), "RINGING", "01:23 条件来电必须正在响铃。")
 	_assert_equal(String(phone.call(&"get_active_event_id")), "call_04_dog_walker", "01:23 必须保存正在响铃的河边遛狗者来电。")
@@ -76,10 +83,16 @@ func _run() -> void:
 	_assert_true(bool(screen.show_view(GameScreen.VIEW_COMPUTER).get("ok", false)), "必须能切换至电脑视图。")
 	var computer: Control = screen.get_node(NodePath("ViewHost/ComputerCloseup")) as Control
 	_assert_true(computer != null and bool(computer.call(&"select_category", "news").get("ok", false)), "保存前必须显示新闻页签。")
+	_assert_true(bool((agent_runtime.call(&"apply_actor_state_patch", "martha", {"trust": 0.42}) as Dictionary).get("ok", false)), "保存前必须能通过 AgentRuntime 公开接口改变 Actor canonical state。")
 
-	var save_result: Dictionary = save_manager.save_slot("slot_1", app.get("_content_validation_result") as Dictionary, game_clock, story, phone, screen)
+	var save_result: Dictionary = save_manager.save_slot("slot_1", app.get("_content_validation_result") as Dictionary, game_clock, story, agent_runtime, phone, screen)
 	_assert_true(bool(save_result.get("ok", false)), "RINGING 状态必须能够成功写入槽位。")
 	var saved_document: Dictionary = save_result.get("document", {}) as Dictionary
+	_assert_equal(int(saved_document["save_format_version"]), 5, "Autonomous orchestration 与 WorldBook identity 落地后正式槽位格式必须提升为 5。")
+	_assert_equal(String(saved_document.get("worldbook_id", "")), "last_shift_radio_default", "正式槽位必须绑定当前 WorldBook ID。")
+	_assert_equal(int(saved_document.get("worldbook_version", 0)), 1, "正式槽位必须绑定当前 WorldBook version。")
+	var saved_story_signal: Dictionary = ((saved_document["story_state"] as Dictionary)["signal"] as Dictionary)
+	_assert_equal((saved_story_signal["records"] as Array).size(), 1, "正式槽位必须随 StoryEngine snapshot 保存 committed SignalRecord。")
 	var saved_tick: int = int((saved_document["game_clock_state"] as Dictionary)["current_game_tick"])
 	_assert_true(saved_tick >= 1_380 and saved_tick < 1_440, "保存必须落在 01:23 的响铃窗口。")
 	_assert_equal(String((saved_document["phone_state"] as Dictionary)["state"]), "RINGING", "电话快照必须保存响铃状态。")
@@ -116,10 +129,10 @@ func _run() -> void:
 
 	# 临时替换失败必须恢复旧档，而非覆盖已有的完整槽位。
 	save_manager.set_replace_failure_for_verification(true)
-	var replace_failure: Dictionary = save_manager.save_slot("slot_1", app.get("_content_validation_result") as Dictionary, game_clock, story, phone, screen)
+	var replace_failure: Dictionary = save_manager.save_slot("slot_1", app.get("_content_validation_result") as Dictionary, game_clock, story, root.get_node(NodePath("AgentRuntime")), phone, screen)
 	save_manager.set_replace_failure_for_verification(false)
 	_assert_true(not bool(replace_failure.get("ok", false)) and String(replace_failure.get("error_code", "")) == "replace_failed", "替换失败注入必须报告失败。")
-	var preserved_result: Dictionary = save_manager.load_slot("slot_1", "test_night_story", 1)
+	var preserved_result: Dictionary = save_manager.load_slot("slot_1", "test_night_story", 2)
 	_assert_true(bool(preserved_result.get("ok", false)), "替换失败后旧档仍必须可读。")
 	if bool(preserved_result.get("ok", false)):
 		_assert_equal(int(((preserved_result["document"] as Dictionary)["game_clock_state"] as Dictionary)["current_game_tick"]), saved_tick, "替换失败不得破坏旧档时刻。")
@@ -131,23 +144,31 @@ func _run() -> void:
 	if damaged_file != null:
 		damaged_file.store_string("{not valid json")
 		damaged_file.close()
-	var damaged_result: Dictionary = save_manager.load_slot("slot_2", "test_night_story", 1)
+	var damaged_result: Dictionary = save_manager.load_slot("slot_2", "test_night_story", 2)
 	_assert_true(not bool(damaged_result.get("ok", false)) and String(damaged_result.get("error_code", "")) == "invalid_json", "损坏 JSON 必须被严格拒绝。")
 	var unknown_field_document: Dictionary = saved_document.duplicate(true)
 	unknown_field_document["future_extension"] = true
-	var unknown_field_result: Dictionary = save_manager.validate_document(unknown_field_document, "test_night_story", 1)
+	var unknown_field_result: Dictionary = save_manager.validate_document(unknown_field_document, "test_night_story", 2)
 	_assert_true(not bool(unknown_field_result.get("ok", false)) and String(unknown_field_result.get("error_code", "")) == "unknown_top_level_field", "未知顶层字段必须被严格拒绝。")
 	var wrong_version_document: Dictionary = saved_document.duplicate(true)
-	wrong_version_document["save_format_version"] = 2
-	var wrong_version_result: Dictionary = save_manager.validate_document(wrong_version_document, "test_night_story", 1)
+	wrong_version_document["save_format_version"] = 6
+	var wrong_version_result: Dictionary = save_manager.validate_document(wrong_version_document, "test_night_story", 2)
 	_assert_true(not bool(wrong_version_result.get("ok", false)) and String(wrong_version_result.get("error_code", "")) == "unsupported_save_format_version", "错误存档版本必须被严格拒绝。")
+	var wrong_worldbook_document: Dictionary = saved_document.duplicate(true)
+	wrong_worldbook_document["worldbook_id"] = "another_worldbook"
+	var wrong_worldbook_result: Dictionary = save_manager.validate_worldbook_identity(wrong_worldbook_document, "last_shift_radio_default", 1)
+	_assert_true(not bool(wrong_worldbook_result.get("ok", false)) and String(wrong_worldbook_result.get("error_code", "")) == "worldbook_id_mismatch", "世界书 A 的运行态不得恢复到世界书 B。")
+	var wrong_worldbook_version_document: Dictionary = saved_document.duplicate(true)
+	wrong_worldbook_version_document["worldbook_version"] = 2
+	var wrong_worldbook_version_result: Dictionary = save_manager.validate_worldbook_identity(wrong_worldbook_version_document, "last_shift_radio_default", 1)
+	_assert_true(not bool(wrong_worldbook_version_result.get("ok", false)) and String(wrong_worldbook_version_result.get("error_code", "")) == "worldbook_version_mismatch", "同一 WorldBook ID 的不同 authored version 也不得混用运行态。")
 	var missing_field_document: Dictionary = saved_document.duplicate(true)
 	missing_field_document.erase("phone_state")
-	var missing_field_result: Dictionary = save_manager.validate_document(missing_field_document, "test_night_story", 1)
+	var missing_field_result: Dictionary = save_manager.validate_document(missing_field_document, "test_night_story", 2)
 	_assert_true(not bool(missing_field_result.get("ok", false)) and String(missing_field_result.get("error_code", "")) == "missing_field", "缺少必填字段的存档必须被严格拒绝。")
 	var invalid_date_document: Dictionary = saved_document.duplicate(true)
 	invalid_date_document["saved_at_utc"] = "2026-02-31T01:02:03Z"
-	var invalid_date_result: Dictionary = save_manager.validate_document(invalid_date_document, "test_night_story", 1)
+	var invalid_date_result: Dictionary = save_manager.validate_document(invalid_date_document, "test_night_story", 2)
 	_assert_true(not bool(invalid_date_result.get("ok", false)) and String(invalid_date_result.get("error_code", "")) == "invalid_saved_at_utc", "不存在的 UTC 日期必须被严格拒绝。")
 
 	# 完全销毁旧运行时后，从主菜单读取同一槽位；恢复必须返回原始 01:23 状态。
@@ -193,7 +214,21 @@ func _run() -> void:
 	var restored_phone: RefCounted = loaded_app.get("_phone_system") as RefCounted
 	var restored_story: RefCounted = loaded_app.get("_story_engine") as RefCounted
 	var restored_screen: GameScreen = loaded_app.get("_game_screen") as GameScreen
+	var restored_agent_runtime: Node = root.get_node_or_null(NodePath("AgentRuntime")) as Node
+	var voice_player: Node = root.get_node_or_null(NodePath("CharacterVoicePlayer")) as Node
 	_assert_true(restored_phone != null and restored_story != null and restored_screen != null, "读取后必须获得全新的完整运行时。")
+	_assert_true(restored_agent_runtime != null, "读取后必须恢复同一个 AgentRuntime 自动加载服务。")
+	if restored_agent_runtime != null:
+		var martha_snapshot_result: Dictionary = restored_agent_runtime.call(&"get_actor_snapshot", "martha") as Dictionary
+		_assert_true(bool(martha_snapshot_result.get("ok", false)), "读取后必须恢复玛莎 Actor。")
+		if bool(martha_snapshot_result.get("ok", false)):
+			var martha_state: Dictionary = ((martha_snapshot_result["snapshot"] as Dictionary)["state"] as Dictionary)
+			_assert_true(is_equal_approx(float(martha_state.get("trust", -1.0)), 0.42), "读取后必须保留已提交的 Actor canonical state。")
+			_assert_true((martha_state.get("heard_signal_ids", []) as Array).has("signal_player_broadcast_task_broadcast_wagon_witness_request"), "读取后必须保留 committed Signal 对应的 Actor heard_signal_ids，且不能重新请求模型。")
+	_assert_true(voice_player != null, "读取生命周期必须存在人物电话配音自动加载服务。")
+	if voice_player != null:
+		var restored_voice_snapshot: Dictionary = voice_player.call(&"get_playback_snapshot") as Dictionary
+		_assert_true(bool(restored_voice_snapshot.get("manifest_loaded", false)) and bool(restored_voice_snapshot.get("bound", false)), "读取 staging 校验并提交后必须把人物配音绑定到恢复的 StoryEngine。")
 	_assert_equal(int(game_clock.call(&"get_current_game_tick")), saved_tick, "读取后时钟必须精确恢复到保存时刻。")
 	_assert_equal(String(restored_phone.call(&"get_state_name")), "RINGING", "读取后电话必须继续原来的响铃状态。")
 	_assert_equal(String(restored_phone.call(&"get_active_event_id")), "call_04_dog_walker", "读取后不得重新触发或替换活动来电。")
@@ -282,6 +317,7 @@ func _assert_save_rejected(save_manager: SaveManager, app: Control, message: Str
 		app.get("_content_validation_result") as Dictionary,
 		root.get_node(NodePath("GameClock")) as Node,
 		app.get("_story_engine") as RefCounted,
+		root.get_node(NodePath("AgentRuntime")) as Node,
 		app.get("_phone_system") as RefCounted,
 		app.get("_game_screen") as GameScreen
 	)

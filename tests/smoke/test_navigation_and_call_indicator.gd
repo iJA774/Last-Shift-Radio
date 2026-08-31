@@ -58,8 +58,8 @@ func _run() -> void:
 	_assert_true(time_frame != null, "游戏内 HUD 必须提供独立时间牌，而非顶部横向状态条。")
 	if time_frame != null:
 		_assert_true(
-			time_frame.position.x >= 640.0 and time_frame.position.y >= 0.0 and time_frame.size.x <= 560.0,
-			"时间牌必须保持为顶部居中的独立仪表，不能退化为横跨屏幕的顶部栏。"
+			time_frame.position.x >= 0.0 and time_frame.position.x <= 80.0 and time_frame.position.y >= 0.0 and time_frame.size.x <= 560.0,
+			"时间牌必须保持为左上角独立仪表，不能退化为横跨屏幕的顶部栏。"
 		)
 	_assert_true(global_status.get_node_or_null("Content/WorkStateLabel") == null, "HUD 不得再显示工作状态或时间流速文字行。")
 	_assert_equal(time_title.text, "1999年12月31日", "时间牌必须在素材自带的“当前时间”右侧显示固定日期。")

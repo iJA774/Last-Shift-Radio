@@ -83,13 +83,13 @@ func _test_real_time_rate_contract() -> void:
 	_assert_equal(
 		rate_clock.get_real_usec_per_game_minute(),
 		GameClockService.FAST_REAL_USEC_PER_GAME_MINUTE,
-		"常态倍率必须为 2 现实秒对应 1 游戏分钟。"
+		"常态倍率必须为 3 现实秒对应 1 游戏分钟。"
 	)
 	_assert_true(
 		rate_clock.advance_real_usec_for_verification(GameClockService.FAST_REAL_USEC_PER_GAME_MINUTE),
 		"常态倍率必须接受确定性真实时间推进。"
 	)
-	_assert_equal(rate_clock.get_current_game_tick(), 60, "2 现实秒在常态倍率下必须精确推进 1 游戏分钟。")
+	_assert_equal(rate_clock.get_current_game_tick(), 60, "3 现实秒在常态倍率下必须精确推进 1 游戏分钟。")
 	var slow_result: Dictionary = rate_clock.set_time_rate_mode_for_verification(GameClockService.TimeRate.SLOW)
 	_assert_true(bool(slow_result.get("ok", false)), "时钟必须允许切换到 SLOW 倍率。")
 	_assert_equal(
@@ -108,14 +108,14 @@ func _test_real_time_rate_contract() -> void:
 	root.add_child(boundary_clock)
 	boundary_clock.start_shift()
 	_assert_true(
-		boundary_clock.advance_real_usec_for_verification(33_333),
+		boundary_clock.advance_real_usec_for_verification(49_999),
 		"倍率切换边界前必须能注入不足一个 tick 的常态真实时间。"
 	)
-	_assert_equal(boundary_clock.get_current_game_tick(), 0, "33,333 微秒常态时间不足一个完整 tick。")
+	_assert_equal(boundary_clock.get_current_game_tick(), 0, "49,999 微秒常态时间不足一个完整 tick。")
 	var boundary_rate_result: Dictionary = boundary_clock.set_time_rate_mode_for_verification(GameClockService.TimeRate.SLOW)
 	_assert_true(bool(boundary_rate_result.get("ok", false)), "边界处必须允许切换到 SLOW 倍率。")
-	_assert_true(boundary_clock.advance_real_usec_for_verification(9), "切换后的部分真实时间必须可累计。")
-	_assert_equal(boundary_clock.get_current_game_tick(), 0, "切换后 9 微秒仍不足以补齐原有分数 tick。")
+	_assert_true(boundary_clock.advance_real_usec_for_verification(19), "切换后的部分真实时间必须可累计。")
+	_assert_equal(boundary_clock.get_current_game_tick(), 0, "切换后 19 微秒仍不足以补齐原有分数 tick。")
 	_assert_true(boundary_clock.advance_real_usec_for_verification(1), "切换后必须能补齐原有分数 tick。")
 	_assert_equal(
 		boundary_clock.get_current_game_tick(),

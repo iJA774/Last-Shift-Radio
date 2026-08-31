@@ -48,13 +48,19 @@ var _read_source_ids_by_category: Dictionary = {
 }
 var _call_records_by_source_id: Dictionary = {}
 var _call_record_order: Array[String] = []
+## Agent Delivery 动态消息与 authored messages 分开持有；它们共享 messages UI/已读接口，
+## 但绝不写入静态内容数组，也不会被 advance_to_minute() 当作 authored unlock 重新生成。
+var _dynamic_message_source_display_name_by_actor: Dictionary = {}
+var _dynamic_messages_by_source_id: Dictionary = {}
+var _dynamic_message_order: Array[String] = []
 var _phone_system: RefCounted = null
 var _is_content_configured: bool = false
 var _current_minute: int = -1
 var _last_error: Dictionary = {}
 
-const SNAPSHOT_VERSION: int = 1
+const SNAPSHOT_VERSION: int = 2
 const SYSTEM_ID: String = "computer_system"
+const MAX_GAME_TICK: int = 3_600
 
 
 ## 接收已经通过内容管线校验的展示来源。这里仍在边界复核 ID、解锁时间和
@@ -89,11 +95,91 @@ func configure_content(
 	_read_source_ids_by_category[CATEGORY_CHECKLIST] = {}
 	_read_source_ids_by_category[CATEGORY_NEWS] = {}
 	_read_source_ids_by_category[CATEGORY_MESSAGES] = {}
+	_dynamic_messages_by_source_id = {}
+	_dynamic_message_order = []
 	_is_content_configured = true
 	_current_minute = -1
 	_last_error = {}
 
 	return _make_success({"configured_categories": STATIC_CATEGORIES.duplicate()})
+
+
+## StoryEngine 用正式 Actor authoring 配置动态消息来源；模型不能在 send_message 时自报 sender。
+func configure_dynamic_message_sources(actor_definitions: Array) -> Dictionary:
+	if not _dynamic_messages_by_source_id.is_empty():
+		return _make_error("dynamic_message_sources_locked", "已有动态消息后不能覆盖来源 Actor 定义。", CATEGORY_MESSAGES)
+	var next_sources: Dictionary = {}
+	for raw_actor: Variant in actor_definitions:
+		if not raw_actor is Dictionary:
+			return _make_error("dynamic_message_actor_invalid", "动态消息 Actor 定义必须是对象。", CATEGORY_MESSAGES)
+		var actor: Dictionary = raw_actor as Dictionary
+		if not actor.get("id") is String or not _is_valid_stable_id(String(actor["id"])):
+			return _make_error("dynamic_message_actor_invalid", "动态消息 Actor 缺少稳定 id。", CATEGORY_MESSAGES)
+		var actor_id: String = String(actor["id"])
+		if next_sources.has(actor_id):
+			return _make_error("dynamic_message_actor_duplicate", "动态消息 Actor ID 重复。", CATEGORY_MESSAGES, actor_id)
+		if not actor.get("display_name") is String or String(actor["display_name"]).strip_edges().is_empty():
+			return _make_error("dynamic_message_actor_invalid", "动态消息 Actor 缺少 display_name。", CATEGORY_MESSAGES, actor_id)
+		next_sources[actor_id] = String(actor["display_name"])
+	_dynamic_message_source_display_name_by_actor = next_sources
+	return _make_success({"actor_count": next_sources.size()})
+
+
+## DeliverySystem 的正式动态消息 authority。成功后消息立即出现在 messages 页；重复提交同一
+## stable ID 且内容完全一致时幂等，不补发 source_unlocked / entries_changed。
+func commit_dynamic_message(message: Dictionary, current_tick: int) -> Dictionary:
+	if not _is_content_configured:
+		return _make_error("content_not_configured", "电脑内容尚未配置，不能提交动态消息。", CATEGORY_MESSAGES)
+	if current_tick < 0 or current_tick > MAX_GAME_TICK:
+		return _make_error("dynamic_message_tick_invalid", "动态消息 current_tick 无效。", CATEGORY_MESSAGES)
+	if _current_minute < 0 or current_tick / 60 != _current_minute:
+		return _make_error("dynamic_message_time_mismatch", "动态消息 tick 必须与 ComputerSystem 当前分钟一致。", CATEGORY_MESSAGES)
+	var fields: PackedStringArray = ["id", "source_actor_id", "sender", "body"]
+	if message.size() != fields.size():
+		return _make_error("dynamic_message_fields_invalid", "动态消息字段缺失或包含未知字段。", CATEGORY_MESSAGES)
+	for field_name: String in fields:
+		if not message.has(field_name):
+			return _make_error("dynamic_message_fields_invalid", "动态消息缺少字段：%s。" % field_name, CATEGORY_MESSAGES)
+	if not message["id"] is String or not _is_valid_stable_id(String(message["id"])):
+		return _make_error("dynamic_message_id_invalid", "动态消息 id 必须是 stable ID。", CATEGORY_MESSAGES)
+	var source_id: String = String(message["id"])
+	if not message["source_actor_id"] is String or not _dynamic_message_source_display_name_by_actor.has(String(message["source_actor_id"])):
+		return _make_error("dynamic_message_actor_unknown", "动态消息 source_actor_id 不属于当前正式 Actor。", CATEGORY_MESSAGES, source_id)
+	var actor_id: String = String(message["source_actor_id"])
+	if not source_id.begins_with("delivery_message_%s_" % actor_id):
+		return _make_error("dynamic_message_id_actor_mismatch", "动态消息 id 必须与 source_actor_id 的 Delivery ID 一致。", CATEGORY_MESSAGES, source_id)
+	if not message["sender"] is String or String(message["sender"]) != String(_dynamic_message_source_display_name_by_actor[actor_id]):
+		return _make_error("dynamic_message_sender_mismatch", "动态消息 sender 必须来自正式 Actor display_name。", CATEGORY_MESSAGES, source_id)
+	if not message["body"] is String:
+		return _make_error("dynamic_message_body_invalid", "动态消息 body 必须是字符串。", CATEGORY_MESSAGES, source_id)
+	var body: String = String(message["body"])
+	if body.strip_edges().is_empty() or body.length() > 2_000:
+		return _make_error("dynamic_message_body_invalid", "动态消息 body 必须是 1..2000 字符非空文本。", CATEGORY_MESSAGES, source_id)
+	var normalized: Dictionary = {
+		"id": source_id,
+		"source_actor_id": actor_id,
+		"sender": String(message["sender"]),
+		"body": body,
+		"created_at_tick": current_tick,
+		"unlock_minute": current_tick / 60,
+		"statement_ids": [],
+		"fact_ids": [],
+	}
+	if _dynamic_messages_by_source_id.has(source_id):
+		var stored: Dictionary = _dynamic_messages_by_source_id[source_id] as Dictionary
+		if stored != normalized:
+			return _make_error("dynamic_message_conflict", "同一动态消息 ID 的内容发生变化，拒绝覆盖。", CATEGORY_MESSAGES, source_id)
+		return _make_success({"duplicate": true, "entry": _make_entry_snapshot(CATEGORY_MESSAGES, stored, source_id)})
+	if _is_authored_source_present(CATEGORY_MESSAGES, source_id):
+		return _make_error("dynamic_message_id_conflict", "动态消息 ID 与 authored message 冲突。", CATEGORY_MESSAGES, source_id)
+	_dynamic_messages_by_source_id[source_id] = normalized
+	_dynamic_message_order.append(source_id)
+	(_unlocked_source_ids_by_category[CATEGORY_MESSAGES] as Dictionary)[source_id] = true
+	var snapshot: Dictionary = _make_entry_snapshot(CATEGORY_MESSAGES, normalized, source_id)
+	_source_unlocked_snapshot(CATEGORY_MESSAGES, snapshot)
+	entries_changed.emit(CATEGORY_MESSAGES)
+	_last_error = {}
+	return _make_success({"duplicate": false, "entry": snapshot})
 
 
 ## 电话记录保持 PhoneSystem 所有权。本方法只订阅它的记录信号，并在绑定时同步
@@ -210,6 +296,10 @@ func get_entries(category: String) -> Array[Dictionary]:
 		var source_id: String = String(entry["id"])
 		if unlocked_ids.has(source_id):
 			entries.append(_make_entry_snapshot(category, entry, source_id))
+	if category == CATEGORY_MESSAGES:
+		for source_id: String in _dynamic_message_order:
+			if unlocked_ids.has(source_id) and _dynamic_messages_by_source_id.has(source_id):
+				entries.append(_make_entry_snapshot(category, _dynamic_messages_by_source_id[source_id] as Dictionary, source_id))
 	return entries
 
 
@@ -304,9 +394,19 @@ func create_snapshot() -> Dictionary:
 	var unlocked_source_ids: Dictionary = {}
 	var read_source_ids: Dictionary = {}
 	for category: String in STATIC_CATEGORIES:
-		unlocked_source_ids[category] = _sorted_dictionary_keys(_unlocked_source_ids_by_category[category] as Dictionary)
+		unlocked_source_ids[category] = _authored_unlocked_source_ids(category)
 		read_source_ids[category] = _sorted_dictionary_keys(_read_source_ids_by_category[category] as Dictionary)
 	read_source_ids[CATEGORY_CALL_LOG] = _sorted_dictionary_keys(_read_source_ids_by_category[CATEGORY_CALL_LOG] as Dictionary)
+	var dynamic_messages: Array[Dictionary] = []
+	for source_id: String in _dynamic_message_order:
+		var stored: Dictionary = _dynamic_messages_by_source_id[source_id] as Dictionary
+		dynamic_messages.append({
+			"id": source_id,
+			"source_actor_id": String(stored["source_actor_id"]),
+			"sender": String(stored["sender"]),
+			"body": String(stored["body"]),
+			"created_at_tick": int(stored["created_at_tick"]),
+		})
 	var call_record_event_ids: Array[String] = _call_record_order.duplicate()
 	var snapshot: Dictionary = {
 		"snapshot_version": SNAPSHOT_VERSION,
@@ -314,6 +414,7 @@ func create_snapshot() -> Dictionary:
 		"current_minute": _current_minute,
 		"unlocked_source_ids": unlocked_source_ids,
 		"read_source_ids": read_source_ids,
+		"dynamic_messages": dynamic_messages,
 		"call_record_event_ids": call_record_event_ids,
 	}
 	snapshot.make_read_only()
@@ -338,6 +439,10 @@ func validate_snapshot(snapshot: Dictionary, context: Dictionary = {}) -> Dictio
 		return _make_error("invalid_snapshot_source_state", "电脑存档的来源状态必须是对象。")
 	var unlocked_raw: Dictionary = unlocked_value as Dictionary
 	var read_raw: Dictionary = read_value as Dictionary
+	var dynamic_result: Dictionary = _validate_dynamic_messages_snapshot(snapshot["dynamic_messages"], snapshot_minute, context)
+	if not bool(dynamic_result.get("ok", false)):
+		return dynamic_result
+	var dynamic_ids: Dictionary = dynamic_result["ids"] as Dictionary
 	var normalized_unlocked: Dictionary = {}
 	var normalized_read: Dictionary = {}
 	for category: String in STATIC_CATEGORIES:
@@ -349,18 +454,20 @@ func validate_snapshot(snapshot: Dictionary, context: Dictionary = {}) -> Dictio
 		)
 		if not bool(unlocked_result.get("ok", false)):
 			return unlocked_result
+		var extra_read_ids: Dictionary = dynamic_ids if category == CATEGORY_MESSAGES else {}
 		var read_result: Dictionary = _validate_static_snapshot_category(
 			category,
 			read_raw,
 			snapshot_minute,
-			true
+			true,
+			extra_read_ids
 		)
 		if not bool(read_result.get("ok", false)):
 			return read_result
 		var unlocked_ids: Array[String] = unlocked_result["ids"] as Array[String]
 		var read_ids: Array[String] = read_result["ids"] as Array[String]
 		for source_id: String in read_ids:
-			if not unlocked_ids.has(source_id):
+			if not unlocked_ids.has(source_id) and not extra_read_ids.has(source_id):
 				return _make_error("snapshot_read_not_unlocked", "电脑存档的已读条目必须已解锁。", category, source_id)
 		normalized_unlocked[category] = unlocked_ids
 		normalized_read[category] = read_ids
@@ -388,6 +495,7 @@ func validate_snapshot(snapshot: Dictionary, context: Dictionary = {}) -> Dictio
 			"current_minute": snapshot_minute,
 			"unlocked_source_ids": normalized_unlocked,
 			"read_source_ids": normalized_read,
+			"dynamic_messages": dynamic_result["messages"],
 			"call_record_event_ids": call_record_event_ids,
 			"call_records": phone_records_result["records"],
 			"phone_system": phone_records_result.get("phone_system", null),
@@ -407,6 +515,13 @@ func restore_snapshot(snapshot: Dictionary, context: Dictionary = {}) -> Diction
 	for category: String in STATIC_CATEGORIES:
 		next_unlocked[category] = _string_array_to_lookup(normalized["unlocked_source_ids"][category] as Array[String])
 		next_read[category] = _string_array_to_lookup(normalized["read_source_ids"][category] as Array[String])
+	var next_dynamic_messages: Dictionary = {}
+	var next_dynamic_order: Array[String] = []
+	for stored: Dictionary in normalized["dynamic_messages"] as Array[Dictionary]:
+		var source_id: String = String(stored["id"])
+		next_dynamic_messages[source_id] = stored.duplicate(true)
+		next_dynamic_order.append(source_id)
+		(next_unlocked[CATEGORY_MESSAGES] as Dictionary)[source_id] = true
 	next_unlocked[CATEGORY_CALL_LOG] = _string_array_to_lookup(normalized["call_record_event_ids"] as Array[String])
 	next_read[CATEGORY_CALL_LOG] = _string_array_to_lookup(normalized["read_source_ids"][CATEGORY_CALL_LOG] as Array[String])
 	var next_call_records_by_id: Dictionary = {}
@@ -426,6 +541,8 @@ func restore_snapshot(snapshot: Dictionary, context: Dictionary = {}) -> Diction
 	_current_minute = int(normalized["current_minute"])
 	_unlocked_source_ids_by_category = next_unlocked
 	_read_source_ids_by_category = next_read
+	_dynamic_messages_by_source_id = next_dynamic_messages
+	_dynamic_message_order = next_dynamic_order
 	_call_records_by_source_id = next_call_records_by_id
 	_call_record_order = next_call_order
 	_last_error = {}
@@ -439,6 +556,7 @@ func _validate_snapshot_envelope(snapshot: Dictionary) -> Dictionary:
 		"current_minute",
 		"unlocked_source_ids",
 		"read_source_ids",
+		"dynamic_messages",
 		"call_record_event_ids",
 	]
 	if snapshot.size() != required_fields.size():
@@ -454,7 +572,7 @@ func _validate_snapshot_envelope(snapshot: Dictionary) -> Dictionary:
 	return _make_success()
 
 
-func _validate_static_snapshot_category(category: String, raw_state: Dictionary, snapshot_minute: int, is_read: bool) -> Dictionary:
+func _validate_static_snapshot_category(category: String, raw_state: Dictionary, snapshot_minute: int, is_read: bool, extra_allowed_ids: Dictionary = {}) -> Dictionary:
 	if not raw_state.has(category) or not raw_state[category] is Array:
 		return _make_error("snapshot_missing_category", "电脑存档缺少分类：%s。" % category, category)
 	var ids: Array[String] = []
@@ -466,6 +584,9 @@ func _validate_static_snapshot_category(category: String, raw_state: Dictionary,
 		allowed_by_id[source_id] = true
 		if int(entry["unlock_minute"]) <= snapshot_minute:
 			expected_unlocked[source_id] = true
+	if is_read:
+		for extra_id_variant: Variant in extra_allowed_ids:
+			allowed_by_id[String(extra_id_variant)] = true
 	for raw_id: Variant in raw_state[category] as Array:
 		if not raw_id is String or not allowed_by_id.has(String(raw_id)):
 			return _make_error("snapshot_unknown_source_id", "电脑存档引用了不存在或错误分类的信息来源。", category, String(raw_id))
@@ -478,6 +599,84 @@ func _validate_static_snapshot_category(category: String, raw_state: Dictionary,
 		return _make_error("snapshot_unlocked_time_mismatch", "电脑存档已解锁条目与保存分钟的内容定义不一致。", category)
 	ids.sort()
 	return _make_success({"ids": ids})
+
+
+func _validate_dynamic_messages_snapshot(value: Variant, snapshot_minute: int, context: Dictionary) -> Dictionary:
+	if not value is Array:
+		return _make_error("snapshot_dynamic_messages_invalid", "电脑存档 dynamic_messages 必须是数组。", CATEGORY_MESSAGES)
+	var maximum_tick: int = MAX_GAME_TICK
+	if context.has("current_game_tick"):
+		var tick_result: Dictionary = _read_snapshot_integer(context["current_game_tick"], "current_game_tick", 0, MAX_GAME_TICK)
+		if not bool(tick_result.get("ok", false)):
+			return _make_error("snapshot_dynamic_message_tick_invalid", "动态消息恢复上下文 current_game_tick 无效。", CATEGORY_MESSAGES)
+		maximum_tick = int(tick_result["value"])
+		if maximum_tick / 60 != snapshot_minute:
+			return _make_error("snapshot_dynamic_message_time_mismatch", "动态消息恢复上下文 tick 与电脑分钟不一致。", CATEGORY_MESSAGES)
+	elif snapshot_minute >= 0:
+		maximum_tick = mini(MAX_GAME_TICK, snapshot_minute * 60 + 59)
+	var messages: Array[Dictionary] = []
+	var ids: Dictionary = {}
+	for raw_message: Variant in value as Array:
+		if not raw_message is Dictionary:
+			return _make_error("snapshot_dynamic_message_invalid", "动态消息快照项必须是对象。", CATEGORY_MESSAGES)
+		var message: Dictionary = raw_message as Dictionary
+		var fields: PackedStringArray = ["id", "source_actor_id", "sender", "body", "created_at_tick"]
+		if message.size() != fields.size():
+			return _make_error("snapshot_dynamic_message_fields_invalid", "动态消息快照字段缺失或包含未知字段。", CATEGORY_MESSAGES)
+		for field_name: String in fields:
+			if not message.has(field_name):
+				return _make_error("snapshot_dynamic_message_fields_invalid", "动态消息快照缺少字段：%s。" % field_name, CATEGORY_MESSAGES)
+		if not message["id"] is String or not _is_valid_stable_id(String(message["id"])):
+			return _make_error("snapshot_dynamic_message_id_invalid", "动态消息快照 id 无效。", CATEGORY_MESSAGES)
+		var source_id: String = String(message["id"])
+		if ids.has(source_id) or _is_authored_source_present(CATEGORY_MESSAGES, source_id):
+			return _make_error("snapshot_dynamic_message_id_conflict", "动态消息快照 ID 重复或与 authored message 冲突。", CATEGORY_MESSAGES, source_id)
+		if not message["source_actor_id"] is String or not _dynamic_message_source_display_name_by_actor.has(String(message["source_actor_id"])):
+			return _make_error("snapshot_dynamic_message_actor_invalid", "动态消息快照 Actor 不属于当前世界。", CATEGORY_MESSAGES, source_id)
+		var actor_id: String = String(message["source_actor_id"])
+		if not source_id.begins_with("delivery_message_%s_" % actor_id):
+			return _make_error("snapshot_dynamic_message_id_actor_mismatch", "动态消息快照 ID 与 Actor 不一致。", CATEGORY_MESSAGES, source_id)
+		if not message["sender"] is String or String(message["sender"]) != String(_dynamic_message_source_display_name_by_actor[actor_id]):
+			return _make_error("snapshot_dynamic_message_sender_mismatch", "动态消息快照 sender 与 Actor authoring 不一致。", CATEGORY_MESSAGES, source_id)
+		if not message["body"] is String or String(message["body"]).strip_edges().is_empty() or String(message["body"]).length() > 2_000:
+			return _make_error("snapshot_dynamic_message_body_invalid", "动态消息快照 body 无效。", CATEGORY_MESSAGES, source_id)
+		var created_result: Dictionary = _read_snapshot_integer(message["created_at_tick"], "created_at_tick", 0, maximum_tick)
+		if not bool(created_result.get("ok", false)):
+			return _make_error("snapshot_dynamic_message_tick_invalid", "动态消息 created_at_tick 不能晚于存档时刻。", CATEGORY_MESSAGES, source_id)
+		var created_at_tick: int = int(created_result["value"])
+		var stored: Dictionary = {
+			"id": source_id,
+			"source_actor_id": actor_id,
+			"sender": String(message["sender"]),
+			"body": String(message["body"]),
+			"created_at_tick": created_at_tick,
+			"unlock_minute": created_at_tick / 60,
+			"statement_ids": [],
+			"fact_ids": [],
+		}
+		ids[source_id] = true
+		messages.append(stored)
+	return _make_success({"messages": messages, "ids": ids})
+
+
+func _authored_unlocked_source_ids(category: String) -> Array[String]:
+	var unlocked: Dictionary = _unlocked_source_ids_by_category[category] as Dictionary
+	var ids: Array[String] = []
+	for entry: Dictionary in _content_entries_by_category[category] as Array[Dictionary]:
+		var source_id: String = String(entry["id"])
+		if unlocked.has(source_id):
+			ids.append(source_id)
+	ids.sort()
+	return ids
+
+
+func _is_authored_source_present(category: String, source_id: String) -> bool:
+	if not _content_entries_by_category.has(category):
+		return false
+	for entry: Dictionary in _content_entries_by_category[category] as Array[Dictionary]:
+		if String(entry["id"]) == source_id:
+			return true
+	return false
 
 
 func _resolve_snapshot_phone_records(context: Dictionary) -> Dictionary:
@@ -769,6 +968,8 @@ func _get_call_log_snapshots() -> Array[Dictionary]:
 func _get_internal_source_entry(category: String, source_id: String) -> Dictionary:
 	if category == CATEGORY_CALL_LOG:
 		return _call_records_by_source_id[source_id] as Dictionary
+	if category == CATEGORY_MESSAGES and _dynamic_messages_by_source_id.has(source_id):
+		return _dynamic_messages_by_source_id[source_id] as Dictionary
 	var category_entries: Array[Dictionary] = _content_entries_by_category[category] as Array[Dictionary]
 	for entry: Dictionary in category_entries:
 		if String(entry["id"]) == source_id:
@@ -779,6 +980,8 @@ func _get_internal_source_entry(category: String, source_id: String) -> Dictiona
 func _is_source_present(category: String, source_id: String) -> bool:
 	if category == CATEGORY_CALL_LOG:
 		return _call_records_by_source_id.has(source_id)
+	if category == CATEGORY_MESSAGES and _dynamic_messages_by_source_id.has(source_id):
+		return true
 	if not _is_content_configured:
 		return false
 	var category_entries: Array[Dictionary] = _content_entries_by_category[category] as Array[Dictionary]

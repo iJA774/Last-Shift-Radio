@@ -20,14 +20,15 @@ const GAME_TICKS_PER_MINUTE: int = 60
 const SHIFT_DURATION_MINUTES: int = 60
 const SHIFT_DURATION_TICKS: int = SHIFT_DURATION_MINUTES * GAME_TICKS_PER_MINUTE
 
-## Idle 下 2 现实秒对应 1 游戏分钟；Active 下时间与现实一致，60 现实秒对应
+## Idle 下 3 现实秒对应 1 游戏分钟；Active 下时间与现实一致，60 现实秒对应
 ## 1 游戏分钟。SLOW 是相对快进倍率的内部名称；UI 只能通过公开方法修改倍率。
 enum TimeRate {
 	FAST,
 	SLOW,
+	PAUSED,
 }
 
-const FAST_REAL_USEC_PER_GAME_MINUTE: int = 2 * 1_000_000
+const FAST_REAL_USEC_PER_GAME_MINUTE: int = 3 * 1_000_000
 const SLOW_REAL_USEC_PER_GAME_MINUTE: int = 60 * 1_000_000
 
 ## 两种分钟倍率的公倍母。分数 tick 以此为单位保存，因此切换倍率时可以保留
@@ -180,7 +181,7 @@ func validate_snapshot(snapshot: Dictionary, context: Dictionary = {}) -> Dictio
 	)
 	if not bool(pending_result["ok"]):
 		return pending_result
-	var rate_result: Dictionary = _read_snapshot_integer(snapshot, "time_rate", int(TimeRate.FAST), int(TimeRate.SLOW))
+	var rate_result: Dictionary = _read_snapshot_integer(snapshot, "time_rate", int(TimeRate.FAST), int(TimeRate.PAUSED))
 	if not bool(rate_result["ok"]):
 		return rate_result
 	if typeof(snapshot["is_running"]) != TYPE_BOOL:
@@ -323,6 +324,9 @@ func _set_time_rate_mode_internal(time_rate: TimeRate, synchronize_wall_clock: b
 
 
 func _consume_wall_clock_elapsed() -> void:
+	if _time_rate == TimeRate.PAUSED:
+		_last_wall_clock_usec = Time.get_ticks_usec()
+		return
 	var now_usec: int = Time.get_ticks_usec()
 	if _last_wall_clock_usec == 0:
 		_last_wall_clock_usec = now_usec
@@ -339,7 +343,7 @@ func _consume_wall_clock_elapsed() -> void:
 
 
 func _accumulate_real_usec(elapsed_usec: int) -> void:
-	if elapsed_usec <= 0 or not _is_running:
+	if elapsed_usec <= 0 or not _is_running or _time_rate == TimeRate.PAUSED:
 		return
 	var real_usec_per_game_minute: int = _get_real_usec_per_game_minute(_time_rate)
 	var multiplier: int = SLOW_REAL_USEC_PER_GAME_MINUTE / real_usec_per_game_minute
@@ -359,12 +363,14 @@ func _get_real_usec_per_game_minute(time_rate: TimeRate) -> int:
 			return FAST_REAL_USEC_PER_GAME_MINUTE
 		TimeRate.SLOW:
 			return SLOW_REAL_USEC_PER_GAME_MINUTE
+		TimeRate.PAUSED:
+			return 0
 	push_error("[时钟][invalid_time_rate_internal] 未知时间倍率：%d。" % int(time_rate))
 	return 0
 
 
 func _is_valid_time_rate(time_rate: int) -> bool:
-	return time_rate == TimeRate.FAST or time_rate == TimeRate.SLOW
+	return time_rate == TimeRate.FAST or time_rate == TimeRate.SLOW or time_rate == TimeRate.PAUSED
 
 
 func _advance_by_ticks(ticks_to_advance: int) -> void:

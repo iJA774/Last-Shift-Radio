@@ -125,7 +125,7 @@ func _run() -> void:
 		return
 	_assert_ok(save_manager.set_save_directory(SAVE_DIRECTORY), "设置验收必须使用隔离存档目录。")
 	var global_settings_before_read: Dictionary = settings_manager.call(&"get_settings_snapshot") as Dictionary
-	var save_result: Dictionary = save_manager.save_slot("slot_1", app.get("_content_validation_result") as Dictionary, game_clock, story, phone, screen)
+	var save_result: Dictionary = save_manager.save_slot("slot_1", app.get("_content_validation_result") as Dictionary, game_clock, story, root.get_node(NodePath("AgentRuntime")), phone, screen)
 	_assert_true(bool(save_result.get("ok", false)), "空闲状态必须能写入读取设置验收槽位。")
 	var saved_document: Dictionary = save_result.get("document", {}) as Dictionary
 	_assert_true(not _contains_forbidden_setting_key(saved_document), "剧情存档的顶层或嵌套状态不得包含 settings/settings_state 或八个设置字段。")
@@ -200,19 +200,20 @@ func _run() -> void:
 	_assert_true(restored_computer != null and not (restored_computer.get_node(NodePath("ScreenCursor")) as Label).visible, "读取后必须保持全局 CRT off。")
 	_assert_true(not screen.is_motion_enabled(), "读取后必须保持全局减少闪烁。")
 
-	# 夜班内设置覆盖层是 ACTIVE/慢速而非暂停；电话仍可在其上方真实响铃。
+	# 设置覆盖层不自行改变流速；电话仍可在其上方真实响铃。
 	_assert_ok(screen.toggle_control_bar(), "必须能打开 ESC 控制栏以进入设置。")
 	(screen.get_node(NodePath("ShiftControlBar/Backdrop/MenuArt/ActionHotspots/SettingsButton")) as Button).emit_signal(&"pressed")
 	await process_frame
 	_assert_true(screen.is_settings_panel_open(), "夜班内必须能打开设置覆盖层。")
 	var work_snapshot: Dictionary = screen.get_work_state_snapshot()
-	_assert_true((work_snapshot["reason_ids"] as PackedStringArray).has(GameScreen.WORK_REASON_SETTINGS_OPEN), "设置覆盖层必须作为 ACTIVE 的明确原因。")
+	_assert_true(not (work_snapshot["reason_ids"] as PackedStringArray).has(GameScreen.WORK_REASON_SETTINGS_OPEN), "设置覆盖层不得单独改变工作状态或流速。")
 	_assert_true(bool(game_clock.call(&"advance_ticks_for_verification", 60)), "设置覆盖层打开时故事时间必须继续推进。")
 	_assert_equal(String(phone.call(&"get_state_name")), "RINGING", "设置覆盖层打开时第一通电话仍必须真实响铃。")
 	var phone_closeup: Control = screen.get_node_or_null(NodePath("ViewHost/PhoneCloseup")) as Control
 	_assert_true(phone_closeup != null and phone_closeup.get_node_or_null(NodePath("PhoneIndicatorLight")) == null, "新通话美术不再叠加旧电话指示灯；减少闪烁只影响环境效果。")
 
-	# 关闭覆盖层后电话对白以真实 StoryEngine 快照逐字展示；调速不改变线路状态。
+	# 关闭覆盖层后电话 transcript 以 committed ConversationSession 展示快照逐字呈现；
+	# 调速不改变线路状态。
 	var shift_panel: SettingsPanel = screen.get_node_or_null(NodePath("SettingsPanel")) as SettingsPanel
 	if shift_panel != null:
 		# 用可变容器记录异步信号，确保关闭流程不会重复派发。
@@ -226,8 +227,17 @@ func _run() -> void:
 	await process_frame
 	_assert_ok(screen.show_view(GameScreen.VIEW_PHONE), "电话响铃时必须能进入电话近景。")
 	_assert_true(bool(phone.call(&"answer_call", int(game_clock.call(&"get_current_game_tick")))), "必须通过 PhoneSystem 接听真实来电。")
-	_assert_true(bool(phone.call(&"enter_dialogue_choice")), "必须进入真实对话选择状态。")
-	_assert_ok(story.call(&"begin_active_call_dialogue"), "必须由 StoryEngine 提供真实对话快照。")
+	_assert_true(bool(phone.call(&"enter_dialogue_choice")), "必须进入自由会话等待状态。")
+	var conversation_snapshot: Dictionary = {
+		"session_id": "session_settings_speed",
+		"event_id": "call_01_warren",
+		"actor_id": "warren",
+		"status": "active",
+		"turn_index": 1,
+		"request_serial": 1,
+		"transcript": [{"kind": "actor", "turn": {"utterance": "雨声盖住了半句话。北桥那边有消防车和拖车，我正试着把看见的顺序说清楚。"}}],
+	}
+	_assert_ok(phone_closeup.call(&"set_conversation_snapshot", conversation_snapshot), "电话近景必须接受 committed 会话展示快照。")
 	await process_frame
 	var text_snapshot: Dictionary = phone_closeup.call(&"get_text_presentation_snapshot") as Dictionary
 	_assert_true(is_equal_approx(float(text_snapshot.get("text_speed", 0.0)), 4.0) and bool(text_snapshot.get("is_revealing", false)), "电话对白必须使用当前 4 倍逐字速度实际展示。")

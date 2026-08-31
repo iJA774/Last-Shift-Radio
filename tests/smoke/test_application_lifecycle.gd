@@ -68,7 +68,12 @@ func _run() -> void:
 	var first_engine: RefCounted = app.get("_story_engine") as RefCounted
 	var first_phone: RefCounted = app.get("_phone_system") as RefCounted
 	var first_screen: GameScreen = app.call(&"get_current_game_screen") as GameScreen
+	var voice_player: Node = root.get_node_or_null(NodePath("CharacterVoicePlayer")) as Node
 	_assert_true(first_engine != null and first_phone != null and first_screen != null, "确认后必须创建并注入新的本局运行时。")
+	_assert_true(voice_player != null, "应用生命周期必须存在人物电话配音自动加载服务。")
+	if voice_player != null:
+		var voice_snapshot: Dictionary = voice_player.call(&"get_playback_snapshot") as Dictionary
+		_assert_true(bool(voice_snapshot.get("manifest_loaded", false)) and bool(voice_snapshot.get("bound", false)), "新局提交前必须完成配音信息表校验并绑定 StoryEngine。")
 	_assert_equal(_shift_started_count, 1, "第一局完整绑定后必须只发送一次 shift_started。")
 	if first_engine == null or first_phone == null or first_screen == null:
 		_finish()
@@ -79,22 +84,26 @@ func _run() -> void:
 	_assert_equal(String(first_phone.call(&"get_state_name")), "RINGING", "已校验的沃伦来电必须由 StoryEngine 真实触发。")
 	first_screen.call(&"_on_answer_requested")
 	await process_frame
-	_assert_equal(String(first_phone.call(&"get_state_name")), "DIALOGUE_CHOICE", "接通成功后必须立即进入首段权威对白。")
+	_assert_equal(String(first_phone.call(&"get_state_name")), "DIALOGUE_CHOICE", "v2 内容接通后必须进入 Agent 自由会话状态。")
 	var phone_view: Control = first_screen.get_node_or_null(NodePath("ViewHost/PhoneCloseup")) as Control
-	var dialogue_overlay: Control = phone_view.get_node_or_null(NodePath("DialogueChoiceOverlay")) as Control if phone_view != null else null
+	var conversation_overlay: Control = phone_view.get_node_or_null(NodePath("ConversationOverlay")) as Control if phone_view != null else null
 	var dialogue_scroll: ScrollContainer = phone_view.get_node_or_null(NodePath("DialogueScroll")) as ScrollContainer if phone_view != null else null
-	_assert_true(dialogue_overlay != null and not dialogue_overlay.visible, "接通后必须先展示发言，不能立刻显示回应选项。")
-	_assert_true(dialogue_scroll != null and dialogue_scroll.visible, "接通后的首段发言必须可见。")
-	first_screen.call(&"_on_dialogue_choice_requested")
-	await process_frame
-	_assert_true(dialogue_overlay != null and dialogue_overlay.visible, "第一次继续对话就应显示回应选项。")
-	_assert_true(dialogue_scroll != null and dialogue_scroll.visible, "回应选项出现后对方发言仍必须可读。")
+	var coordinator: RefCounted = app.get("_interaction_coordinator") as RefCounted
+	var session_snapshot: Dictionary = coordinator.call(&"get_active_session_snapshot") as Dictionary if coordinator != null else {}
+	_assert_true(not session_snapshot.is_empty() and String(session_snapshot.get("event_id", "")) == "call_01_warren", "接听 v2 来电必须建立绑定当前事件的 ConversationSession。")
+	_assert_true(conversation_overlay != null and conversation_overlay.visible, "Agent ConversationSession 建立后必须显示自由输入区。")
+	_assert_true(dialogue_scroll != null and dialogue_scroll.visible, "接通后的线路状态提示必须可见。")
+	_assert_true(phone_view != null and phone_view.has_signal(&"player_turn_requested"), "电话近景必须公开自由文本 PlayerTurn 意图。")
+	_assert_true(phone_view != null and not phone_view.has_signal(&"dialogue_choice_requested"), "电话近景不得遗留预制分支选择信号。")
 	first_screen.show_system_error("StoryEngine、PhoneSystem、Dictionary 与 option_id 都不应显示给玩家。")
 	var system_message: Label = first_screen.get_node_or_null(NodePath("SystemMessagePanel/SystemMessage")) as Label
 	_assert_player_text_is_natural(system_message, "运行时提示必须过滤开发术语。")
 	first_screen.call(&"_on_hang_up_requested")
 	await process_frame
 	_assert_equal(String(first_phone.call(&"get_state_name")), "IDLE", "正常挂断必须保持可操作。")
+	if voice_player != null:
+		var hung_up_voice_snapshot: Dictionary = voice_player.call(&"get_playback_snapshot") as Dictionary
+		_assert_equal(String(hung_up_voice_snapshot.get("active_event_id", "")), "", "挂断电话不得遗留人物配音计划。")
 	var first_records: Variant = first_phone.call(&"get_call_records")
 	_assert_true(first_records is Array and (first_records as Array).size() == 1, "第一局必须由 PhoneSystem 产生真实电话记录。")
 
@@ -135,6 +144,9 @@ func _run() -> void:
 	await process_frame
 	_assert_equal(app.call(&"get_application_state_name"), "MAIN_MENU", "ENDING 必须可返回主菜单。")
 	_assert_true(not bool(app.call(&"has_active_runtime")), "返回主菜单必须清理本局运行时。")
+	if voice_player != null:
+		var released_voice_snapshot: Dictionary = voice_player.call(&"get_playback_snapshot") as Dictionary
+		_assert_true(not bool(released_voice_snapshot.get("bound", true)) and String(released_voice_snapshot.get("active_event_id", "")).is_empty(), "销毁本局运行时必须解除人物配音订阅并停止当前播放。")
 	_assert_true(not bool(game_clock.call(&"is_running")), "返回主菜单后 GameClock 必须保持不运行。")
 	_observe_primary_shift_started = false
 	await _test_shift_return_to_main_menu(game_clock)

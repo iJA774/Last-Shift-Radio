@@ -37,7 +37,7 @@ func restore_snapshot(snapshot: Dictionary, context: Dictionary = {}) -> Diction
 | `pending_tick_progress_units` | 整数，`0..59,999,999`；不足一个游戏 tick 的进度。 |
 | `is_running` | 布尔值。正常夜班运行中为 `true`。 |
 | `ending_emitted` | 布尔值。仅 `current_game_tick=3600`、时钟停止且 pending 为 0 时可为 `true`。 |
-| `time_rate` | `0`（FAST）或 `1`（SLOW）。 |
+| `time_rate` | `0`（FAST）、`1`（SLOW）或 `2`（PAUSED）。 |
 
 未收束且停止的快照只能是 `01:00` 预备态（tick 和 pending 均为 0）。恢复总会同步单调 wall-clock 基准，因此加载耗时不会补算为游戏时间。默认恢复快照的运行状态；若 `context.defer_running=true`，恢复会保持停止且返回 `resume_required=true`，应用在所有运行时对象绑定完毕后调用 `resume_restored_clock()`。这个启动动作不发出 `shift_started`。
 

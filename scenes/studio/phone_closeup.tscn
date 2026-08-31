@@ -74,14 +74,13 @@ autowrap_mode = 2
 unique_name_in_owner = true
 layout_mode = 0
 offset_left = 310.0
-offset_top = 300.0
+offset_top = 275.0
 offset_right = 1665.0
 offset_bottom = 570.0
 horizontal_scroll_mode = 0
 vertical_scroll_mode = 1
 
 [node name="DialogueScrollContent" type="VBoxContainer" parent="DialogueScroll"]
-unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 18
@@ -93,11 +92,11 @@ size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.38, 0.92, 0.53, 1)
 theme_override_colors/font_outline_color = Color(0.02, 0.12, 0.05, 1)
 theme_override_constants/outline_size = 2
-theme_override_font_sizes/font_size = 26
+theme_override_font_sizes/font_size = 24
 autowrap_mode = 2
 text = "当前没有可操作的接通线路。"
 
-[node name="DialogueChoiceOverlay" type="Control" parent="."]
+[node name="ConversationOverlay" type="Control" parent="."]
 unique_name_in_owner = true
 visible = false
 layout_mode = 1
@@ -106,45 +105,57 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-mouse_filter = 2
+mouse_filter = 1
 
-[node name="ChoiceBackdrop" type="ColorRect" parent="DialogueChoiceOverlay"]
+[node name="ConversationBackdrop" type="ColorRect" parent="ConversationOverlay"]
 layout_mode = 0
 offset_left = 310.0
 offset_top = 590.0
 offset_right = 1665.0
-offset_bottom = 814.0
+offset_bottom = 808.0
 mouse_filter = 2
 color = Color(0.006, 0.024, 0.012, 0.94)
 
-[node name="ChoiceTitle" type="Label" parent="DialogueChoiceOverlay"]
+[node name="TurnStatusLabel" type="Label" parent="ConversationOverlay"]
+unique_name_in_owner = true
 layout_mode = 0
 offset_left = 350.0
-offset_top = 596.0
+offset_top = 610.0
 offset_right = 1625.0
-offset_bottom = 628.0
+offset_bottom = 662.0
 mouse_filter = 2
 theme_override_colors/font_color = Color(0.52, 1, 0.63, 1)
 theme_override_colors/font_outline_color = Color(0.02, 0.12, 0.05, 1)
 theme_override_constants/outline_size = 2
-theme_override_font_sizes/font_size = 25
-text = "请选择回应"
-horizontal_alignment = 1
+theme_override_font_sizes/font_size = 21
+text = "输入你想说的话。"
+autowrap_mode = 2
 
-[node name="ChoiceScroll" type="ScrollContainer" parent="DialogueChoiceOverlay"]
+[node name="PlayerInput" type="LineEdit" parent="ConversationOverlay"]
+unique_name_in_owner = true
 layout_mode = 0
 offset_left = 350.0
-offset_top = 638.0
-offset_right = 1625.0
-offset_bottom = 806.0
-horizontal_scroll_mode = 0
-vertical_scroll_mode = 1
+offset_top = 682.0
+offset_right = 1425.0
+offset_bottom = 760.0
+placeholder_text = "输入你的问题或回应……"
+clear_button_enabled = true
+caret_blink = true
+caret_blink_interval = 0.55
+context_menu_enabled = true
+virtual_keyboard_enabled = true
 
-[node name="DialogueOptions" type="VBoxContainer" parent="DialogueChoiceOverlay/ChoiceScroll"]
+[node name="SendButton" type="Button" parent="ConversationOverlay"]
 unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-theme_override_constants/separation = 8
+layout_mode = 0
+offset_left = 1445.0
+offset_top = 682.0
+offset_right = 1625.0
+offset_bottom = 760.0
+theme_override_colors/font_color = Color(0.52, 1, 0.63, 1)
+theme_override_font_sizes/font_size = 22
+text = "发送"
+tooltip_text = "发送这一轮 PlayerTurn。"
 
 [node name="AnswerButton" type="Button" parent="."]
 unique_name_in_owner = true
@@ -155,16 +166,6 @@ offset_right = 572.0
 offset_bottom = 904.0
 modulate = Color(1, 1, 1, 0.01)
 tooltip_text = "接通来电。"
-
-[node name="DialogueChoiceButton" type="Button" parent="."]
-unique_name_in_owner = true
-layout_mode = 0
-offset_left = 698.0
-offset_top = 823.0
-offset_right = 885.0
-offset_bottom = 904.0
-modulate = Color(1, 1, 1, 0.01)
-tooltip_text = "继续对话。"
 
 [node name="HangUpButton" type="Button" parent="."]
 unique_name_in_owner = true
@@ -189,6 +190,7 @@ text = "返回工作室总览"
 tooltip_text = "返回工作室总览。"
 
 [connection signal="pressed" from="AnswerButton" to="." method="_on_answer_button_pressed"]
-[connection signal="pressed" from="DialogueChoiceButton" to="." method="_on_dialogue_choice_button_pressed"]
 [connection signal="pressed" from="HangUpButton" to="." method="_on_hang_up_button_pressed"]
 [connection signal="pressed" from="BackButton" to="." method="_on_back_button_pressed"]
+[connection signal="pressed" from="ConversationOverlay/SendButton" to="." method="_on_send_button_pressed"]
+[connection signal="text_submitted" from="ConversationOverlay/PlayerInput" to="." method="_on_player_input_text_submitted"]

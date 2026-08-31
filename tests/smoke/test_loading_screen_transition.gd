@@ -2,6 +2,9 @@ extends SceneTree
 ## 使用真实 Tween 时序验证加载页，而不是只读取配置常量。
 
 const LOADING_SCREEN_SCENE: PackedScene = preload("res://scenes/app/loading_screen.tscn")
+const EXPECTED_TOTAL_SECONDS: float = 3.0
+const HEADLESS_EARLY_TOLERANCE_SECONDS: float = 0.2
+const HEADLESS_LATE_TOLERANCE_SECONDS: float = 0.6
 
 var _failure_count: int = 0
 var _has_finished: bool = false
@@ -33,7 +36,13 @@ func _run() -> void:
 	await create_timer(0.85, true, false, true).timeout
 	var elapsed_seconds: float = float(Time.get_ticks_msec() - started_at_msec) / 1000.0
 	_assert_true(_has_finished, "0.5 秒渐出结束后必须发出完成信号。")
-	_assert_true(elapsed_seconds >= 2.9 and elapsed_seconds <= 3.6, "真实加载过渡总时长应约为 3 秒，实际 %.3f 秒。" % elapsed_seconds)
+	# Headless 中 Tween/create_timer 使用引擎帧 delta，而 Time 使用系统单调时钟；高负载或
+	# 无 VSync 时两者会产生小幅偏差。阶段性 alpha/信号断言仍负责防止实际序列被缩短。
+	_assert_true(
+		elapsed_seconds >= EXPECTED_TOTAL_SECONDS - HEADLESS_EARLY_TOLERANCE_SECONDS
+		and elapsed_seconds <= EXPECTED_TOTAL_SECONDS + HEADLESS_LATE_TOLERANCE_SECONDS,
+		"真实加载过渡总时长应约为 3 秒，实际 %.3f 秒。" % elapsed_seconds
+	)
 	_assert_true(loading.modulate.a <= 0.02, "过渡完成时加载页必须完全渐出。")
 	loading.queue_free()
 	_finish()

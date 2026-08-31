@@ -2,8 +2,8 @@ extends SceneTree
 
 ## GameScreen 的剧情意图路由验证。
 ##
-## 只经由电话与电脑近景公开信号提交操作，确认 UI 不会直接写入对话、广播或
-## 电话记录；并覆盖终止台词后禁止同一通电话重新开始预制对话。
+## 只经由电话与电脑近景公开信号提交操作，确认自由文本 PlayerTurn 交给
+## InteractionCoordinator，广播仍交给 StoryEngine，电话记录仍由 PhoneSystem 生成。
 
 const CONTENT_LOADER_SCRIPT: GDScript = preload("res://scripts/core/content_loader.gd")
 const CONTENT_VALIDATOR_SCRIPT: GDScript = preload("res://scripts/core/content_validator.gd")
@@ -11,9 +11,46 @@ const GAME_CLOCK_SCRIPT: GDScript = preload("res://scripts/core/game_clock.gd")
 const GAME_SCREEN_SCENE: PackedScene = preload("res://scenes/studio/game_screen.tscn")
 const PHONE_SYSTEM_SCRIPT: GDScript = preload("res://scripts/systems/phone_system.gd")
 const STORY_ENGINE_SCRIPT: GDScript = preload("res://scripts/core/story_engine.gd")
+const AGENT_DIALOGUE_TEST_DRIVER_SCRIPT: GDScript = preload("res://tests/smoke/agent_dialogue_test_driver.gd")
 const STORY_PATH: String = "res://data/story/test_night_story.json"
 
 var _has_failed: bool = false
+
+
+class FakeInteractionCoordinator extends RefCounted:
+	signal session_started(snapshot: Dictionary)
+	signal session_changed(snapshot: Dictionary)
+	signal session_ended(record: Dictionary)
+	signal actor_turn_request_started(session_id: String, request_serial: int)
+	signal actor_turn_committed(entry: Dictionary)
+	signal stale_response_discarded(session_id: String, request_serial: int, reason: String)
+	signal interaction_error(error_code: String, message: String)
+
+	var submitted_texts: Array[String] = []
+	var _snapshot: Dictionary = {}
+
+	func begin_active_phone_session() -> Dictionary:
+		_snapshot = {
+			"session_id": "session_routing",
+			"event_id": "call_01_warren",
+			"actor_id": "warren",
+			"status": "active",
+			"turn_index": 0,
+			"request_serial": 0,
+			"transcript": [],
+		}
+		session_changed.emit(_snapshot.duplicate(true))
+		return {"ok": true, "session": _snapshot.duplicate(true)}
+
+	func submit_player_turn(text: String) -> Dictionary:
+		submitted_texts.append(text)
+		(_snapshot["transcript"] as Array).append({"kind": "player", "text": text})
+		_snapshot["turn_index"] = int(_snapshot["turn_index"]) + 1
+		session_changed.emit(_snapshot.duplicate(true))
+		return {"ok": true}
+
+	func get_active_session_snapshot() -> Dictionary:
+		return _snapshot.duplicate(true)
 
 
 func _init() -> void:
@@ -27,7 +64,9 @@ func _run() -> void:
 		return
 	var clock = GAME_CLOCK_SCRIPT.new()
 	var phone: RefCounted = PHONE_SYSTEM_SCRIPT.new()
-	var story_engine: RefCounted = STORY_ENGINE_SCRIPT.new()
+	var story_engine: StoryEngine = STORY_ENGINE_SCRIPT.new() as StoryEngine
+	var dialogue_driver: RefCounted = AGENT_DIALOGUE_TEST_DRIVER_SCRIPT.new()
+	var interaction_coordinator: FakeInteractionCoordinator = FakeInteractionCoordinator.new()
 	var screen: GameScreen = GAME_SCREEN_SCENE.instantiate() as GameScreen
 	root.add_child(clock)
 	root.add_child(screen)
@@ -35,7 +74,7 @@ func _run() -> void:
 
 	_assert_ok(story_engine.call(&"set_phone_system", phone), "StoryEngine 必须接受 PhoneSystem。")
 	_assert_ok(story_engine.call(&"configure_test_night_story", story_content), "StoryEngine 必须接受已校验测试剧情。")
-	_assert_ok(screen.bind_runtime(story_engine, phone, clock), "GameScreen 必须绑定剧情、电话与时钟。")
+	_assert_ok(screen.bind_runtime(story_engine, phone, clock, interaction_coordinator), "GameScreen 必须绑定剧情、电话、时钟与自由交互协调器。")
 	_assert_ok(story_engine.call(&"connect_game_clock", clock), "StoryEngine 必须连接测试时钟。")
 	clock.start_shift()
 	_assert_true(clock.advance_ticks_for_verification(60), "时钟必须推进至沃伦来电窗口。")
@@ -51,36 +90,28 @@ func _run() -> void:
 		return
 
 	phone_closeup.emit_signal(&"answer_requested")
-	_assert_equal(phone.call(&"get_state_name"), "DIALOGUE_CHOICE", "接听后必须由 GameScreen 自动进入首段权威对白的 DialogueChoice。")
-	var opening_snapshot: Dictionary = story_engine.call(&"get_active_dialogue_snapshot") as Dictionary
-	_assert_equal(String(opening_snapshot.get("node_id", "")), "dlg_warren_open", "开始预制对话必须由 StoryEngine 提供稳定入口。")
+	_assert_equal(phone.call(&"get_state_name"), "DIALOGUE_CHOICE", "接听后必须建立自由 ConversationSession 等待状态。")
 	var dialogue_label: Label = phone_closeup.get_node_or_null(NodePath("DialogueScroll/DialogueScrollContent/DialogueHintLabel")) as Label
-	_assert_true(dialogue_label != null, "电话近景必须保留对话信息标签。")
-	if dialogue_label != null:
-		_assert_true(not dialogue_label.text.contains("[ 对话结束 ]"), "未到终止节点时不得显示对话结束标记。")
-
-	phone_closeup.emit_signal(&"dialogue_option_requested", "opt_warren_song")
-	if dialogue_label != null:
-		_assert_true(not dialogue_label.text.contains("[ 对话结束 ]"), "中间分支节点不得伪造对话结束标记。")
-	phone_closeup.emit_signal(&"dialogue_option_requested", "opt_warren_follow_report")
-	var terminal_snapshot: Dictionary = story_engine.call(&"get_active_dialogue_snapshot") as Dictionary
-	_assert_true(bool(terminal_snapshot.get("is_terminal", false)), "末个对话选项必须显示终止台词。")
-	_assert_equal(phone.call(&"get_state_name"), "CONNECTED", "终止台词后 GameScreen 必须恢复为已接通，保留结束通话操作。")
-	phone_closeup.emit_signal(&"dialogue_choice_requested")
-	_assert_equal(phone.call(&"get_state_name"), "CONNECTED", "同一通电话的终止台词不得重新开始预制对话。")
-	if dialogue_label != null:
-		var expected_terminal_text: String = "%s：\n%s\n[ 对话结束 ]" % [String(terminal_snapshot.get("speaker", "")), String(terminal_snapshot.get("text", ""))]
-		_assert_equal(dialogue_label.text, expected_terminal_text, "终止台词出现时必须在原信息末行追加精确结束标记。")
-		_assert_equal(dialogue_label.text.count("[ 对话结束 ]"), 1, "结束标记不得重复追加。")
-	# 通话完成必须经公开信号走低信息量短通知，而不是由测试直接伪造面板状态。
-	phone_closeup.emit_signal(&"finish_call_requested")
+	_assert_true(dialogue_label != null and phone_closeup.has_signal(&"player_turn_requested"), "电话近景必须保留 transcript 并公开自由文本意图。")
+	_assert_true(not phone_closeup.has_signal(&"dialogue_option_requested"), "电话近景不得保留预制选项信号。")
+	phone_closeup.emit_signal(&"player_turn_requested", "你在北桥看见了什么？")
+	await process_frame
+	_assert_equal(interaction_coordinator.submitted_texts, ["你在北桥看见了什么？"], "GameScreen 必须把 PlayerTurn 原文只提交给协调器一次。")
+	_assert_true(dialogue_label != null and dialogue_label.text.contains("你在北桥看见了什么"), "协调器提交后的 committed transcript 必须回显到电话近景。")
+	# 正式内容已经是 v2：广播夹具只通过 committed ActorTurn 揭示稳定 Statement。
+	# 不再把预制 option graph 当作电话 UI 合同。
+	_assert_ok(dialogue_driver.call(&"commit_active_call", story_engine, "call_01_warren", "warren", ["statement_warren_tanker_fire_claim"], "酒吧有人说北桥那边一辆油罐车翻了还冒烟；我没有亲眼看见。"), "v2 广播夹具必须通过 committed ActorTurn 揭示沃伦 Statement。")
+	# v2 不再存在沃伦预制 option。
+	# Statement 已由上面的 committed ActorTurn 权威揭示。
+	# 主动挂断必须经公开信号走低信息量短通知，而不是由测试直接伪造面板状态。
+	phone_closeup.emit_signal(&"hang_up_requested")
 	var system_message_panel: PanelContainer = screen.get_node_or_null(NodePath("SystemMessagePanel")) as PanelContainer
 	var system_message: Label = screen.get_node_or_null(NodePath("SystemMessagePanel/SystemMessage")) as Label
 	_assert_true(system_message_panel != null and system_message != null, "GameScreen 必须保留唯一的系统提示条。")
 	_assert_true(system_message_panel != null and system_message_panel.visible, "结束通话成功后提示条必须立即开始显示。")
-	_assert_true(system_message != null and system_message.text == "结束通话成功。", "结束通话必须显示准确的成功提示。")
+	_assert_true(system_message != null and system_message.text == "主动挂断成功。", "主动挂断必须显示准确的成功提示。")
 	var timing: Dictionary = screen.get_transient_notice_timing_snapshot()
-	_assert_equal(String(timing.get("mode", "")), "transient", "结束通话成功必须使用短通知模式。")
+	_assert_equal(String(timing.get("mode", "")), "transient", "主动挂断成功必须使用短通知模式。")
 	_assert_true(float(timing.get("max_lifetime_seconds", 9.0)) <= 2.0, "短通知完整生命周期不得超过两秒。")
 	_assert_equal(float(timing.get("alpha", 1.0)), 0.0, "短通知初始必须从完全透明开始渐入。")
 	# 新短通知开始后，旧回调即使抵达原定结束时间也不得关掉新内容。
@@ -118,12 +149,12 @@ func _run() -> void:
 	if current_tick_before_trucker < trucker_target_tick:
 		_assert_true(clock.advance_ticks_for_verification(trucker_target_tick - current_tick_before_trucker), "时钟必须推进到 01:33 的 B=卡车司机窗口。")
 	_assert_equal(String(phone.call(&"get_active_event_id")), "call_06_trucker", "跨过非必要窗口后必须真实触发 B=卡车司机。")
-	phone_closeup.emit_signal(&"answer_requested")
-	_assert_equal(phone.call(&"get_state_name"), "DIALOGUE_CHOICE", "B 接听后必须进入权威预制对话。")
-	phone_closeup.emit_signal(&"dialogue_option_requested", "opt_trucker_closure")
-	phone_closeup.emit_signal(&"dialogue_option_requested", "opt_trucker_follow_wait")
-	_assert_equal(phone.call(&"get_state_name"), "CONNECTED", "B 终止对白后必须恢复已接通状态。")
-	phone_closeup.emit_signal(&"finish_call_requested")
+	_assert_true(bool(phone.call(&"answer_call", trucker_target_tick)), "卡车司机来电必须能接听。")
+	_assert_true(bool(phone.call(&"enter_dialogue_choice")), "v2 广播夹具必须进入自由对话线路状态。")
+	_assert_ok(dialogue_driver.call(&"commit_active_call", story_engine, "call_06_trucker", "trucker", ["statement_trucker_bridge_queue"], "北桥东侧严重拥堵，车辆都停在封闭区域前等待。"), "v2 广播夹具必须通过 committed ActorTurn 揭示卡车司机 Statement。")
+	# v2 不再存在卡车司机预制 option。
+	# committed ActorTurn 已完成 StoryEngine interaction。
+	_assert_true(bool(phone.call(&"exit_dialogue_choice")) and bool(phone.call(&"finish_call", trucker_target_tick)), "卡车司机电话必须由 PhoneSystem 正式结束。")
 	var selected_bridge_information: Array[String] = ["info_bridge_tanker_fire", "info_bridge_east_queue"]
 	if microphone_panel != null:
 		microphone_panel.emit_signal(&"broadcast_requested", "task_broadcast_bridge_closure", selected_bridge_information)

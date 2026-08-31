@@ -6,6 +6,8 @@ extends PanelContainer
 ## 不缓存任务资格、对话完成状态、陈述揭示状态或播出记录，StoryEngine 仍是唯一权威来源。
 
 signal broadcast_requested(task_id: String, information_item_ids: Array[String])
+signal broadcast_abandon_requested(task_id: String)
+signal broadcast_defer_requested(task_id: String)
 signal close_requested()
 
 const COLOR_TEXT: Color = Color("d8d2b4")
@@ -53,7 +55,7 @@ func show_feedback(result: Dictionary) -> Dictionary:
 	if not result.has("ok") or typeof(result["ok"]) != TYPE_BOOL:
 		return _make_error("发布结果缺少 bool 类型 ok 字段。")
 	if bool(result["ok"]):
-		_feedback = "任务信息已通过中央麦克风播出。"
+		_feedback = "信息已通过中央麦克风发送。"
 	else:
 		_feedback = String(result.get("message", "任务信息未能播出，请稍后再试。"))
 	_refresh()
@@ -99,6 +101,7 @@ func _build_interface() -> void:
 	subtitle.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	layout.add_child(subtitle)
 	_notice_label.add_theme_font_size_override("font_size", 15)
+	_notice_label.name = "FeedbackLabel"
 	_notice_label.add_theme_color_override("font_color", COLOR_MUTED)
 	_notice_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_notice_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -106,6 +109,7 @@ func _build_interface() -> void:
 	var rule: HSeparator = HSeparator.new()
 	layout.add_child(rule)
 	var scroll: ScrollContainer = ScrollContainer.new()
+	scroll.name = "TaskScroll"
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	layout.add_child(scroll)
@@ -170,6 +174,14 @@ func _on_task_publish_pressed(task_id: String) -> void:
 	broadcast_requested.emit(task_id, selected_ids)
 
 
+func _on_task_abandon_pressed(task_id: String) -> void:
+	broadcast_abandon_requested.emit(task_id)
+
+
+func _on_task_defer_pressed(task_id: String) -> void:
+	broadcast_defer_requested.emit(task_id)
+
+
 func _refresh() -> void:
 	if not is_node_ready():
 		return
@@ -184,11 +196,18 @@ func _refresh() -> void:
 	if tasks.is_empty():
 		_task_list.add_child(_make_card("当前没有配置麦克风发布任务。"))
 		return
+	var visible_count: int = 0
 	for raw_task: Variant in tasks:
 		if not raw_task is Dictionary:
 			_task_list.add_child(_make_card("发布任务数据损坏，无法使用。"))
 			continue
-		_task_list.add_child(_make_task_card(raw_task as Dictionary))
+		var task: Dictionary = raw_task as Dictionary
+		if task.has("is_publishable") and not bool(task["is_publishable"]):
+			continue
+		_task_list.add_child(_make_task_card(task))
+		visible_count += 1
+	if visible_count == 0:
+		_task_list.add_child(_make_card("当前没有可处理的发布任务。"))
 
 
 func _read_tasks() -> Array:
@@ -206,7 +225,7 @@ func _make_task_card(task: Dictionary) -> Control:
 	var task_name: String = String(task.get("name", ""))
 	if task_id.is_empty() or task_name.is_empty():
 		return _make_card("发布任务数据不完整，无法使用。")
-	for required_field: String in ["required_dialogue_count", "completed_required_dialogue_count", "prerequisites_met", "available_information_items", "is_sent", "is_publishable"]:
+	for required_field: String in ["available_information_items", "is_sent", "is_publishable"]:
 		if not task.has(required_field):
 			return _make_card("发布任务 %s 缺少状态字段 %s。" % [task_name, required_field])
 	var content: VBoxContainer = VBoxContainer.new()
@@ -214,16 +233,18 @@ func _make_task_card(task: Dictionary) -> Control:
 	var name_label: Label = _make_label(task_name, 19, COLOR_ACCENT)
 	name_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	content.add_child(name_label)
-	var completed_count: int = int(task["completed_required_dialogue_count"])
-	var required_count: int = int(task["required_dialogue_count"])
+	var completed_count: int = int(task.get("completed_required_dialogue_count", 0))
+	var required_count: int = int(task.get("required_dialogue_count", 0))
 	var progress_text: String = "必要通话：%d/%d" % [completed_count, required_count]
-	if bool(task["prerequisites_met"]):
+	if bool(task.get("prerequisites_met", true)):
 		progress_text += "  ·  已满足发布前提"
 	content.add_child(_make_label(progress_text, 15, COLOR_MUTED))
 	var available_items: Array = task["available_information_items"] as Array
 	var count_label: Label = _make_label("已收集可选信息：%d/%d" % [available_items.size(), int(task.get("total_information_item_count", available_items.size()))], 15, COLOR_MUTED)
 	content.add_child(count_label)
 	var selections: Array[Dictionary] = []
+	var selection_mode: String = String(task.get("selection_mode", "multiple"))
+	var single_group: ButtonGroup = ButtonGroup.new() if selection_mode == "single" else null
 	if available_items.is_empty():
 		var empty_label: Label = _make_label("目前还没有真正揭示、可用于本任务的信息。继续阅读相关消息或完成相关通话。", 16, COLOR_TEXT)
 		empty_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -239,17 +260,26 @@ func _make_task_card(task: Dictionary) -> Control:
 			if information_item_id.is_empty() or source_label.is_empty() or body.is_empty():
 				continue
 			var checkbox: CheckBox = CheckBox.new()
-			checkbox.text = "%s\n%s" % [source_label, body]
-			checkbox.button_pressed = true
-			checkbox.disabled = not bool(task["prerequisites_met"]) or bool(task["is_sent"])
+			checkbox.name = "InformationOption_%s" % information_item_id
+			checkbox.button_group = single_group
+			checkbox.button_pressed = selection_mode != "single"
+			checkbox.disabled = not bool(task.get("prerequisites_met", true)) or bool(task["is_sent"])
 			checkbox.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			checkbox.add_theme_font_size_override("font_size", 16)
 			checkbox.add_theme_color_override("font_color", COLOR_TEXT)
 			checkbox.add_theme_color_override("font_disabled_color", COLOR_MUTED)
+			# 原生 CheckBox 的勾选图标是非纯颜色的明确状态反馈。正文在构建后
+			# 不随单选切换改写，避免多行重排、滚动跳动或视觉闪烁。
+			checkbox.text = "%s\n%s" % [source_label, body]
 			content.add_child(checkbox)
 			selections.append({"information_item_id": information_item_id, "checkbox": checkbox})
+	if selection_mode == "single" and not selections.is_empty():
+		var first_checkbox: CheckBox = (selections[0] as Dictionary).get("checkbox") as CheckBox
+		if first_checkbox != null:
+			first_checkbox.button_pressed = true
 	_checkboxes_by_task_id[task_id] = selections
 	var button: Button = _make_button("通过麦克风发布所选信息")
+	button.name = "PublishTask_%s" % task_id
 	button.disabled = not bool(task["is_publishable"])
 	if bool(task["is_publishable"]):
 		button.tooltip_text = "任务最低通话前提已满足；本次发布后该任务即完成，不能重复发布。"
@@ -257,6 +287,19 @@ func _make_task_card(task: Dictionary) -> Control:
 		button.tooltip_text = String(task.get("disabled_reason", "当前任务不可发布。"))
 	button.pressed.connect(_on_task_publish_pressed.bind(task_id))
 	content.add_child(button)
+	var decision_status: String = String(task.get("decision_status", ""))
+	if decision_status == "pending":
+		var defer_button: Button = _make_button("推迟广播")
+		defer_button.name = "DeferTask_%s" % task_id
+		defer_button.tooltip_text = "保留任务并恢复值守；有新的相关信息时会再次提醒。"
+		defer_button.pressed.connect(_on_task_defer_pressed.bind(task_id))
+		content.add_child(defer_button)
+	if decision_status == "pending" or decision_status == "deferred":
+		var abandon_button: Button = _make_button("放弃广播")
+		abandon_button.name = "AbandonTask_%s" % task_id
+		abandon_button.tooltip_text = "永久放弃本局任务；它不会再次出现或触发。"
+		abandon_button.pressed.connect(_on_task_abandon_pressed.bind(task_id))
+		content.add_child(abandon_button)
 	if not String(task.get("disabled_reason", "")).is_empty():
 		var reason_label: Label = _make_label(String(task["disabled_reason"]), 14, COLOR_MUTED)
 		reason_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART

@@ -209,15 +209,13 @@ func _prepare_authoritative_warren_dialogue(main: Control) -> bool:
 	if typeof(current_tick_value) != TYPE_INT:
 		_fail("GameClock 未返回沃伦来电时的整数 tick。")
 		return false
-	if not bool(phone_system.call(&"answer_call", int(current_tick_value))):
-		_fail("无法通过 PhoneSystem 接听沃伦来电。")
+	var game_screen: Control = main.get("_game_screen") as Control
+	if game_screen == null:
+		_fail("无法取得接听沃伦来电所需的 GameScreen。")
 		return false
-	if not bool(phone_system.call(&"enter_dialogue_choice")):
-		_fail("无法通过 PhoneSystem 进入沃伦对话选择。")
-		return false
-	var dialogue_result: Variant = story_engine.call(&"begin_active_call_dialogue")
-	if not _is_ok_result(dialogue_result):
-		_fail("无法通过 StoryEngine 开始沃伦预制对话：%s。" % str(dialogue_result))
+	game_screen.call(&"_on_answer_requested")
+	if String(phone_system.call(&"get_state_name")) != "DIALOGUE_CHOICE":
+		_fail("沃伦来电未进入 Agent 自由会话状态。")
 		return false
 	return true
 
@@ -228,13 +226,7 @@ func _complete_authoritative_warren_dialogue(main: Control) -> bool:
 	if story_engine == null or phone_system == null:
 		_fail("无法取得完成沃伦对话所需的运行时。")
 		return false
-	var first_choice: Variant = story_engine.call(&"select_dialogue_option", "opt_warren_song")
-	if not _is_ok_result(first_choice):
-		_fail("无法通过 StoryEngine 提交沃伦第一轮回应：%s。" % str(first_choice))
-		return false
-	var final_choice: Variant = story_engine.call(&"select_dialogue_option", "opt_warren_follow_report")
-	if not _is_ok_result(final_choice) or not bool((final_choice as Dictionary).get("reached_terminal", false)):
-		_fail("沃伦终止台词未能由 StoryEngine 正确生成：%s。" % str(final_choice))
+	if not _commit_active_coordinator_turn(main, story_engine, ["statement_warren_tanker_fire_claim"], "酒吧有人说北桥附近一辆油罐车冒烟；我没有亲眼看见。"):
 		return false
 	if not bool(phone_system.call(&"exit_dialogue_choice")):
 		_fail("无法通过 PhoneSystem 退出终止对话状态。")
@@ -273,23 +265,15 @@ func _complete_authoritative_trucker_dialogue(main: Control) -> bool:
 		_fail("01:33 未得到预期的 call_06_trucker 活动线路。")
 		return false
 	var trucker_tick_value: Variant = game_clock.call(&"get_current_game_tick")
-	if typeof(trucker_tick_value) != TYPE_INT or not bool(phone_system.call(&"answer_call", int(trucker_tick_value))):
-		_fail("无法接听 01:33 的卡车司机来电。")
+	var game_screen: Control = main.get("_game_screen") as Control
+	if game_screen == null:
+		_fail("无法取得接听卡车司机来电所需的 GameScreen。")
 		return false
-	if not bool(phone_system.call(&"enter_dialogue_choice")):
-		_fail("无法进入卡车司机对话选择。")
+	game_screen.call(&"_on_answer_requested")
+	if String(phone_system.call(&"get_state_name")) != "DIALOGUE_CHOICE":
+		_fail("卡车司机来电未进入 Agent 自由会话状态。")
 		return false
-	var begin_result: Variant = story_engine.call(&"begin_active_call_dialogue")
-	if not _is_ok_result(begin_result):
-		_fail("无法开始卡车司机预制对话：%s。" % str(begin_result))
-		return false
-	var first_choice: Variant = story_engine.call(&"select_dialogue_option", "opt_trucker_closure")
-	if not _is_ok_result(first_choice):
-		_fail("无法提交卡车司机第一轮回应：%s。" % str(first_choice))
-		return false
-	var final_choice: Variant = story_engine.call(&"select_dialogue_option", "opt_trucker_follow_wait")
-	if not _is_ok_result(final_choice) or not bool((final_choice as Dictionary).get("reached_terminal", false)):
-		_fail("卡车司机终止台词未能由 StoryEngine 正确生成：%s。" % str(final_choice))
+	if not _commit_active_coordinator_turn(main, story_engine, ["statement_trucker_bridge_queue"], "北桥东侧入口堵死了，前面全是刹车灯。"):
 		return false
 	if not bool(phone_system.call(&"exit_dialogue_choice")):
 		_fail("无法退出卡车司机终止对话状态。")
@@ -297,6 +281,36 @@ func _complete_authoritative_trucker_dialogue(main: Control) -> bool:
 	var finish_tick_value: Variant = game_clock.call(&"get_current_game_tick")
 	if typeof(finish_tick_value) != TYPE_INT or not bool(phone_system.call(&"finish_call", int(finish_tick_value))):
 		_fail("无法正常结束卡车司机通话。")
+		return false
+	return true
+
+
+func _commit_active_coordinator_turn(main: Control, story_engine: RefCounted, asserted_statement_ids: Array, utterance: String) -> bool:
+	var coordinator: RefCounted = main.get("_interaction_coordinator") as RefCounted
+	if coordinator == null:
+		_fail("动态验收缺少 InteractionCoordinator。")
+		return false
+	var session: Dictionary = coordinator.call(&"get_active_session_snapshot") as Dictionary
+	if session.is_empty():
+		_fail("动态验收没有活动 ConversationSession。")
+		return false
+	var commit_result: Variant = story_engine.call(&"commit_agent_turn", {
+		"session_id": String(session["session_id"]),
+		"event_id": String(session["event_id"]),
+		"actor_id": String(session["actor_id"]),
+		"request_serial": 1,
+		"turn_index": int(session.get("turn_index", 0)) + 1,
+		"actor_turn": {
+			"speech_act": "answer",
+			"utterance": utterance,
+			"asserted_claim_ids": asserted_statement_ids.duplicate(),
+			"withheld_claim_ids": [],
+			"session_intent": "continue",
+			"world_action": null,
+		},
+	})
+	if not _is_ok_result(commit_result):
+		_fail("动态验收无法提交 committed ActorTurn：%s。" % str(commit_result))
 		return false
 	return true
 

@@ -28,6 +28,8 @@ AudioManager="*res://scripts/systems/audio_manager.gd"
 UiSoundPlayer="*res://scripts/systems/ui_sound_player.gd"
 BgmPlayer="*res://scripts/systems/bgm_player.gd"
 PhoneAudioPlayer="*res://scripts/systems/phone_audio_player.gd"
+CharacterVoicePlayer="*res://scripts/systems/character_voice_player.gd"
+AgentRuntime="*res://scripts/systems/agent_runtime.gd"
 
 [display]
 

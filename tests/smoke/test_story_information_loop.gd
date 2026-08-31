@@ -7,6 +7,7 @@ const CONTENT_LOADER_SCRIPT: GDScript = preload("res://scripts/core/content_load
 const CONTENT_VALIDATOR_SCRIPT: GDScript = preload("res://scripts/core/content_validator.gd")
 const STORY_ENGINE_SCRIPT: GDScript = preload("res://scripts/core/story_engine.gd")
 const PHONE_SYSTEM_SCRIPT: GDScript = preload("res://scripts/systems/phone_system.gd")
+const AGENT_DIALOGUE_TEST_DRIVER_SCRIPT: GDScript = preload("res://tests/smoke/agent_dialogue_test_driver.gd")
 const STORY_PATH: String = "res://data/story/test_night_story.json"
 
 var _has_failed: bool = false
@@ -52,11 +53,11 @@ func _test_strict_information_contract(validated_story: Dictionary) -> void:
 	var topic_result: Dictionary = validator.call(&"validate_test_night_story", malformed_topics, "memory://only_bridge_news") as Dictionary
 	_assert_error_code(topic_result, "insufficient_non_bridge_news", "至少两条非北桥新闻是严格契约。")
 
-	var malformed_dialogue: Dictionary = validated_story.duplicate(true)
-	var first_node: Dictionary = (malformed_dialogue["dialogue_nodes"] as Array)[0] as Dictionary
-	first_node.erase("reveals_statement_ids")
-	var dialogue_result: Dictionary = validator.call(&"validate_test_night_story", malformed_dialogue, "memory://missing_dialogue_reveal") as Dictionary
-	_assert_error_code(dialogue_result, "missing_field", "每个对话节点必须显式声明 reveals_statement_ids。")
+	var malformed_agent_event: Dictionary = validated_story.duplicate(true)
+	var first_event: Dictionary = (malformed_agent_event["events"] as Array)[0] as Dictionary
+	first_event.erase("available_statement_ids")
+	var agent_event_result: Dictionary = validator.call(&"validate_test_night_story", malformed_agent_event, "memory://missing_available_statements") as Dictionary
+	_assert_error_code(agent_event_result, "missing_field", "每个 v2 来电必须显式声明 available_statement_ids。")
 
 
 func _test_computer_read_and_southbound_choices(validated_story: Dictionary) -> void:
@@ -80,8 +81,8 @@ func _test_computer_read_and_southbound_choices(validated_story: Dictionary) -> 
 	_assert_equal(bridge_phone.get_active_event_id(), "call_09_southbound", "聚焦测试必须只触发年轻司机来电。")
 	_assert_true(bridge_phone.answer_call(60), "年轻司机来电应可接听。")
 	_assert_true(bridge_phone.enter_dialogue_choice(), "年轻司机来电应可进入选择。")
-	_assert_ok(bridge_engine.begin_active_call_dialogue(), "年轻司机对话必须可开始。")
-	_assert_ok(bridge_engine.select_dialogue_option("opt_southbound_confirm"), "追问北桥路线必须可提交。")
+	var dialogue_driver: RefCounted = AGENT_DIALOGUE_TEST_DRIVER_SCRIPT.new()
+	_assert_ok(dialogue_driver.call(&"commit_active_call", bridge_engine, "call_09_southbound", "southbound", ["statement_southbound_bridge_claim"], "我刚按临时路牌经过了自己认作北桥的桥。"), "年轻司机北桥 ActorTurn 必须可提交。")
 	_assert_true(bridge_engine.is_statement_revealed("statement_southbound_bridge_claim"), "追问北桥必须揭示经过北桥的来源陈述。")
 	var bridge_task_after_southbound: Dictionary = _find_broadcast_task(bridge_engine.get_broadcast_tasks(), "task_broadcast_bridge_closure")
 	_assert_true(_task_has_information(bridge_task_after_southbound, "info_bridge_southbound_crossing"), "南向司机桥面陈述真实揭示后，必须增加对应可选信息项。")
@@ -96,8 +97,7 @@ func _test_computer_read_and_southbound_choices(validated_story: Dictionary) -> 
 	var vehicle_phone: PhoneSystem = vehicle_engine._phone_system as PhoneSystem
 	_assert_true(vehicle_phone.answer_call(60), "车辆分支应可接听。")
 	_assert_true(vehicle_phone.enter_dialogue_choice(), "车辆分支应可进入选择。")
-	_assert_ok(vehicle_engine.begin_active_call_dialogue(), "车辆分支对话必须可开始。")
-	_assert_ok(vehicle_engine.select_dialogue_option("opt_southbound_vehicle"), "追问车辆必须可提交。")
+	_assert_ok(dialogue_driver.call(&"commit_active_call", vehicle_engine, "call_09_southbound", "southbound", ["statement_southbound_wagon_sighting"], "一辆旧旅行车从后方超过我，正往城南方向开。"), "年轻司机车辆 ActorTurn 必须可提交。")
 	_assert_true(vehicle_engine.is_statement_revealed("statement_southbound_wagon_sighting"), "追问车辆必须揭示旅行车目击陈述。")
 	_assert_true(not vehicle_engine.is_statement_revealed("statement_southbound_bridge_claim"), "车辆追问不能伪造北桥经过陈述。")
 
@@ -111,9 +111,8 @@ func _test_warren_accident_account_conflict(validated_story: Dictionary) -> void
 	var official_only_phone: PhoneSystem = official_only_engine._phone_system as PhoneSystem
 	_assert_true(official_only_phone.answer_call(60), "沃伦来电应可接听。")
 	_assert_true(official_only_phone.enter_dialogue_choice(), "沃伦来电应可进入选择。")
-	_assert_ok(official_only_engine.begin_active_call_dialogue(), "沃伦对话必须可开始。")
-	_assert_ok(official_only_engine.select_dialogue_option("opt_warren_sober"), "安抚沃伦的首轮选择必须可提交。")
-	_assert_ok(official_only_engine.select_dialogue_option("opt_warren_follow_caution"), "安抚并等待官方消息的路径必须可提交。")
+	var dialogue_driver: RefCounted = AGENT_DIALOGUE_TEST_DRIVER_SCRIPT.new()
+	_assert_ok(dialogue_driver.call(&"commit_active_call", official_only_engine, "call_01_warren", "warren", [], "我没有亲眼看见，还是等官方消息吧。"), "不披露传闻的沃伦 ActorTurn 必须可提交。")
 	_assert_true(not official_only_engine.is_statement_revealed("statement_warren_tanker_fire_claim"), "安抚/等待官方消息路径不得取得油罐车诱因陈述。")
 	_assert_true(not official_only_engine.is_fact_confirmed("fact_accounts_conflict"), "没有油罐车来源陈述时不得确认事故诱因冲突。")
 
@@ -123,9 +122,7 @@ func _test_warren_accident_account_conflict(validated_story: Dictionary) -> void
 	var report_phone: PhoneSystem = report_engine._phone_system as PhoneSystem
 	_assert_true(report_phone.answer_call(60), "正向路径的沃伦来电应可接听。")
 	_assert_true(report_phone.enter_dialogue_choice(), "正向路径的沃伦来电应可进入选择。")
-	_assert_ok(report_engine.begin_active_call_dialogue(), "正向路径的沃伦对话必须可开始。")
-	_assert_ok(report_engine.select_dialogue_option("opt_warren_song"), "非安抚首轮选择必须可提交。")
-	_assert_ok(report_engine.select_dialogue_option("opt_warren_follow_report"), "明确追问桥边事故的路径必须可提交。")
+	_assert_ok(dialogue_driver.call(&"commit_active_call", report_engine, "call_01_warren", "warren", ["statement_warren_tanker_fire_claim"], "酒吧有人说北桥附近一辆油罐车起火；我没有亲眼看见。"), "披露传闻的沃伦 ActorTurn 必须可提交。")
 	_assert_true(report_engine.is_statement_revealed("statement_warren_tanker_fire_claim"), "追问桥边事故才必须揭示沃伦的油罐车传闻陈述。")
 	_assert_true(report_engine.is_fact_confirmed("fact_accounts_conflict"), "官方结构受损与沃伦油罐车说法齐备后才确认来源描述冲突。")
 
@@ -151,8 +148,8 @@ func _test_ending_facts_remain_authoritative(validated_story: Dictionary) -> voi
 	var phone: PhoneSystem = engine._phone_system as PhoneSystem
 	_assert_true(phone.answer_call(60), "艾米来电应可接听。")
 	_assert_true(phone.enter_dialogue_choice(), "艾米来电应可进入选择。")
-	_assert_ok(engine.begin_active_call_dialogue(), "艾米对话必须可开始。")
-	_assert_ok(engine.select_dialogue_option("opt_amy_broadcast"), "艾米唯一回应必须可提交。")
+	var dialogue_driver: RefCounted = AGENT_DIALOGUE_TEST_DRIVER_SCRIPT.new()
+	_assert_ok(dialogue_driver.call(&"commit_active_call", engine, "call_11_final_amy", "amy", ["statement_amy_unauthorized_broadcast"], "收音机里有个像你一样的声音让我们继续开，但桥面根本过不去。"), "艾米 committed ActorTurn 必须可提交。")
 	_assert_true(engine.is_statement_revealed("statement_amy_unauthorized_broadcast"), "艾米来电可以揭示她听见过的来源陈述。")
 	_assert_true(not engine.is_fact_confirmed("fact_unauthorized_broadcast"), "02:00 前角色陈述不能确认 Studio A 未授权播出。")
 	_assert_true(not engine.is_fact_confirmed("fact_anomaly_cause_unknown"), "02:00 前不得确认异常成因未知。")

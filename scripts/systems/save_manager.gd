@@ -6,7 +6,7 @@ extends RefCounted
 ## create_snapshot / validate_snapshot / restore_snapshot 契约，并负责 JSON 的完整
 ## 校验和可恢复的替换写入。剧情内容本身仍由 Main 在恢复时先加载并校验。
 
-const SAVE_FORMAT_VERSION: int = 1
+const SAVE_FORMAT_VERSION: int = 5
 const SLOT_IDS: Array[String] = ["slot_1", "slot_2", "slot_3"]
 const DEFAULT_SAVE_DIRECTORY: String = "user://saves"
 
@@ -15,8 +15,11 @@ const REQUIRED_TOP_LEVEL_FIELDS: Array[String] = [
 	"saved_at_utc",
 	"content_kind",
 	"content_format_version",
+	"worldbook_id",
+	"worldbook_version",
 	"game_clock_state",
 	"story_state",
+	"agent_runtime_state",
 	"phone_state",
 	"game_screen_state",
 ]
@@ -53,6 +56,9 @@ func set_replace_failure_for_verification(is_enabled: bool) -> void:
 	_replace_failure_for_verification = is_enabled
 
 
+## 槽位列表只做格式与内容版本校验；当前 WorldBook 必须先由 Main 完整加载。
+## 因此另一 WorldBook 的结构合法槽位可能显示为可读取，但实际恢复前仍会通过
+## validate_worldbook_identity() 精确拒绝跨 WorldBook / 跨 authored version 恢复。
 func get_slot_summaries(expected_content_kind: String, expected_content_format_version: int) -> Array[Dictionary]:
 	var summaries: Array[Dictionary] = []
 	for slot_id: String in SLOT_IDS:
@@ -88,6 +94,7 @@ func save_slot(
 	content_metadata: Dictionary,
 	game_clock: Object,
 	story_engine: Object,
+	agent_runtime: Object,
 	phone_system: Object,
 	game_screen: Object
 ) -> Dictionary:
@@ -101,8 +108,12 @@ func save_slot(
 		return _make_error(slot_id, _get_slot_path(slot_id), "missing_phone_save_contract", "PhoneSystem 缺少 can_save() 或 get_save_block_reason() 存档接口。")
 	if not bool(phone_system.call(&"can_save")):
 		return _make_error(slot_id, _get_slot_path(slot_id), "save_blocked", String(phone_system.call(&"get_save_block_reason")))
+	if agent_runtime == null or not agent_runtime.has_method(&"can_save") or not agent_runtime.has_method(&"get_save_block_reason"):
+		return _make_error(slot_id, _get_slot_path(slot_id), "missing_agent_save_contract", "AgentRuntime 缺少 can_save() 或 get_save_block_reason() 存档接口。")
+	if not bool(agent_runtime.call(&"can_save")):
+		return _make_error(slot_id, _get_slot_path(slot_id), "save_blocked", String(agent_runtime.call(&"get_save_block_reason")))
 
-	var snapshots_result: Dictionary = _collect_snapshots(game_clock, story_engine, phone_system, game_screen)
+	var snapshots_result: Dictionary = _collect_snapshots(game_clock, story_engine, agent_runtime, phone_system, game_screen)
 	if not bool(snapshots_result.get("ok", false)):
 		return _with_slot(snapshots_result, slot_id)
 	var document: Dictionary = {
@@ -110,8 +121,11 @@ func save_slot(
 		"saved_at_utc": "%sZ" % Time.get_datetime_string_from_system(true, false),
 		"content_kind": String(content_metadata["content_kind"]),
 		"content_format_version": int(content_metadata["content_format_version"]),
+		"worldbook_id": String(content_metadata["worldbook_id"]),
+		"worldbook_version": int(content_metadata["worldbook_version"]),
 		"game_clock_state": snapshots_result["game_clock_state"],
 		"story_state": snapshots_result["story_state"],
+		"agent_runtime_state": snapshots_result["agent_runtime_state"],
 		"phone_state": snapshots_result["phone_state"],
 		"game_screen_state": snapshots_result["game_screen_state"],
 	}
@@ -156,10 +170,24 @@ func validate_component_snapshot(component_name: String, target: Object, snapsho
 	return {"ok": true}
 
 
-func _collect_snapshots(game_clock: Object, story_engine: Object, phone_system: Object, game_screen: Object) -> Dictionary:
+## Main 在加载当前 WorldBook 并完成 Validator/Compiler 后调用。槽位的世界身份必须与
+## 当前 CompiledWorldDefinition 精确一致，禁止把世界书 A 的运行态恢复到世界书 B。
+func validate_worldbook_identity(document: Dictionary, expected_worldbook_id: String, expected_worldbook_version: int) -> Dictionary:
+	if not _is_valid_worldbook_id(expected_worldbook_id) or expected_worldbook_version < 1:
+		return _make_error("", "", "invalid_expected_worldbook_identity", "当前 WorldBook 身份无效，拒绝恢复存档。")
+	if not document.get("worldbook_id") is String or String(document["worldbook_id"]) != expected_worldbook_id:
+		return _make_error("", "", "worldbook_id_mismatch", "存档属于另一份 WorldBook，拒绝恢复到当前世界。")
+	var version_result: Dictionary = _read_exact_integer(document.get("worldbook_version"))
+	if not bool(version_result.get("ok", false)) or int(version_result["value"]) != expected_worldbook_version:
+		return _make_error("", "", "worldbook_version_mismatch", "存档 WorldBook 版本与当前世界不一致，拒绝恢复。")
+	return {"ok": true}
+
+
+func _collect_snapshots(game_clock: Object, story_engine: Object, agent_runtime: Object, phone_system: Object, game_screen: Object) -> Dictionary:
 	var mappings: Array[Dictionary] = [
 		{"key": "game_clock_state", "name": "GameClock", "object": game_clock},
 		{"key": "story_state", "name": "StoryEngine", "object": story_engine},
+		{"key": "agent_runtime_state", "name": "AgentRuntime", "object": agent_runtime},
 		{"key": "phone_state", "name": "PhoneSystem", "object": phone_system},
 		{"key": "game_screen_state", "name": "GameScreen", "object": game_screen},
 	]
@@ -197,7 +225,12 @@ func validate_document(document: Dictionary, expected_content_kind: String, expe
 	var content_version_result: Dictionary = _read_exact_integer(document["content_format_version"])
 	if not bool(content_version_result.get("ok", false)) or int(content_version_result["value"]) != expected_content_format_version:
 		return _make_error("", "", "unknown_content_version", "存档剧情内容版本不匹配，拒绝读取。")
-	for field_name: String in ["game_clock_state", "story_state", "phone_state", "game_screen_state"]:
+	if not document["worldbook_id"] is String or not _is_valid_worldbook_id(String(document["worldbook_id"])):
+		return _make_error("", "", "invalid_worldbook_id", "存档 worldbook_id 必须是英文 snake_case 稳定 ID。")
+	var worldbook_version_result: Dictionary = _read_exact_integer(document["worldbook_version"])
+	if not bool(worldbook_version_result.get("ok", false)) or int(worldbook_version_result["value"]) < 1:
+		return _make_error("", "", "invalid_worldbook_version", "存档 worldbook_version 必须是正整数。")
+	for field_name: String in ["game_clock_state", "story_state", "agent_runtime_state", "phone_state", "game_screen_state"]:
 		if not document[field_name] is Dictionary or (document[field_name] as Dictionary).is_empty():
 			return _make_error("", "", "invalid_snapshot_shape", "存档字段 %s 必须是非空对象。" % field_name)
 	return {"ok": true}
@@ -301,18 +334,34 @@ func _validate_slot_id(slot_id: String) -> Dictionary:
 
 
 func _validate_content_metadata(content_metadata: Dictionary) -> Dictionary:
-	if not content_metadata.has("content_kind") or not content_metadata.has("content_format_version"):
-		return _make_error("", "", "missing_content_metadata", "当前剧情缺少 content_kind 或 content_format_version，不能保存。")
+	for field_name: String in ["content_kind", "content_format_version", "worldbook_id", "worldbook_version"]:
+		if not content_metadata.has(field_name):
+			return _make_error("", "", "missing_content_metadata", "当前剧情缺少存档身份字段：%s。" % field_name)
 	if typeof(content_metadata["content_kind"]) != TYPE_STRING or typeof(content_metadata["content_format_version"]) != TYPE_INT:
 		return _make_error("", "", "invalid_content_metadata", "当前剧情内容元数据类型无效，不能保存。")
 	if not _is_expected_content_supported(String(content_metadata["content_kind"]), int(content_metadata["content_format_version"])):
 		return _make_error("", "", "unknown_content_version", "当前剧情内容版本不受存档系统支持。")
+	if not content_metadata["worldbook_id"] is String or not _is_valid_worldbook_id(String(content_metadata["worldbook_id"])):
+		return _make_error("", "", "invalid_content_metadata", "当前剧情 worldbook_id 无效，不能保存。")
+	var worldbook_version_result: Dictionary = _read_exact_integer(content_metadata["worldbook_version"])
+	if not bool(worldbook_version_result.get("ok", false)) or int(worldbook_version_result["value"]) < 1:
+		return _make_error("", "", "invalid_content_metadata", "当前剧情 worldbook_version 必须是正整数，不能保存。")
 	return {"ok": true}
 
 
 func _is_expected_content_supported(content_kind: String, content_format_version: int) -> bool:
-	# 当前 MVP 只有这一份经校验的夜班内容；未来内容版本必须显式扩展此处。
-	return content_kind == "test_night_story" and content_format_version == 1
+	# 当前运行时只接受已经正式迁移到 Agent Dialogue v2 的夜班内容。
+	return content_kind == "test_night_story" and content_format_version == 2
+
+
+func _is_valid_worldbook_id(worldbook_id: String) -> bool:
+	return (
+		not worldbook_id.is_empty()
+		and not worldbook_id.begins_with("_")
+		and worldbook_id == worldbook_id.to_lower()
+		and worldbook_id.is_valid_identifier()
+		and worldbook_id.is_valid_ascii_identifier()
+	)
 
 
 func _unwrap_snapshot_result(raw_value: Variant, component_name: String) -> Dictionary:

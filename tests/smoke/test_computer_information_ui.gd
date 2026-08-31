@@ -2,9 +2,9 @@ extends SceneTree
 
 ## 第六阶段电脑信息终端集成烟测。
 ##
-## 使用真实 StoryEngine、ComputerSystem 与 PhoneSystem 验证：五页签的未读文字、
+## 使用真实 StoryEngine、ComputerSystem 与 PhoneSystem 验证：四页签的未读文字、
 ## 打开条目才经 GameScreen 标记已读、真实来电记录不含逐字稿，以及 02:00 从任意
-## 信息页立即锁至播出记录。此脚本不做截图或图形验收。
+## 信息页立即锁至独立夜班结束记录。此脚本不做截图或图形验收。
 
 const CONTENT_LOADER_SCRIPT: GDScript = preload("res://scripts/core/content_loader.gd")
 const CONTENT_VALIDATOR_SCRIPT: GDScript = preload("res://scripts/core/content_validator.gd")
@@ -15,7 +15,7 @@ const STORY_ENGINE_SCRIPT: GDScript = preload("res://scripts/core/story_engine.g
 const STORY_PATH: String = "res://data/story/test_night_story.json"
 
 const INFORMATION_CATEGORIES: Array[String] = ["checklist", "news", "messages", "call_log"]
-const PAGE_CATEGORIES: Array[String] = ["checklist", "news", "messages", "call_log", "broadcast"]
+const PAGE_CATEGORIES: Array[String] = INFORMATION_CATEGORIES
 
 var _has_failed: bool = false
 
@@ -54,7 +54,7 @@ func _run() -> void:
 	_test_open_routes_read_intent(story_engine, computer_closeup, information_view)
 	_test_call_log_remains_phone_authoritative(phone, computer_closeup, information_view)
 	_test_new_content_does_not_change_active_page(story_engine, information_view)
-	_test_ending_forces_broadcast_page(story_engine, phone, screen, information_view)
+	_test_ending_forces_record_lock(story_engine, phone, screen, information_view)
 
 	_cleanup(clock, story_engine, screen)
 	_finish()
@@ -170,13 +170,13 @@ func _test_new_content_does_not_change_active_page(story_engine: RefCounted, inf
 	_assert_true(messages_after > messages_before, "后续短信解锁后必须只增加未读数量。")
 
 
-func _test_ending_forces_broadcast_page(
+func _test_ending_forces_record_lock(
 	story_engine: RefCounted,
 	phone: RefCounted,
 	screen: GameScreen,
 	information_view: Control
 ) -> void:
-	_assert_ok(information_view.call(&"select_category", "checklist"), "02:00 测试前必须可停留在非播出页。")
+	_assert_ok(information_view.call(&"select_category", "checklist"), "02:00 测试前必须可停留在普通信息页。")
 	_assert_ok(screen.show_view(GameScreen.VIEW_PHONE), "02:00 可从电话选择页开始收束测试。")
 	var ending_call: Dictionary = {
 		"id": "call_ui_ending",
@@ -194,10 +194,10 @@ func _test_ending_forces_broadcast_page(
 	var snapshot: Dictionary = information_view.call(&"get_ui_snapshot") as Dictionary
 	_assert_true(bool(phone.call(&"is_forced_ended")), "02:00 在电话选择中也必须强制终止 PhoneSystem。")
 	_assert_equal(screen.get_current_view_id(), GameScreen.VIEW_COMPUTER, "02:00 必须立即切到电脑近景。")
-	_assert_equal(String(snapshot.get("active_category", "")), "broadcast", "02:00 必须立即切到播出页。")
+	_assert_equal(String(snapshot.get("active_category", "")), "checklist", "02:00 记录是独立锁定态，不得伪造第五个 broadcast 页签。")
 	_assert_true(bool(snapshot.get("is_ending_locked", false)), "02:00 后电脑信息页必须锁定。")
 	var player_text: String = _collect_visible_player_text(information_view)
-	_assert_true(player_text.contains("未授权播出记录"), "02:00 后必须以玩家可读标题展示未授权播出记录。")
+	_assert_true(player_text.contains("夜班结束记录"), "02:00 后必须以玩家可读标题展示独立结束记录。")
 	for internal_id: String in ["broadcast_unauthorized_north_bridge_open", "fact_unauthorized_broadcast"]:
 		_assert_true(not player_text.contains(internal_id), "未授权播出详情不得向玩家显示内部 ID：%s。" % internal_id)
 	_assert_true(not player_text.contains("记录 ID") and not player_text.contains("事实 ID"), "播出记录不得提供内部字段标签。")

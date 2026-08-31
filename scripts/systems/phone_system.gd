@@ -568,8 +568,8 @@ func _validate_event_id_array(raw_ids: Array, event_by_id: Dictionary, field_nam
 		if typeof(raw_event_id) != TYPE_STRING:
 			return _make_snapshot_error("invalid_%s" % field_name, "%s 中的事件 ID 必须是字符串。" % field_name)
 		var event_id: String = String(raw_event_id)
-		if not event_by_id.has(event_id):
-			return _make_snapshot_error("unknown_event_id", "%s 包含当前内容不存在的事件 %s。" % [field_name, event_id])
+		if not event_by_id.has(event_id) and not _is_delivery_call_id(event_id):
+			return _make_snapshot_error("unknown_event_id", "%s 包含既非 authored event 也非 Delivery call 的事件 %s。" % [field_name, event_id])
 		if lookup.has(event_id):
 			return _make_snapshot_error("duplicate_event_id", "%s 不能包含重复事件 %s。" % [field_name, event_id])
 		lookup[event_id] = true
@@ -592,8 +592,8 @@ func _validate_call_records(raw_records: Array, event_by_id: Dictionary, snapsho
 		if typeof(record["event_id"]) != TYPE_STRING:
 			return _make_snapshot_error("invalid_record_event_id", "来电记录 event_id 必须是字符串。")
 		var event_id: String = String(record["event_id"])
-		if not event_by_id.has(event_id):
-			return _make_snapshot_error("unknown_record_event_id", "来电记录引用了当前内容不存在的事件 %s。" % event_id)
+		if not event_by_id.has(event_id) and not _is_delivery_call_id(event_id):
+			return _make_snapshot_error("unknown_record_event_id", "来电记录引用了既非 authored event 也非 Delivery call 的事件 %s。" % event_id)
 		if record_lookup.has(event_id):
 			return _make_snapshot_error("duplicate_record_event_id", "同一事件 %s 不能拥有两条来电记录。" % event_id)
 		if typeof(record["caller_name"]) != TYPE_STRING or String(record["caller_name"]).strip_edges().is_empty():
@@ -608,9 +608,10 @@ func _validate_call_records(raw_records: Array, event_by_id: Dictionary, snapsho
 		var duration_result: Dictionary = _read_snapshot_integer(record, "duration_ticks", 0, snapshot_tick - int(time_result["value"]))
 		if not bool(duration_result["ok"]):
 			return duration_result
-		var expected_event: Dictionary = event_by_id[event_id] as Dictionary
-		if String(record["caller_name"]) != String(expected_event["caller_display_name"]) or String(record["caller_number"]) != String(expected_event["caller_number"]):
-			return _make_snapshot_error("record_caller_metadata_mismatch", "来电记录 %s 的来显与当前内容不一致。" % event_id)
+		if event_by_id.has(event_id):
+			var expected_event: Dictionary = event_by_id[event_id] as Dictionary
+			if String(record["caller_name"]) != String(expected_event["caller_display_name"]) or String(record["caller_number"]) != String(expected_event["caller_number"]):
+				return _make_snapshot_error("record_caller_metadata_mismatch", "来电记录 %s 的来显与当前内容不一致。" % event_id)
 		var normalized_record: Dictionary = {
 			"event_id": event_id,
 			"time": int(time_result["value"]),
@@ -653,15 +654,16 @@ func _validate_active_call(
 	if typeof(active_call["event_id"]) != TYPE_STRING:
 		return _make_snapshot_error("invalid_active_event_id", "活动线路 event_id 必须是字符串。")
 	var event_id: String = String(active_call["event_id"])
-	if not event_by_id.has(event_id):
-		return _make_snapshot_error("unknown_active_event_id", "活动线路引用了当前内容不存在的事件 %s。" % event_id)
+	if not event_by_id.has(event_id) and not _is_delivery_call_id(event_id):
+		return _make_snapshot_error("unknown_active_event_id", "活动线路引用了既非 authored event 也非 Delivery call 的事件 %s。" % event_id)
 	if handled_lookup.has(event_id):
 		return _make_snapshot_error("active_handled_conflict", "活动线路 %s 不能同时标记为已处理。" % event_id)
 	if typeof(active_call["caller_name"]) != TYPE_STRING or typeof(active_call["caller_number"]) != TYPE_STRING:
 		return _make_snapshot_error("invalid_active_caller_metadata", "活动线路来显必须是字符串。")
-	var expected_event: Dictionary = event_by_id[event_id] as Dictionary
-	if String(active_call["caller_name"]) != String(expected_event["caller_display_name"]) or String(active_call["caller_number"]) != String(expected_event["caller_number"]):
-		return _make_snapshot_error("active_caller_metadata_mismatch", "活动线路 %s 的来显与当前内容不一致。" % event_id)
+	if event_by_id.has(event_id):
+		var expected_event: Dictionary = event_by_id[event_id] as Dictionary
+		if String(active_call["caller_name"]) != String(expected_event["caller_display_name"]) or String(active_call["caller_number"]) != String(expected_event["caller_number"]):
+			return _make_snapshot_error("active_caller_metadata_mismatch", "活动线路 %s 的来显与当前内容不一致。" % event_id)
 	var ringing_start_result: Dictionary = _read_snapshot_integer(active_call, "ringing_started_tick", 0, snapshot_tick)
 	if not bool(ringing_start_result["ok"]):
 		return ringing_start_result
@@ -709,6 +711,12 @@ func _state_from_snapshot_name(state_name: String) -> State:
 
 func _set_last_known_game_tick(current_tick: int) -> void:
 	_last_known_game_tick = current_tick
+
+
+## PhoneSystem 只做动态 Delivery ID 的结构放行；它不知道这条 Delivery 是否真实存在。
+## StoryEngine 在恢复剧情 snapshot 时会把所有 delivery_call_* 与 DeliverySystem committed state 交叉校验。
+func _is_delivery_call_id(event_id: String) -> bool:
+	return event_id.begins_with("delivery_call_") and event_id.is_valid_identifier() and event_id == event_id.to_lower()
 
 
 func _has_exact_snapshot_fields(snapshot: Dictionary, required_fields: PackedStringArray) -> bool:

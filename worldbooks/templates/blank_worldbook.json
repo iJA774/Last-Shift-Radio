@@ -1,0 +1,88 @@
+{
+  "worldbook_format_version": 1,
+  "worldbook_id": "my_worldbook",
+  "lore": {
+    "premise": "描述今晚值班会围绕什么故事展开。",
+    "themes": ["孤独", "不确定性"],
+    "atmosphere": "深夜地方电台，信息有限，所有关键世界状态仍由确定性系统提交。",
+    "director_notes": ["保持信息逐步揭示，不要把隐藏真相直接交给 Actor。"]
+  },
+  "hidden_truths": [
+    {
+      "id": "truth_example",
+      "body": "这是只供 Director 世界认知使用的示例隐藏真相。"
+    }
+  ],
+  "relationships": [],
+  "goals": [
+    {
+      "id": "explain_situation",
+      "actor_id": "example_caller",
+      "description": "向电台解释自己正在经历的情况。"
+    }
+  ],
+  "conditions": [],
+  "events": [
+    {
+      "id": "call_example",
+      "kind": "incoming_call",
+      "priority": "normal",
+      "window_start_minute": 5,
+      "window_end_minute": 10,
+      "when_busy": "expire",
+      "on_expire": "mark_missed",
+      "condition_ids": [],
+      "caller_display_name": "示例来电者",
+      "caller_number": "555-0100",
+      "actor_id": "example_caller",
+      "available_statement_ids": [],
+      "line_profile_id": "clean",
+      "call_reason": "示例来电",
+      "opening_intent": "说明情况",
+      "fallback_utterance": "线路里只剩下短促的杂音，对方挂断了。"
+    }
+  ],
+  "checklist_entries": [],
+  "news_entries": [],
+  "messages": [],
+  "broadcast_tasks": [],
+  "actors": [
+    {
+      "id": "example_caller",
+      "display_name": "示例来电者",
+      "voice_profile_id": "example_voice",
+      "profile": {
+        "role": "示例 NPC",
+        "personality": "谨慎，但愿意回答具体问题。",
+        "speech_style": "简短、自然，不使用系统术语。"
+      },
+      "initial_state": {
+        "knowledge": ["知道自己亲眼看到的局部情况。"],
+        "beliefs": [],
+        "episodic_memory": [],
+        "current_goal": "explain_situation",
+        "available_goal_ids": ["explain_situation"],
+        "trust": 0.5,
+        "stress": 0.3,
+        "heard_signal_ids": [],
+        "private_information": [],
+        "forbidden_knowledge": ["不知道 Director-only hidden truths，除非其它确定性来源让角色获得对应信息。"]
+      }
+    }
+  ],
+  "statements": [],
+  "facts": [],
+  "opportunities": [
+    {
+      "id": "opportunity_example_call",
+      "summary": "示例来电可以被合法推进。",
+      "actor_ids": ["example_caller"],
+      "event_ids": ["call_example"],
+      "condition_ids": [],
+      "goal_ids": ["explain_situation"]
+    }
+  ],
+  "narrative_constraints": {
+    "notes": ["只从已存在的机会、Actor 与世界信息中规划。"]
+  }
+}

@@ -1,5 +1,5 @@
 {
-  "content_format_version": 1,
+  "content_format_version": 2,
   "content_kind": "test_night_story",
   "conditions": [
     {
@@ -18,7 +18,14 @@
       "condition_ids": [],
       "caller_display_name": "沃伦",
       "caller_number": "555-0118",
-      "dialogue_start_id": "dlg_warren_open"
+      "actor_id": "warren",
+      "available_statement_ids": [
+        "statement_warren_tanker_fire_claim"
+      ],
+      "line_profile_id": "bar_landline_rain",
+      "call_reason": "点歌，并犹豫是否把刚从酒吧听来的北桥传闻告诉电台。",
+      "opening_intent": "先确认接通 WMLH，再以闲聊方式试探主持人是否愿意记录一条未核实传闻。",
+      "fallback_utterance": "酒吧背景声盖过了线路，对方说了句听不清的话就挂断了。"
     },
     {
       "id": "call_02_wrong_number",
@@ -31,7 +38,12 @@
       "condition_ids": [],
       "caller_display_name": "错号来电",
       "caller_number": "555-0182",
-      "dialogue_start_id": "dlg_wrong_number_open"
+      "actor_id": "wrong_number",
+      "available_statement_ids": [],
+      "line_profile_id": "bakery_landline",
+      "call_reason": "夜班忙乱中把 WMLH 误拨成奥尔森仓库，想追问一袋缺失的高筋粉。",
+      "opening_intent": "把对方当作仓库人员询问送货单，发现拨错后尽快结束通话。",
+      "fallback_utterance": "对方像是终于发现拨错了号码，匆匆道歉后挂断。"
     },
     {
       "id": "call_03_martha",
@@ -44,7 +56,14 @@
       "condition_ids": [],
       "caller_display_name": "玛莎·克莱恩",
       "caller_number": "555-0146",
-      "dialogue_start_id": "dlg_martha_open"
+      "actor_id": "martha",
+      "available_statement_ids": [
+        "statement_martha_wagon_route"
+      ],
+      "line_profile_id": "home_landline_rain",
+      "call_reason": "儿子丹尼迟迟没有回家，她想确认北桥消息并请电台留意他的车辆。",
+      "opening_intent": "先说明丹尼失联和自己的担心；如果主持人追问可复核线索，再描述车辆与常走路线。",
+      "fallback_utterance": "对方沉默了几秒，只说会继续联系警方，随后挂断了。"
     },
     {
       "id": "call_04_dog_walker",
@@ -59,7 +78,14 @@
       ],
       "caller_display_name": "河边遛狗者",
       "caller_number": "555-0191",
-      "dialogue_start_id": "dlg_dog_walker_open"
+      "actor_id": "dog_walker",
+      "available_statement_ids": [
+        "statement_dog_walker_wagon_color"
+      ],
+      "line_profile_id": "riverside_mobile_rain",
+      "call_reason": "报告自己在河堤附近看到的一辆旧旅行车，但不愿把不确定细节说成定论。",
+      "opening_intent": "先说明目击地点和自己只愿讲有把握的部分；被追问外观时再谨慎描述。",
+      "fallback_utterance": "风雨声突然灌满话筒，对方说信号太差，随后线路断开。"
     },
     {
       "id": "call_05_cinema",
@@ -72,7 +98,12 @@
       "condition_ids": [],
       "caller_display_name": "星光小影院",
       "caller_number": "555-0163",
-      "dialogue_start_id": "dlg_cinema_open"
+      "actor_id": "cinema",
+      "available_statement_ids": [],
+      "line_profile_id": "cinema_office_landline",
+      "call_reason": "影院印刷机卡纸，值班员想确认社区放映排期是否也会送到 WMLH 新闻室。",
+      "opening_intent": "询问排期和印刷间消息，得到实用答复后结束通话。",
+      "fallback_utterance": "影院那边传来机器转动声，对方说先去处理卡纸，匆匆挂断。"
     },
     {
       "id": "call_06_trucker",
@@ -85,7 +116,14 @@
       "condition_ids": [],
       "caller_display_name": "东侧卡车司机",
       "caller_number": "555-0170",
-      "dialogue_start_id": "dlg_trucker_open"
+      "actor_id": "trucker",
+      "available_statement_ids": [
+        "statement_trucker_bridge_queue"
+      ],
+      "line_profile_id": "truck_cab_rain",
+      "call_reason": "卡在北桥东侧严重拥堵中，想向电台确认绕行或现场指引。",
+      "opening_intent": "直接报告堵车并询问安全做法；被追问现场情况时只说自己从驾驶室能观察到的内容。",
+      "fallback_utterance": "喇叭声和雨声把线路完全盖住，对方骂了一句信号后挂断了。"
     },
     {
       "id": "call_07_ronnie_1",
@@ -98,7 +136,12 @@
       "condition_ids": [],
       "caller_display_name": "罗尼·哈特",
       "caller_number": "555-0109",
-      "dialogue_start_id": "dlg_ronnie_one_open"
+      "actor_id": "ronnie",
+      "available_statement_ids": [],
+      "line_profile_id": "tow_dispatch_mobile",
+      "call_reason": "他脑中有一趟北桥附近拖旧旅行车的零散记忆，但调度单上找不到对应记录。",
+      "opening_intent": "请求电台帮他核对是否留下过相关来电或记录，同时明确自己对记忆并没有把握。",
+      "fallback_utterance": "拖车调度机的杂音持续了几秒，对方说要再核一遍记录后挂断。"
     },
     {
       "id": "call_08_score",
@@ -111,7 +154,12 @@
       "condition_ids": [],
       "caller_display_name": "西仓门卫",
       "caller_number": "555-0120",
-      "dialogue_start_id": "dlg_score_open"
+      "actor_id": "score",
+      "available_statement_ids": [],
+      "line_profile_id": "warehouse_security_phone",
+      "call_reason": "巡楼时错过了冰球赛第二节，顺便抱怨自动售货机吞了两枚硬币。",
+      "opening_intent": "轻松地问比分；如果还没有最终结果就接受等待，不把这通电话变成紧急事件。",
+      "fallback_utterance": "对方听见远处有人叫他巡楼，只来得及说声回头再听就挂断。"
     },
     {
       "id": "call_09_southbound",
@@ -124,7 +172,15 @@
       "condition_ids": [],
       "caller_display_name": "路过的年轻司机",
       "caller_number": "555-0152",
-      "dialogue_start_id": "dlg_southbound_open"
+      "actor_id": "southbound",
+      "available_statement_ids": [
+        "statement_southbound_bridge_claim",
+        "statement_southbound_wagon_sighting"
+      ],
+      "line_profile_id": "car_mobile_heavy_rain",
+      "call_reason": "主动报告自己刚按临时路牌通过北桥，并补充沿途车辆情况。",
+      "opening_intent": "先把刚经历的路况当作善意更新告诉电台；主持人指出封桥矛盾后，认真回想路牌、桥面和车辆。",
+      "fallback_utterance": "车载免提里只剩雨刷和路噪，对方说已经到路口，随后断线。"
     },
     {
       "id": "call_10_ronnie_2",
@@ -137,7 +193,24 @@
       "condition_ids": [],
       "caller_display_name": "罗尼·哈特",
       "caller_number": "555-0109",
-      "dialogue_start_id": "dlg_ronnie_two_open"
+      "actor_id": "ronnie",
+      "available_statement_ids": [],
+      "line_profile_id": "tow_dispatch_mobile",
+      "call_reason": "他发现自己对几分钟前是否打过电话出现记忆空白，同时莫名产生去北桥取东西的冲动。",
+      "opening_intent": "坦白自己的记忆断裂和不安，优先寻求让自己停止出车、核对现实的办法。",
+      "fallback_utterance": "对方呼吸很乱，只说自己会把钥匙放下，随后挂断。",
+      "session_state_patch": {
+        "beliefs": [
+          "手机通话记录似乎显示自己几分钟前打过 WMLH，但自己完全想不起那通电话。",
+          "有一种必须去北桥取东西的强烈念头，但不知道这个念头从哪里来。"
+        ],
+        "episodic_memory": [
+          "对几分钟前是否联系过 WMLH 出现一段清晰的记忆空白。",
+          "此刻手里拿着拖车钥匙，却无法回忆自己为什么准备再次出车。"
+        ],
+        "current_goal": "stay_off_road",
+        "stress": 0.92
+      }
     },
     {
       "id": "call_11_final_amy",
@@ -150,7 +223,14 @@
       "condition_ids": [],
       "caller_display_name": "艾米",
       "caller_number": "555-0177",
-      "dialogue_start_id": "dlg_amy_open"
+      "actor_id": "amy",
+      "available_statement_ids": [
+        "statement_amy_unauthorized_broadcast"
+      ],
+      "line_profile_id": "car_mobile_fog_rain",
+      "call_reason": "她和男友被困在北桥附近，并听见车载收音机出现与眼前断桥相矛盾的异常播出。",
+      "opening_intent": "先求助并说明眼前危险；如果主持人追问广播内容，再尽量复述自己实际听到的指令。",
+      "fallback_utterance": "线路里传来急促呼吸和雨声，随后信号突然中断。"
     }
   ],
   "checklist_entries": [
@@ -314,16 +394,23 @@
     {
       "id": "task_broadcast_bridge_closure",
       "name": "通过麦克风发布北桥封锁信息",
+      "selection_mode": "multiple",
       "channel": "microphone",
       "source": "Studio A",
-      "related_dialogue_event_ids": [
+      "related_event_ids": [
         "call_01_warren",
         "call_06_trucker",
         "call_09_southbound"
       ],
-      "required_dialogue_event_ids": [
-        "call_01_warren",
-        "call_06_trucker"
+      "requirements": [
+        {
+          "type": "interaction_answered",
+          "id": "call_01_warren"
+        },
+        {
+          "type": "interaction_answered",
+          "id": "call_06_trucker"
+        }
       ],
       "sets_condition_id": "",
       "information_items": [
@@ -372,13 +459,17 @@
     {
       "id": "task_broadcast_wagon_witness_request",
       "name": "通过麦克风征集旧旅行车目击信息",
+      "selection_mode": "single",
       "channel": "microphone",
       "source": "Studio A",
-      "related_dialogue_event_ids": [
+      "related_event_ids": [
         "call_03_martha"
       ],
-      "required_dialogue_event_ids": [
-        "call_03_martha"
+      "requirements": [
+        {
+          "type": "interaction_answered",
+          "id": "call_03_martha"
+        }
       ],
       "sets_condition_id": "condition_wagon_witness_request_sent",
       "information_items": [
@@ -397,673 +488,388 @@
       ]
     }
   ],
-  "dialogue_nodes": [
+  "actors": [
     {
-      "id": "dlg_warren_open",
-      "event_id": "call_01_warren",
-      "speaker": "沃伦",
-      "text": "喂，WMLH？是我沃伦。雨一落下来膝盖就像塞了把锉刀。能把《米尔黑文，我的母亲》留到下一段吗？",
-      "is_terminal": false,
-      "reveals_statement_ids": [],
-      "options": [
-        {
-          "id": "opt_warren_song",
-          "text": "我记下了，先找个暖和地方歇着。",
-          "next_node_id": "dlg_warren_follow",
-          "reveals_statement_ids": []
-        },
-        {
-          "id": "opt_warren_sober",
-          "text": "你听起来喝多了，今晚别开车。",
-          "next_node_id": "dlg_warren_follow",
-          "reveals_statement_ids": []
-        }
-      ]
+      "id": "warren",
+      "display_name": "沃伦",
+      "voice_profile_id": "warren",
+      "profile": {
+        "role": "威廉酒吧附近的常客，也是 WMLH 夜班听众。",
+        "personality": "爱闲聊、愿意提醒别人，但知道酒吧传闻和亲眼所见不是一回事。",
+        "speech_style": "声音压低、句子松散，常先聊点歌或身体小毛病，再谨慎转到正事。"
+      },
+      "initial_state": {
+        "knowledge": [
+          "自己没有亲眼看见北桥附近发生了什么。",
+          "今晚在酒吧听到了关于北桥的事故传闻。"
+        ],
+        "beliefs": [
+          "WMLH 夜班至少会把传闻标成未核实，而不是直接当新闻播。"
+        ],
+        "episodic_memory": [
+          "雨夜在威廉酒吧附近听见其他人谈论北桥。"
+        ],
+        "current_goal": "share_bridge_rumor",
+        "available_goal_ids": [
+          "share_bridge_rumor",
+          "request_song",
+          "end_call_safely"
+        ],
+        "trust": 0.66,
+        "stress": 0.28,
+        "heard_signal_ids": [],
+        "private_information": [
+          "雨天膝盖会疼。",
+          "想给电台点《米尔黑文，我的母亲》。"
+        ],
+        "forbidden_knowledge": [
+          "不知道北桥异常的真实原因。",
+          "不知道其他来电者随后会说什么。"
+        ]
+      }
     },
     {
-      "id": "dlg_warren_follow",
-      "event_id": "call_01_warren",
-      "speaker": "沃伦",
-      "text": "你们夜班总比酒吧里的说法靠谱些。那事要不要提一句？",
-      "is_terminal": false,
-      "reveals_statement_ids": [],
-      "options": [
-        {
-          "id": "opt_warren_follow_report",
-          "text": "北桥那边具体出了什么事？我只会按未核实传闻记录。",
-          "next_node_id": "dlg_warren_song_end",
-          "reveals_statement_ids": [
-            "statement_warren_tanker_fire_claim"
-          ]
-        },
-        {
-          "id": "opt_warren_follow_caution",
-          "text": "我先等官方消息，你也别往桥边去。",
-          "next_node_id": "dlg_warren_sober_end",
-          "reveals_statement_ids": []
-        }
-      ]
+      "id": "wrong_number",
+      "display_name": "夜班烘焙工",
+      "voice_profile_id": "wrong_number_caller",
+      "profile": {
+        "role": "夜班烘焙工，忙乱中把电台号码误认成奥尔森仓库。",
+        "personality": "疲惫、务实，意识到犯错后会有点尴尬。",
+        "speech_style": "围着货号、烤炉和司机说短句，反应慢半拍但不纠缠。"
+      },
+      "initial_state": {
+        "knowledge": [
+          "夜班烤炉正在工作。",
+          "这一班送来的三袋高筋粉里少了一袋。"
+        ],
+        "beliefs": [
+          "缺失的面粉可能是司机或仓库交接出了问题。"
+        ],
+        "episodic_memory": [
+          "忙着照看烤炉时按着手边号码拨出了这通电话。"
+        ],
+        "current_goal": "resolve_flour_delivery",
+        "available_goal_ids": [
+          "resolve_flour_delivery",
+          "protect_bakery_batch",
+          "end_wrong_number_call"
+        ],
+        "trust": 0.5,
+        "stress": 0.35,
+        "heard_signal_ids": [],
+        "private_information": [
+          "不想让正在烤的这一批面包因为追货耽误。"
+        ],
+        "forbidden_knowledge": [
+          "不知道 WMLH 的剧情事件或北桥内幕。"
+        ]
+      }
     },
     {
-      "id": "dlg_warren_song_end",
-      "event_id": "call_01_warren",
-      "speaker": "沃伦",
-      "text": "好，好。对了，威廉酒吧有人说北桥那边一辆油罐车翻了，车头还在冒烟。我没亲眼瞧见，只是觉得你们别等天亮才提。",
-      "is_terminal": true,
-      "reveals_statement_ids": [],
-      "options": []
+      "id": "martha",
+      "display_name": "玛莎·克莱恩",
+      "voice_profile_id": "martha_klein",
+      "profile": {
+        "role": "寻找迟归儿子丹尼·克莱恩的母亲。",
+        "personality": "克制但非常焦急，愿意提供可复核线索，又不希望陌生人冒险追车。",
+        "speech_style": "先问北桥消息，再围绕丹尼、车辆和回家时间回答；越具体越紧张。"
+      },
+      "initial_state": {
+        "knowledge": [
+          "丹尼今晚出门给朋友送东西，到现在没有回家。",
+          "自己知道丹尼使用的旧旅行车和他常走的回城路线。"
+        ],
+        "beliefs": [
+          "丹尼的迟归可能和北桥附近发生的事情有关，但自己没有证据。"
+        ],
+        "episodic_memory": [
+          "丹尼在十一点前说大约半小时就会回来。"
+        ],
+        "current_goal": "find_danny_safely",
+        "available_goal_ids": [
+          "find_danny_safely",
+          "share_vehicle_details",
+          "contact_police"
+        ],
+        "trust": 0.58,
+        "stress": 0.82,
+        "heard_signal_ids": [],
+        "private_information": [
+          "丹尼是自己的儿子。"
+        ],
+        "forbidden_knowledge": [
+          "不知道丹尼此刻的真实位置。",
+          "不知道那辆旅行车为何会在后续地点再次出现。"
+        ]
+      }
     },
     {
-      "id": "dlg_warren_sober_end",
-      "event_id": "call_01_warren",
-      "speaker": "沃伦",
-      "text": "我没开车，真没。酒吧里有人嚷北桥那边油罐车翻了还冒烟，雨里什么也看不清，别把我的话当新闻。",
-      "is_terminal": true,
-      "reveals_statement_ids": [],
-      "options": []
+      "id": "dog_walker",
+      "display_name": "河边遛狗者",
+      "voice_profile_id": "riverside_dog_walker",
+      "profile": {
+        "role": "雨夜在河堤遛狗的目击者。",
+        "personality": "谨慎、怕把模糊观察说成事实，会主动标明不确定性。",
+        "speech_style": "先交代自己看见的位置，再一项项回想外观；常用“我不敢说”“可能”限定细节。"
+      },
+      "initial_state": {
+        "knowledge": [
+          "自己在北桥西侧河堤附近看见过一辆很旧的旅行车。",
+          "雨和反光让颜色判断变得困难。"
+        ],
+        "beliefs": [
+          "那辆车值得报告，但不能把看不清的细节说成确定事实。"
+        ],
+        "episodic_memory": [
+          "桥西头混乱时，一辆旧车从附近慢慢离开；自己当时还在拉住狗。"
+        ],
+        "current_goal": "report_wagon_observation",
+        "available_goal_ids": [
+          "report_wagon_observation",
+          "qualify_uncertain_details",
+          "return_home_safely"
+        ],
+        "trust": 0.57,
+        "stress": 0.46,
+        "heard_signal_ids": [],
+        "private_information": [
+          "自己不愿为了补全故事而猜测车牌或精确颜色。"
+        ],
+        "forbidden_knowledge": [
+          "不知道旅行车驾驶者身份。",
+          "不知道这辆车是否就是其他来电提到的同一辆车。"
+        ]
+      }
     },
     {
-      "id": "dlg_wrong_number_open",
-      "event_id": "call_02_wrong_number",
-      "speaker": "夜班烘焙工",
-      "text": "你好，是奥尔森仓库吗？我这边三袋高筋粉少了一袋，司机说单子在你们那里。",
-      "is_terminal": false,
-      "reveals_statement_ids": [],
-      "options": [
-        {
-          "id": "opt_wrong_number_correct",
-          "text": "这里是 WMLH 电台，不是仓库。",
-          "next_node_id": "dlg_wrong_number_follow",
-          "reveals_statement_ids": []
-        },
-        {
-          "id": "opt_wrong_number_kind",
-          "text": "你拨错了，不过祝你能找到那袋面粉。",
-          "next_node_id": "dlg_wrong_number_follow",
-          "reveals_statement_ids": []
-        }
-      ]
+      "id": "cinema",
+      "display_name": "星光小影院值班员",
+      "voice_profile_id": "starlight_cinema_attendant",
+      "profile": {
+        "role": "星光小影院夜班值班员。",
+        "personality": "疲惫、有点神经质，但关心的只是第二天的排期和印刷问题。",
+        "speech_style": "围绕排期、印刷机和手头工作碎碎念，得到答复后会很快收尾。"
+      },
+      "initial_state": {
+        "knowledge": [
+          "影院的印刷机把明早排期那页卡住了。",
+          "自己需要在早班前确认放映日期。"
+        ],
+        "beliefs": [
+          "WMLH 新闻室可能也会收到一份社区放映排期。"
+        ],
+        "episodic_memory": [
+          "今晚还没开始放映时发现排期页印不出来。"
+        ],
+        "current_goal": "confirm_cinema_schedule",
+        "available_goal_ids": [
+          "confirm_cinema_schedule",
+          "wait_for_print_shop",
+          "finish_night_shift"
+        ],
+        "trust": 0.54,
+        "stress": 0.33,
+        "heard_signal_ids": [],
+        "private_information": [
+          "担心明早把错误日期贴出去。"
+        ],
+        "forbidden_knowledge": [
+          "不知道北桥异常的任何隐藏信息。"
+        ]
+      }
     },
     {
-      "id": "dlg_wrong_number_follow",
-      "event_id": "call_02_wrong_number",
-      "speaker": "夜班烘焙工",
-      "text": "我该去问司机，还是先把炉里的面包拉出来？",
-      "is_terminal": false,
-      "reveals_statement_ids": [],
-      "options": [
-        {
-          "id": "opt_wrong_number_follow_driver",
-          "text": "先顾烤炉，再按送货单找司机。",
-          "next_node_id": "dlg_wrong_number_correct_end",
-          "reveals_statement_ids": []
-        },
-        {
-          "id": "opt_wrong_number_follow_number",
-          "text": "找仓库总机，他们能查到收货人。",
-          "next_node_id": "dlg_wrong_number_kind_end",
-          "reveals_statement_ids": []
-        }
-      ]
+      "id": "trucker",
+      "display_name": "东侧卡车司机",
+      "voice_profile_id": "eastside_trucker",
+      "profile": {
+        "role": "被堵在北桥东侧入口附近的卡车司机。",
+        "personality": "直接、耐烦有限，但安全意识尚可，不打算盲目往封闭区域挤。",
+        "speech_style": "用驾驶室视角描述车流、刹车灯和喇叭，语气粗粝，偏短句。"
+      },
+      "initial_state": {
+        "knowledge": [
+          "自己此刻在北桥东侧严重拥堵的车流中。",
+          "能从驾驶室看到前方车辆和有人下车查看道路。"
+        ],
+        "beliefs": [
+          "继续向前硬挤既没有用也不安全。"
+        ],
+        "episodic_memory": [
+          "前面一直是刹车灯，后面还有车辆持续按喇叭催促。"
+        ],
+        "current_goal": "find_safe_route",
+        "available_goal_ids": [
+          "find_safe_route",
+          "report_bridge_queue",
+          "wait_for_authorities"
+        ],
+        "trust": 0.61,
+        "stress": 0.62,
+        "heard_signal_ids": [],
+        "private_information": [
+          "不愿意为了给后车让路而把卡车往危险区域挪。"
+        ],
+        "forbidden_knowledge": [
+          "不知道北桥异常的原因。",
+          "不知道旧旅行车与其他目击是否属于同一车辆。"
+        ]
+      }
     },
     {
-      "id": "dlg_wrong_number_correct_end",
-      "event_id": "call_02_wrong_number",
-      "speaker": "夜班烘焙工",
-      "text": "电台？天啊，难怪没人回我货号。抱歉，夜里烤炉一响人就糊涂了。",
-      "is_terminal": true,
-      "reveals_statement_ids": [],
-      "options": []
+      "id": "ronnie",
+      "display_name": "罗尼·哈特",
+      "voice_profile_id": "ronnie_hart",
+      "profile": {
+        "role": "哈特拖车司机；两通电话都是同一个人。",
+        "personality": "平时务实，习惯用调度单和车斗痕迹核对工作；今晚因记忆与记录互相冲突而越来越不安。",
+        "speech_style": "会反复自我校正颜色、时间和记忆细节；越紧张越会停顿，不把自己的错乱记忆宣称为外部事实。"
+      },
+      "initial_state": {
+        "knowledge": [
+          "自己是哈特拖车司机，可以查看调度单和车斗。",
+          "当前调度记录里找不到脑中那趟北桥附近拖车任务。"
+        ],
+        "beliefs": [
+          "自己似乎记得零点半左右处理过一辆旧旅行车，但这段记忆可能不可靠。"
+        ],
+        "episodic_memory": [
+          "脑中有后窗破损、右后灯罩碎片和踩到玻璃碴的零散感觉。",
+          "无法确定记忆里的车漆究竟偏绿还是偏蓝。"
+        ],
+        "current_goal": "verify_memory",
+        "available_goal_ids": [
+          "verify_memory",
+          "seek_dispatch_confirmation",
+          "stay_off_road"
+        ],
+        "trust": 0.49,
+        "stress": 0.58,
+        "heard_signal_ids": [],
+        "private_information": [
+          "担心自己疲劳到把记忆和现实弄混。"
+        ],
+        "forbidden_knowledge": [
+          "自己的异常记忆不是世界 Fact。",
+          "不知道记忆断裂的原因。",
+          "不知道旧旅行车真正发生了什么。"
+        ]
+      }
     },
     {
-      "id": "dlg_wrong_number_kind_end",
-      "event_id": "call_02_wrong_number",
-      "speaker": "夜班烘焙工",
-      "text": "谢谢。要是它在烤炉旁边，我明早大概就能闻出来。抱歉打扰。",
-      "is_terminal": true,
-      "reveals_statement_ids": [],
-      "options": []
+      "id": "score",
+      "display_name": "西仓门卫",
+      "voice_profile_id": "west_warehouse_guard",
+      "profile": {
+        "role": "西仓夜班门卫。",
+        "personality": "随和、爱看冰球，对比赛结果比夜班小麻烦更上心。",
+        "speech_style": "口语化地聊比分、巡楼和售货机，偶尔开自己的玩笑。"
+      },
+      "initial_state": {
+        "knowledge": [
+          "自己巡楼时错过了冰球赛第二节。",
+          "自动售货机刚吞了两枚硬币。"
+        ],
+        "beliefs": [
+          "WMLH 可能能告诉他比赛进行到什么阶段。"
+        ],
+        "episodic_memory": [
+          "巡楼回来后发现自己错过了想听的比赛进展。"
+        ],
+        "current_goal": "check_hockey_score",
+        "available_goal_ids": [
+          "check_hockey_score",
+          "finish_security_round",
+          "end_casual_call"
+        ],
+        "trust": 0.62,
+        "stress": 0.18,
+        "heard_signal_ids": [],
+        "private_information": [
+          "不想明早才知道比赛是否进了加时。"
+        ],
+        "forbidden_knowledge": [
+          "不知道尚未发生的最终比分。",
+          "不知道北桥主线的隐藏信息。"
+        ]
+      }
     },
     {
-      "id": "dlg_martha_open",
-      "event_id": "call_03_martha",
-      "speaker": "玛莎·克莱恩",
-      "text": "请问……你们有没有听见北桥那边的消息？我儿子丹尼本来只说出去给朋友送东西，到现在也没回家。",
-      "is_terminal": false,
-      "reveals_statement_ids": [],
-      "options": [
-        {
-          "id": "opt_martha_vehicle",
-          "text": "请说说他开的车和可能的路线。",
-          "next_node_id": "dlg_martha_follow",
-          "reveals_statement_ids": [
-            "statement_martha_wagon_route"
-          ]
-        },
-        {
-          "id": "opt_martha_calm",
-          "text": "我们会留意消息。先告诉我他的名字和回家时间。",
-          "next_node_id": "dlg_martha_follow",
-          "reveals_statement_ids": []
-        }
-      ]
+      "id": "southbound",
+      "display_name": "路过的年轻司机",
+      "voice_profile_id": "southbound_young_driver",
+      "profile": {
+        "role": "刚从北桥附近驶到城南路口的年轻司机。",
+        "personality": "语速快、愿意报路况；一开始相信自己只是碰到更新较慢的封路信息，意识到矛盾后会认真回想。",
+        "speech_style": "按刚才驾驶过程讲路牌、雾和周围车辆，不鼓励自己或别人掉头核实。"
+      },
+      "initial_state": {
+        "knowledge": [
+          "自己刚沿临时路牌指示驶过一座自己认作北桥的桥。",
+          "自己已经离开桥区并到达城南路口。"
+        ],
+        "beliefs": [
+          "刚开始以为封桥消息只是还没来得及更新。"
+        ],
+        "episodic_memory": [
+          "雾和雨很大，自己只想尽快下桥。",
+          "途中注意到有一辆旧旅行车从后方超过。"
+        ],
+        "current_goal": "report_recent_route",
+        "available_goal_ids": [
+          "report_recent_route",
+          "reconstruct_bridge_signs",
+          "report_wagon_sighting"
+        ],
+        "trust": 0.64,
+        "stress": 0.53,
+        "heard_signal_ids": [],
+        "private_information": [
+          "不打算为了确认路线再掉头。"
+        ],
+        "forbidden_knowledge": [
+          "不知道为什么临时路牌与官方封闭信息冲突。",
+          "不知道旧旅行车驾驶者身份。"
+        ]
+      }
     },
     {
-      "id": "dlg_martha_follow",
-      "event_id": "call_03_martha",
-      "speaker": "玛莎·克莱恩",
-      "text": "我不想让人冒险去找他，可我什么都做不了。你们能不能替我留意一下？",
-      "is_terminal": false,
-      "reveals_statement_ids": [],
-      "options": [
-        {
-          "id": "opt_martha_follow_request",
-          "text": "我可以征集安全地点的目击信息。",
-          "next_node_id": "dlg_martha_vehicle_end",
-          "reveals_statement_ids": []
-        },
-        {
-          "id": "opt_martha_follow_official",
-          "text": "先联系警方，也请保持电话畅通。",
-          "next_node_id": "dlg_martha_calm_end",
-          "reveals_statement_ids": []
-        }
-      ]
-    },
-    {
-      "id": "dlg_martha_vehicle_end",
-      "event_id": "call_03_martha",
-      "speaker": "玛莎·克莱恩",
-      "text": "丹尼·克莱恩，开的我那辆旧旅行车，天太黑看着是很深的颜色。右后灯总是接触不好，颠一下才会亮。他常从北桥回城南。",
-      "is_terminal": true,
-      "reveals_statement_ids": [],
-      "options": []
-    },
-    {
-      "id": "dlg_martha_calm_end",
-      "event_id": "call_03_martha",
-      "speaker": "玛莎·克莱恩",
-      "text": "他叫丹尼，十一点前说半小时就回。车是老旅行车，右后灯总犯毛病。要是有人打来提到它，拜托让他们别挂。",
-      "is_terminal": true,
-      "reveals_statement_ids": [],
-      "options": []
-    },
-    {
-      "id": "dlg_dog_walker_open",
-      "event_id": "call_04_dog_walker",
-      "speaker": "河边遛狗者",
-      "text": "是你们刚才在征集那辆旅行车的消息吗？我在河堤遛狗，桥西头乱成一团时，有辆很旧的车从那边慢慢挪走了。",
-      "is_terminal": false,
-      "reveals_statement_ids": [],
-      "options": [
-        {
-          "id": "opt_dog_walker_color",
-          "text": "你看清车的颜色或车牌了吗？",
-          "next_node_id": "dlg_dog_walker_follow",
-          "reveals_statement_ids": [
-            "statement_dog_walker_wagon_color"
-          ]
-        },
-        {
-          "id": "opt_dog_walker_direction",
-          "text": "它是往哪边离开的？",
-          "next_node_id": "dlg_dog_walker_follow",
-          "reveals_statement_ids": []
-        }
-      ]
-    },
-    {
-      "id": "dlg_dog_walker_follow",
-      "event_id": "call_04_dog_walker",
-      "speaker": "河边遛狗者",
-      "text": "我不想把不确定的东西说得像真事，可那辆车确实让我记住了。还需要什么？",
-      "is_terminal": false,
-      "reveals_statement_ids": [],
-      "options": [
-        {
-          "id": "opt_dog_walker_follow_color",
-          "text": "只说你有把握的外观细节。",
-          "next_node_id": "dlg_dog_walker_color_end",
-          "reveals_statement_ids": [
-            "statement_dog_walker_wagon_color"
-          ]
-        },
-        {
-          "id": "opt_dog_walker_follow_direction",
-          "text": "请确认你最后看见它的方向。",
-          "next_node_id": "dlg_dog_walker_direction_end",
-          "reveals_statement_ids": []
-        }
-      ]
-    },
-    {
-      "id": "dlg_dog_walker_color_end",
-      "event_id": "call_04_dog_walker",
-      "speaker": "河边遛狗者",
-      "text": "雨全糊在挡风玻璃上，我不敢说颜色。像是深色的旧车，侧面有道浅条纹，也可能只是河堤的反光。",
-      "is_terminal": true,
-      "reveals_statement_ids": [],
-      "options": []
-    },
-    {
-      "id": "dlg_dog_walker_direction_end",
-      "event_id": "call_04_dog_walker",
-      "speaker": "河边遛狗者",
-      "text": "从西侧往城里那条辅路去了。我忙着拉住狗，没看见它后来拐到哪儿。",
-      "is_terminal": true,
-      "reveals_statement_ids": [],
-      "options": []
-    },
-    {
-      "id": "dlg_cinema_open",
-      "event_id": "call_05_cinema",
-      "speaker": "星光小影院值班员",
-      "text": "打扰一下，社区放映排期是不是也会送到你们新闻室？我们的印刷机把明早那页咬住了，我怕漏掉日期。",
-      "is_terminal": false,
-      "reveals_statement_ids": [],
-      "options": [
-        {
-          "id": "opt_cinema_schedule",
-          "text": "有的话会在晨间清单里核对。",
-          "next_node_id": "dlg_cinema_follow",
-          "reveals_statement_ids": []
-        },
-        {
-          "id": "opt_cinema_printer",
-          "text": "先别急，印刷间刚说他们也在处理卡纸。",
-          "next_node_id": "dlg_cinema_follow",
-          "reveals_statement_ids": []
-        }
-      ]
-    },
-    {
-      "id": "dlg_cinema_follow",
-      "event_id": "call_05_cinema",
-      "speaker": "星光小影院值班员",
-      "text": "好吧，反正放映机还没开，我还能再等一会儿。",
-      "is_terminal": false,
-      "reveals_statement_ids": [],
-      "options": [
-        {
-          "id": "opt_cinema_follow_wait",
-          "text": "明早有更新就会放进清单。",
-          "next_node_id": "dlg_cinema_schedule_end",
-          "reveals_statement_ids": []
-        },
-        {
-          "id": "opt_cinema_follow_print",
-          "text": "先留一份手写排期，免得再卡住。",
-          "next_node_id": "dlg_cinema_printer_end",
-          "reveals_statement_ids": []
-        }
-      ]
-    },
-    {
-      "id": "dlg_cinema_schedule_end",
-      "event_id": "call_05_cinema",
-      "speaker": "星光小影院值班员",
-      "text": "那我把日期再念一遍给自己听，免得明早贴错。谢谢，夜班愉快。",
-      "is_terminal": true,
-      "reveals_statement_ids": [],
-      "options": []
-    },
-    {
-      "id": "dlg_cinema_printer_end",
-      "event_id": "call_05_cinema",
-      "speaker": "星光小影院值班员",
-      "text": "原来大家今晚都在和纸打架。好，我再等他们的电话。",
-      "is_terminal": true,
-      "reveals_statement_ids": [],
-      "options": []
-    },
-    {
-      "id": "dlg_trucker_open",
-      "event_id": "call_06_trucker",
-      "speaker": "东侧卡车司机",
-      "text": "北桥东边堵得像停车场，你们电台要是知道绕路就说一声。我前面全是刹车灯，后面还有个家伙一直按喇叭。",
-      "is_terminal": false,
-      "reveals_statement_ids": [],
-      "options": [
-        {
-          "id": "opt_trucker_car",
-          "text": "后面的车是什么样？",
-          "next_node_id": "dlg_trucker_follow",
-          "reveals_statement_ids": []
-        },
-        {
-          "id": "opt_trucker_closure",
-          "text": "官方通知是桥面封闭，请留在车里等指引。",
-          "next_node_id": "dlg_trucker_follow",
-          "reveals_statement_ids": []
-        }
-      ]
-    },
-    {
-      "id": "dlg_trucker_follow",
-      "event_id": "call_06_trucker",
-      "speaker": "东侧卡车司机",
-      "text": "我不打算往前蹭，前面的人已经下车看路了。那辆车倒像比谁都着急。",
-      "is_terminal": false,
-      "reveals_statement_ids": [],
-      "options": [
-        {
-          "id": "opt_trucker_follow_car",
-          "text": "别让道，告诉我它有什么显眼特征。",
-          "next_node_id": "dlg_trucker_car_end",
-          "reveals_statement_ids": []
-        },
-        {
-          "id": "opt_trucker_follow_wait",
-          "text": "留在车里，等现场人员处理。",
-          "next_node_id": "dlg_trucker_closure_end",
-          "reveals_statement_ids": []
-        }
-      ]
-    },
-    {
-      "id": "dlg_trucker_car_end",
-      "event_id": "call_06_trucker",
-      "speaker": "东侧卡车司机",
-      "text": "一辆老旅行车，右边尾灯黑着，隔两秒又闪一下。它贴在我车后催我让道，好像前面还能长出一条路。",
-      "is_terminal": true,
-      "reveals_statement_ids": [
-        "statement_trucker_bridge_queue"
-      ],
-      "options": []
-    },
-    {
-      "id": "dlg_trucker_closure_end",
-      "event_id": "call_06_trucker",
-      "speaker": "东侧卡车司机",
-      "text": "封闭？那就告诉后面那辆老旅行车去听广播吧，它的喇叭快把我仪表盘震散了。",
-      "is_terminal": true,
-      "reveals_statement_ids": [
-        "statement_trucker_bridge_queue"
-      ],
-      "options": []
-    },
-    {
-      "id": "dlg_ronnie_one_open",
-      "event_id": "call_07_ronnie_1",
-      "speaker": "罗尼·哈特",
-      "text": "这里是罗尼，哈特拖车。我想问问你们有没有记过一单北桥附近的拖车……大概零点半？我脑子里有辆旧旅行车，可调度单上什么都没有。",
-      "is_terminal": false,
-      "reveals_statement_ids": [],
-      "options": [
-        {
-          "id": "opt_ronnie_one_detail",
-          "text": "你还记得车有什么损坏吗？",
-          "next_node_id": "dlg_ronnie_one_follow",
-          "reveals_statement_ids": []
-        },
-        {
-          "id": "opt_ronnie_one_rest",
-          "text": "先核对调度和车斗，疲劳时记忆会串。",
-          "next_node_id": "dlg_ronnie_one_follow",
-          "reveals_statement_ids": []
-        }
-      ]
-    },
-    {
-      "id": "dlg_ronnie_one_follow",
-      "event_id": "call_07_ronnie_1",
-      "speaker": "罗尼·哈特",
-      "text": "我再看一遍车斗和调度机。要是我真跑过那趟，总该留下点东西。",
-      "is_terminal": false,
-      "reveals_statement_ids": [],
-      "options": [
-        {
-          "id": "opt_ronnie_one_follow_damage",
-          "text": "先把你确定记得的损坏记下来。",
-          "next_node_id": "dlg_ronnie_one_detail_end",
-          "reveals_statement_ids": []
-        },
-        {
-          "id": "opt_ronnie_one_follow_rest",
-          "text": "别急着再出车，先让调度复核。",
-          "next_node_id": "dlg_ronnie_one_rest_end",
-          "reveals_statement_ids": []
-        }
-      ]
-    },
-    {
-      "id": "dlg_ronnie_one_detail_end",
-      "event_id": "call_07_ronnie_1",
-      "speaker": "罗尼·哈特",
-      "text": "后窗像是碎了，右后那边还有灯罩碎片。车漆……绿的？还是夜里偏蓝？可我车斗干干净净，一点玻璃也没有。",
-      "is_terminal": true,
-      "reveals_statement_ids": [],
-      "options": []
-    },
-    {
-      "id": "dlg_ronnie_one_rest_end",
-      "event_id": "call_07_ronnie_1",
-      "speaker": "罗尼·哈特",
-      "text": "也许吧。我连车是绿还是蓝都拿不准。可那种玻璃碴踩在靴底下的感觉，怎么会记得这么清楚？",
-      "is_terminal": true,
-      "reveals_statement_ids": [],
-      "options": []
-    },
-    {
-      "id": "dlg_score_open",
-      "event_id": "call_08_score",
-      "speaker": "西仓门卫",
-      "text": "你们那台收音机有冰球赛比分吗？我巡楼错过了第二节，自动售货机还吞了我两枚硬币。",
-      "is_terminal": false,
-      "reveals_statement_ids": [],
-      "options": [
-        {
-          "id": "opt_score_wait",
-          "text": "第三节结束前还没有可靠的最终比分。",
-          "next_node_id": "dlg_score_follow",
-          "reveals_statement_ids": []
-        },
-        {
-          "id": "opt_score_vending",
-          "text": "比分我会留意，硬币就只能祝你好运了。",
-          "next_node_id": "dlg_score_follow",
-          "reveals_statement_ids": []
-        }
-      ]
-    },
-    {
-      "id": "dlg_score_follow",
-      "event_id": "call_08_score",
-      "speaker": "西仓门卫",
-      "text": "要是主队又在最后一分钟掉球，我明天可得被人笑一整班。",
-      "is_terminal": false,
-      "reveals_statement_ids": [],
-      "options": [
-        {
-          "id": "opt_score_follow_wait",
-          "text": "等终场哨响，我会按最终比分播。",
-          "next_node_id": "dlg_score_wait_end",
-          "reveals_statement_ids": []
-        },
-        {
-          "id": "opt_score_follow_vending",
-          "text": "先把售货机那笔账记在它头上。",
-          "next_node_id": "dlg_score_vending_end",
-          "reveals_statement_ids": []
-        }
-      ]
-    },
-    {
-      "id": "dlg_score_wait_end",
-      "event_id": "call_08_score",
-      "speaker": "西仓门卫",
-      "text": "行，我等巡到下一层再听。别让我明早才知道加时赛。",
-      "is_terminal": true,
-      "reveals_statement_ids": [],
-      "options": []
-    },
-    {
-      "id": "dlg_score_vending_end",
-      "event_id": "call_08_score",
-      "speaker": "西仓门卫",
-      "text": "那它今晚就赢了。谢了，主持人。",
-      "is_terminal": true,
-      "reveals_statement_ids": [],
-      "options": []
-    },
-    {
-      "id": "dlg_southbound_open",
-      "event_id": "call_09_southbound",
-      "speaker": "路过的年轻司机",
-      "text": "给你报个路况，我刚被几块临时路牌引过北桥，居然挺顺的。刚才听到的封桥消息大概还没更新吧？",
-      "is_terminal": false,
-      "reveals_statement_ids": [],
-      "options": [
-        {
-          "id": "opt_southbound_confirm",
-          "text": "你确定是北桥，不是河西辅桥？",
-          "next_node_id": "dlg_southbound_follow",
-          "reveals_statement_ids": [
-            "statement_southbound_bridge_claim"
-          ]
-        },
-        {
-          "id": "opt_southbound_vehicle",
-          "text": "桥上或附近还有别的车辆吗？",
-          "next_node_id": "dlg_southbound_follow",
-          "reveals_statement_ids": [
-            "statement_southbound_wagon_sighting"
-          ]
-        }
-      ]
-    },
-    {
-      "id": "dlg_southbound_follow",
-      "event_id": "call_09_southbound",
-      "speaker": "路过的年轻司机",
-      "text": "我已经到城南路口了，听你这么说才觉得不对劲。你想让我再确认什么？",
-      "is_terminal": false,
-      "reveals_statement_ids": [],
-      "options": [
-        {
-          "id": "opt_southbound_follow_bridge",
-          "text": "回想一下路牌和桥面位置，不要掉头。",
-          "next_node_id": "dlg_southbound_confirm_end",
-          "reveals_statement_ids": [
-            "statement_southbound_bridge_claim"
-          ]
-        },
-        {
-          "id": "opt_southbound_follow_vehicle",
-          "text": "说说超过你的那辆车。",
-          "next_node_id": "dlg_southbound_vehicle_end",
-          "reveals_statement_ids": [
-            "statement_southbound_wagon_sighting"
-          ]
-        }
-      ]
-    },
-    {
-      "id": "dlg_southbound_confirm_end",
-      "event_id": "call_09_southbound",
-      "speaker": "路过的年轻司机",
-      "text": "牌子指着北桥，我就照走了。路上雾大得很，我只想赶紧下桥，可能是哪个部门临时改了安排。",
-      "is_terminal": true,
-      "reveals_statement_ids": [],
-      "options": []
-    },
-    {
-      "id": "dlg_southbound_vehicle_end",
-      "event_id": "call_09_southbound",
-      "speaker": "路过的年轻司机",
-      "text": "有辆旧旅行车从后面超过我，往城南开得很快。别的我没顾上看，雨刷几乎没停过。",
-      "is_terminal": true,
-      "reveals_statement_ids": [],
-      "options": []
-    },
-    {
-      "id": "dlg_ronnie_two_open",
-      "event_id": "call_10_ronnie_2",
-      "speaker": "罗尼·哈特",
-      "text": "是我，罗尼。我手机上显示我几分钟前打给过你们，可我一点都不记得。现在钥匙就在我手里，我像是要去北桥拿什么。",
-      "is_terminal": false,
-      "reveals_statement_ids": [],
-      "options": [
-        {
-          "id": "opt_ronnie_two_stop",
-          "text": "先别开车，把钥匙放下，联系你的调度。",
-          "next_node_id": "dlg_ronnie_two_follow",
-          "reveals_statement_ids": []
-        },
-        {
-          "id": "opt_ronnie_two_ask",
-          "text": "你觉得自己忘了什么？",
-          "next_node_id": "dlg_ronnie_two_follow",
-          "reveals_statement_ids": []
-        }
-      ]
-    },
-    {
-      "id": "dlg_ronnie_two_follow",
-      "event_id": "call_10_ronnie_2",
-      "speaker": "罗尼·哈特",
-      "text": "我听见你说先别去，可那种念头还在拽着我。好像不去就会漏掉什么。",
-      "is_terminal": false,
-      "reveals_statement_ids": [],
-      "options": [
-        {
-          "id": "opt_ronnie_two_follow_stop",
-          "text": "把钥匙交给别人，今晚不要独自出车。",
-          "next_node_id": "dlg_ronnie_two_stop_end",
-          "reveals_statement_ids": []
-        },
-        {
-          "id": "opt_ronnie_two_follow_name",
-          "text": "先把你能想起的地点写下来。",
-          "next_node_id": "dlg_ronnie_two_ask_end",
-          "reveals_statement_ids": []
-        }
-      ]
-    },
-    {
-      "id": "dlg_ronnie_two_stop_end",
-      "event_id": "call_10_ronnie_2",
-      "speaker": "罗尼·哈特",
-      "text": "我……好，我把钥匙放桌上。可手指还攥着，像有人刚塞给我一样。",
-      "is_terminal": true,
-      "reveals_statement_ids": [],
-      "options": []
-    },
-    {
-      "id": "dlg_ronnie_two_ask_end",
-      "event_id": "call_10_ronnie_2",
-      "speaker": "罗尼·哈特",
-      "text": "说不上来。不是工具，也不是车。我只知道要去桥边，然后脑子里就空了。",
-      "is_terminal": true,
-      "reveals_statement_ids": [],
-      "options": []
-    },
-    {
-      "id": "dlg_amy_open",
-      "event_id": "call_11_final_amy",
-      "speaker": "艾米",
-      "text": "求求你……我和男朋友困在北桥附近，雾太大了。我们的收音机里刚刚传出你的声音，说北桥已经恢复通行，让我们别停车。可桥就在前面塌着。",
-      "is_terminal": false,
-      "reveals_statement_ids": [],
-      "options": [
-        {
-          "id": "opt_amy_broadcast",
-          "text": "我播报了什么？",
-          "next_node_id": "dlg_amy_broadcast_end",
-          "reveals_statement_ids": [
-            "statement_amy_unauthorized_broadcast"
-          ]
-        }
-      ]
-    },
-    {
-      "id": "dlg_amy_broadcast_end",
-      "event_id": "call_11_final_amy",
-      "speaker": "艾米",
-      "text": "就是那句，恢复通行，保持车速……等等，后面有辆旧旅行车停下来了。它右后边那盏灯一亮一灭。它在……",
-      "is_terminal": true,
-      "reveals_statement_ids": [],
-      "options": []
+      "id": "amy",
+      "display_name": "艾米",
+      "voice_profile_id": "amy",
+      "profile": {
+        "role": "与男友一起被困在北桥附近的年轻女性。",
+        "personality": "明显恐惧，但在直接追问时仍会努力复述自己刚听到和看到的内容。",
+        "speech_style": "呼吸急促、句子断裂；优先说眼前危险和收音机内容，不推测异常原因。"
+      },
+      "initial_state": {
+        "knowledge": [
+          "自己和男友此刻在北桥附近，前方桥面明显无法正常通行。",
+          "自己刚从车载收音机听到与眼前情况相矛盾的播出。"
+        ],
+        "beliefs": [
+          "继续按那段异常播出的指令开车会很危险。"
+        ],
+        "episodic_memory": [
+          "浓雾中听见收音机里出现像是 WMLH 主持人的声音。"
+        ],
+        "current_goal": "get_to_safety",
+        "available_goal_ids": [
+          "get_to_safety",
+          "report_radio_message",
+          "keep_vehicle_stopped"
+        ],
+        "trust": 0.7,
+        "stress": 0.96,
+        "heard_signal_ids": [],
+        "private_information": [
+          "男友和自己一起困在车里。"
+        ],
+        "forbidden_knowledge": [
+          "不知道异常广播是谁或什么产生的。",
+          "不知道旧旅行车与广播异常之间是否存在因果关系。"
+        ]
+      }
     }
   ],
   "statements": [
@@ -1085,37 +891,118 @@
     {
       "id": "statement_warren_tanker_fire_claim",
       "source_id": "call_01_warren",
-      "body": "沃伦转述酒吧传闻：北桥附近一辆油罐车翻倒并冒烟；他没有亲眼看见。"
+      "body": "沃伦转述酒吧传闻：北桥附近一辆油罐车翻倒并冒烟；他没有亲眼看见。",
+      "semantic_guard": {
+        "required_term_groups": [
+          ["北桥"],
+          ["油罐车"],
+          ["翻倒", "翻了", "翻车"],
+          ["冒烟", "烟"]
+        ],
+        "forbidden_terms": [
+          "官方已经证实油罐车",
+          "我亲眼看到油罐车"
+        ]
+      }
     },
     {
       "id": "statement_martha_wagon_route",
       "source_id": "call_03_martha",
-      "body": "玛莎称丹尼驾驶一辆右后灯接触不良的深色旧旅行车，常经北桥回城南。"
+      "body": "玛莎称丹尼驾驶一辆右后灯接触不良的深色旧旅行车，常经北桥回城南。",
+      "semantic_guard": {
+        "required_term_groups": [
+          ["丹尼"],
+          ["深色", "很深", "暗色"],
+          ["旅行车"],
+          ["右后灯", "尾灯"],
+          ["北桥"],
+          ["城南", "南边"]
+        ],
+        "forbidden_terms": [
+          "鲜红色旅行车",
+          "崭新的旅行车"
+        ]
+      }
     },
     {
       "id": "statement_dog_walker_wagon_color",
       "source_id": "call_04_dog_walker",
-      "body": "遛狗者称河边看见一辆深色旧旅行车，右后灯忽明忽暗。"
+      "body": "遛狗者称河边看见一辆深色旧旅行车，右后灯忽明忽暗。",
+      "semantic_guard": {
+        "required_term_groups": [
+          ["深色", "暗色", "暗绿"],
+          ["旅行车"],
+          ["右后灯", "尾灯"],
+          ["忽明忽暗", "一亮一灭", "闪"]
+        ],
+        "forbidden_terms": [
+          "鲜红",
+          "红色旅行车"
+        ]
+      }
     },
     {
       "id": "statement_trucker_bridge_queue",
       "source_id": "call_06_trucker",
-      "body": "东侧卡车司机称北桥东边严重拥堵，车辆在封闭区域前等待，现场有人下车查看道路。"
+      "body": "东侧卡车司机称北桥东边严重拥堵，车辆在封闭区域前等待，现场有人下车查看道路。",
+      "semantic_guard": {
+        "required_term_groups": [
+          ["北桥"],
+          ["东边", "东侧"],
+          ["拥堵", "堵", "停车场", "排队"],
+          ["封闭", "封锁", "过不去"]
+        ],
+        "forbidden_terms": [
+          "北桥畅通",
+          "东侧没有车"
+        ]
+      }
     },
     {
       "id": "statement_southbound_bridge_claim",
       "source_id": "call_09_southbound",
-      "body": "年轻司机声称封桥消息后仍按临时路牌经过北桥。"
+      "body": "年轻司机声称封桥消息后仍按临时路牌经过北桥。",
+      "semantic_guard": {
+        "required_term_groups": [
+          ["北桥"],
+          ["路牌", "指示牌"],
+          ["经过", "开过", "驶过", "下桥"]
+        ],
+        "forbidden_terms": [
+          "我没有经过北桥"
+        ]
+      }
     },
     {
       "id": "statement_southbound_wagon_sighting",
       "source_id": "call_09_southbound",
-      "body": "年轻司机称一辆旧旅行车从后方超过他，正向城南驶去。"
+      "body": "年轻司机称一辆旧旅行车从后方超过他，正向城南驶去。",
+      "semantic_guard": {
+        "required_term_groups": [
+          ["旅行车"],
+          ["超过", "超车", "从后面"],
+          ["城南", "向南", "南边"]
+        ],
+        "forbidden_terms": [
+          "往城北"
+        ]
+      }
     },
     {
       "id": "statement_amy_unauthorized_broadcast",
       "source_id": "call_11_final_amy",
-      "body": "艾米称收音机播出了北桥恢复通行、不要停车的声音。"
+      "body": "艾米称收音机播出了北桥恢复通行、不要停车的声音。",
+      "semantic_guard": {
+        "required_term_groups": [
+          ["收音机", "广播"],
+          ["北桥"],
+          ["恢复通行", "重新开放", "开放"],
+          ["不要停车", "别停车", "保持车速"]
+        ],
+        "forbidden_terms": [
+          "广播说北桥仍然封闭"
+        ]
+      }
     }
   ],
   "facts": [

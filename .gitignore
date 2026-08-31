@@ -10,9 +10,15 @@ exports/
 export/
 build/
 
-# 本地开发夹具与用户存档不应进入版本库
+# 本地开发夹具、用户存档、模型密钥配置与 Agent 协调状态不应进入版本库
 saves/
 user_saves/
+config/agent_runtime.local.json
+.ai-bridge/
+.env
+.env.*
+*.pem
+*.key
 
 # 操作系统与编辑器临时文件
 .DS_Store

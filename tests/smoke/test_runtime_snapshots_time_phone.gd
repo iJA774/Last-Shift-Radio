@@ -48,7 +48,9 @@ func _test_clock_snapshot_round_trip_and_deferred_resume() -> void:
 	_assert_ok(restored.resume_restored_clock(), "延后恢复的时钟必须能显式开始。")
 	_assert_equal(_json_round_trip(restored.create_snapshot()), snapshot, "显式恢复运行后时钟快照必须完整往返。")
 	_assert_equal(restored_start_signals, 0, "恢复运行不是开始新班次，不得发送 shift_started。")
-	_assert_true(restored.advance_real_usec_for_verification(334), "恢复后的时钟必须继续累计分数进度。")
+	# Idle 现为 3 秒/游戏分钟，即每 tick 精确需要 50,000 微秒；保存前已累计
+	# 33,333 微秒，恢复后补足 16,667 微秒应恰好跨过一个 tick。
+	_assert_true(restored.advance_real_usec_for_verification(16_667), "恢复后的时钟必须继续累计分数进度。")
 	_assert_equal(restored.get_current_game_tick(), 1, "恢复后补足的真实时间必须精确产生一个 tick。")
 	var before_invalid_restore: Dictionary = restored.create_snapshot()
 	var invalid_snapshot: Dictionary = snapshot.duplicate(true)

@@ -139,9 +139,10 @@ func restore_snapshot(snapshot: Dictionary, context: Dictionary = {}) -> Diction
 
 
 func _normalize_information_selection(task_id: String, raw_ids: Array[String]) -> Dictionary:
-	if raw_ids.is_empty():
-		return _make_error(task_id, "empty_information_selection", "至少选择一条已经收集的信息后才能发布。")
 	var task: Dictionary = _task_by_id[task_id] as Dictionary
+	var selection_mode: String = String(task["selection_mode"])
+	if raw_ids.is_empty() or (selection_mode == "single" and raw_ids.size() != 1):
+		return _make_error(task_id, "information_selection_count_invalid", "该任务要求选择%s条已收集信息。" % ("恰好一" if selection_mode == "single" else "至少一"))
 	var selected_lookup: Dictionary = {}
 	for information_id: String in raw_ids:
 		if information_id.is_empty():
@@ -262,11 +263,13 @@ func _validate_snapshot_records(raw_records: Array, sent_lookup: Dictionary) -> 
 
 
 func _validate_runtime_task(task: Dictionary) -> Dictionary:
-	for field_name: String in ["id", "name", "source", "sets_condition_id"]:
+	for field_name: String in ["id", "name", "selection_mode", "source", "sets_condition_id"]:
 		if not task.has(field_name) or typeof(task[field_name]) != TYPE_STRING:
 			return _make_error("", "invalid_broadcast_task", "发布任务缺少字符串字段：%s。" % field_name)
 	if String(task["id"]).is_empty() or String(task["name"]).strip_edges().is_empty() or String(task["source"]).strip_edges().is_empty():
 		return _make_error(String(task["id"]), "invalid_broadcast_task", "发布任务 ID、名称和来源不能为空。")
+	if not ["single", "multiple"].has(String(task["selection_mode"])):
+		return _make_error(String(task["id"]), "invalid_selection_mode", "发布任务 selection_mode 必须为 single 或 multiple。")
 	if not task.has("information_items") or typeof(task["information_items"]) != TYPE_ARRAY or (task["information_items"] as Array).is_empty():
 		return _make_error(String(task["id"]), "invalid_broadcast_task", "发布任务至少需要一个 information_items 条目。")
 	var item_ids: Dictionary = {}

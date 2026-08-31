@@ -11,6 +11,7 @@ const CONTENT_LOADER_SCRIPT: GDScript = preload("res://scripts/core/content_load
 const CONTENT_VALIDATOR_SCRIPT: GDScript = preload("res://scripts/core/content_validator.gd")
 const PHONE_SYSTEM_SCRIPT: GDScript = preload("res://scripts/systems/phone_system.gd")
 const STORY_ENGINE_SCRIPT: GDScript = preload("res://scripts/core/story_engine.gd")
+const AGENT_DIALOGUE_TEST_DRIVER_SCRIPT: GDScript = preload("res://tests/smoke/agent_dialogue_test_driver.gd")
 const STORY_PATH: String = "res://data/story/test_night_story.json"
 
 const BRIDGE_SUMMARY: String = "年轻司机声称封桥消息后仍按临时路牌经过北桥。"
@@ -26,15 +27,15 @@ func _init() -> void:
 func _run() -> void:
 	var validated_story: Dictionary = _load_validated_story()
 	if not validated_story.is_empty():
-		await _test_branch_summary(validated_story, "opt_southbound_confirm", BRIDGE_SUMMARY, VEHICLE_SUMMARY)
-		await _test_branch_summary(validated_story, "opt_southbound_vehicle", VEHICLE_SUMMARY, BRIDGE_SUMMARY)
+		await _test_branch_summary(validated_story, ["statement_southbound_bridge_claim"], BRIDGE_SUMMARY, VEHICLE_SUMMARY)
+		await _test_branch_summary(validated_story, ["statement_southbound_wagon_sighting"], VEHICLE_SUMMARY, BRIDGE_SUMMARY)
 		await _test_missed_call_has_no_summary(validated_story)
 	_finish()
 
 
 func _test_branch_summary(
 	validated_story: Dictionary,
-	option_id: String,
+	asserted_statement_ids: Array,
 	expected_summary: String,
 	hidden_summary: String
 ) -> void:
@@ -44,8 +45,11 @@ func _test_branch_summary(
 	_assert_ok(engine.advance_to_game_tick(60), "年轻司机来电必须触发。")
 	_assert_true(phone.answer_call(60), "年轻司机来电必须能接听。")
 	_assert_true(phone.enter_dialogue_choice(), "年轻司机来电必须能进入选择。")
-	_assert_ok(engine.begin_active_call_dialogue(), "年轻司机对话必须能开始。")
-	_assert_ok(engine.select_dialogue_option(option_id), "分支 %s 必须可提交。" % option_id)
+	var dialogue_driver: RefCounted = AGENT_DIALOGUE_TEST_DRIVER_SCRIPT.new()
+	_assert_ok(
+		dialogue_driver.call(&"commit_active_call", engine, "call_09_southbound", "southbound", asserted_statement_ids, "这是本次自由对话实际取得的可核对线索。"),
+		"年轻司机 committed ActorTurn 必须可提交。"
+	)
 	_assert_true(phone.exit_dialogue_choice(), "取得线索后电话必须能恢复已接通。")
 	_assert_true(phone.finish_call(61), "结束通话后必须生成真实来电记录。")
 
