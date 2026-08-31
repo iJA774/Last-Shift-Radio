@@ -145,6 +145,14 @@ func _run() -> void:
 	_assert_ok(story.validate_snapshot(story_snapshot, story_context), "Story snapshot 必须验证动态 interaction、committed Delivery、feedback Signal 与 Phone call record 的完整关系。")
 	_assert_true((story_snapshot.get("answered_interaction_event_ids", []) as Array).has(delivery_id), "Story snapshot 必须保存动态 interaction answered ID。")
 	_assert_true((story_snapshot.get("completed_interaction_event_ids", []) as Array).has(delivery_id), "Story snapshot 必须保存动态 interaction completed ID。")
+	var snapshot_signal_records: Array = ((story_snapshot["signal"] as Dictionary)["records"] as Array)
+	_assert_equal(_count_signal_type(snapshot_signal_records, "delivery_outcome"), 1, "动态电话必须保留原 Delivery feedback Observation。")
+	_assert_equal(_count_signal_type(snapshot_signal_records, "phone_terminal"), 1, "动态电话终止后必须生成一条 phone_terminal Observation。")
+	_assert_equal(_count_signal_type(snapshot_signal_records, "interaction_outcome"), 1, "动态 completed interaction 必须生成一条 interaction_outcome Observation。")
+	var outcome_records: Array = ((story_snapshot["interaction_outcome"] as Dictionary)["outcomes"] as Array)
+	_assert_equal(outcome_records.size(), 1, "动态 completed interaction 必须且只能提交一条 OutcomeRecord。")
+	if outcome_records.size() == 1:
+		_assert_equal(String((outcome_records[0] as Dictionary).get("actor_id", "")), "martha", "动态 Outcome Actor 必须来自 committed Delivery source Actor。")
 
 	coordinator.release_runtime("test_complete")
 	story.release_runtime()
@@ -181,6 +189,14 @@ func _finish() -> void:
 		return
 	print("[测试][DynamicDeliveryAgentCall] 通过：Delivery call_station 可建立受限动态 ConversationSession。")
 	quit(0)
+
+
+func _count_signal_type(records: Array, signal_type: String) -> int:
+	var count: int = 0
+	for raw_record: Variant in records:
+		if raw_record is Dictionary and String((raw_record as Dictionary).get("signal_type", "")) == signal_type:
+			count += 1
+	return count
 
 
 func _assert_ok(result: Variant, message: String) -> void:

@@ -13,6 +13,7 @@ var _restore_perception_count: int = 0
 func _init() -> void:
 	_test_broadcast_signal_commit_and_dedupe()
 	_test_delivery_feedback_signal()
+	_test_observation_signal_variants()
 	_test_actor_perception_commit()
 	if _has_failed:
 		print("[测试][SignalSystem] 失败。")
@@ -125,6 +126,56 @@ func _test_delivery_feedback_signal() -> void:
 	_assert_equal(_restore_committed_count, 0, "恢复 Delivery feedback 不得重发 signal_committed。")
 	_assert_equal(_restore_perception_count, 0, "恢复 Delivery feedback 不得重放 Actor perception。")
 	_assert_equal(restored.get_actor_perceived_signal_ids("ronnie"), ["signal_delivery_outcome_delivery_message_ronnie_1"], "恢复后 source Actor perception 查询必须保持。")
+
+
+func _test_observation_signal_variants() -> void:
+	var system: SignalSystem = SIGNAL_SYSTEM_SCRIPT.new() as SignalSystem
+	_assert_ok(system.configure(["ronnie", "martha"], _broadcast_tasks()), "Observation v2 测试必须先配置 Actor 集合。")
+	var phone_result: Dictionary = system.commit_phone_terminal("call_test", "answered", "ronnie", 800)
+	_assert_ok(phone_result, "Agent 电话终态必须提交 phone_terminal Observation。")
+	if bool(phone_result.get("ok", false)):
+		var phone_record: Dictionary = phone_result["record"] as Dictionary
+		_assert_equal(String(phone_record["signal_id"]), "signal_phone_terminal_call_test", "phone_terminal signal_id 必须从 event_id 派生。")
+		_assert_equal(phone_record["committed_recipients"], ["ronnie"], "phone_terminal 只能反馈给 source Actor。")
+	_assert_ok(system.commit_message_read("message_test", 801), "已读短信必须提交 message_read Observation。")
+	_assert_equal(system.get_actor_perceived_signal_ids("martha"), [], "message_read 当前不得直接泄露给 Actor。")
+	var outcome_record: Dictionary = {
+		"outcome_id": "interaction_outcome_call_test",
+		"event_id": "call_test",
+		"actor_id": "ronnie",
+		"disposition": "cooperated",
+		"terminal_reason": "interaction_completed",
+		"metric_deltas": {"trust": 0.0, "stress": 0.0, "suspicion": 0.0},
+		"created_at_tick": 802,
+	}
+	_assert_ok(system.commit_interaction_outcome(outcome_record), "确定性 InteractionOutcome 必须提交 source Actor Observation。")
+	var task_transition: Dictionary = {
+		"transition_id": "task_transition_task_test_broadcast_active",
+		"task_id": "task_test_broadcast",
+		"from_status": "pending",
+		"to_status": "active",
+		"created_at_tick": 803,
+		"reason": "activation_requirements_met",
+	}
+	_assert_ok(system.commit_task_transition(task_transition, ["martha", "ronnie"]), "Task transition 必须按 StoryEngine 提供的确定性 recipients 提交 Observation。")
+	_assert_equal(system.get_actor_perceived_signal_ids("ronnie"), [
+		"signal_phone_terminal_call_test",
+		"signal_interaction_outcome_call_test",
+		"signal_task_transition_task_transition_task_test_broadcast_active",
+	], "source Actor 必须按 commit 顺序感知 phone/outcome/task Observation。")
+	var duplicate_phone: Dictionary = system.commit_phone_terminal("call_test", "answered", "ronnie", 800)
+	_assert_ok(duplicate_phone, "重复 phone_terminal commit 必须幂等。")
+	_assert_true(bool(duplicate_phone.get("duplicate", false)), "重复 phone_terminal 必须标记 duplicate。")
+	_assert_error_code(system.commit_phone_terminal("call_test", "answered", "ronnie", 804), "signal_id_conflict", "同一 event_id 不得映射到不同 terminal tick。")
+	var snapshot: Dictionary = system.create_snapshot().duplicate(true)
+	_assert_ok(system.validate_snapshot(snapshot), "Observation v2 Signal snapshot 必须通过严格自校验。")
+	var invalid_snapshot: Dictionary = snapshot.duplicate(true)
+	for raw_record: Variant in invalid_snapshot["records"] as Array:
+		var record: Dictionary = raw_record as Dictionary
+		if String(record.get("signal_type", "")) == "message_read":
+			(record["committed_recipients"] as Array).append("ronnie")
+			break
+	_assert_error_code(system.validate_snapshot(invalid_snapshot), "signal_snapshot_recipients_mismatch", "message_read snapshot 不得伪造 Actor audience。")
 
 
 func _test_actor_perception_commit() -> void:

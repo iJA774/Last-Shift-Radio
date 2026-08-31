@@ -73,6 +73,9 @@ func commit_interaction_outcome(input: Dictionary, authoritative_effects: Dictio
 		for field_name: String in ["session_id", "actor_id", "terminal_reason", "last_speech_act", "created_at_tick"]:
 			if existing[field_name] != normalized[field_name]:
 				return _error("interaction_outcome_conflict", "同一 event_id 不能提交不同 InteractionOutcome：%s。" % event_id)
+		if (existing["asserted_claim_ids"] as Array) != (normalized["asserted_claim_ids"] as Array) \
+		or (existing["metric_deltas"] as Dictionary) != (validation["deltas"] as Dictionary):
+			return _error("interaction_outcome_conflict", "同一 event_id 不能提交不同 claims 或 authoritative effects：%s。" % event_id)
 		return {"ok": true, "duplicate": true, "record": _read_only(existing), "actor_state_patch": _actor_state_patch(String(existing["actor_id"]))}
 
 	var actor_id: String = String(normalized["actor_id"])
@@ -350,7 +353,11 @@ func _derive_disposition(terminal_reason: String, speech_act: String) -> String:
 			return "refused"
 		"uncertain":
 			return "uncertain"
-		"answer", "volunteer", "clarify":
+		"answer":
+			return "cooperated"
+		"volunteer":
+			return "cooperated"
+		"clarify":
 			return "cooperated"
 	return "completed"
 

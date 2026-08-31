@@ -6,7 +6,7 @@ extends RefCounted
 ## create_snapshot / validate_snapshot / restore_snapshot 契约，并负责 JSON 的完整
 ## 校验和可恢复的替换写入。剧情内容本身仍由 Main 在恢复时先加载并校验。
 
-const SAVE_FORMAT_VERSION: int = 5
+const SAVE_FORMAT_VERSION: int = 6
 const SLOT_IDS: Array[String] = ["slot_1", "slot_2", "slot_3"]
 const DEFAULT_SAVE_DIRECTORY: String = "user://saves"
 

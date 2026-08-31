@@ -171,8 +171,8 @@ func commit_interaction_outcome(outcome_record: Dictionary) -> Dictionary:
 			return _error("signal_interaction_outcome_invalid", "InteractionOutcome signal 缺少字段：%s。" % field_name)
 	if not outcome_record["event_id"] is String or String(outcome_record["event_id"]).strip_edges().is_empty():
 		return _error("signal_interaction_outcome_invalid", "InteractionOutcome signal event_id 无效。")
-	if not outcome_record["outcome_id"] is String or String(outcome_record["outcome_id"]).strip_edges().is_empty():
-		return _error("signal_interaction_outcome_invalid", "InteractionOutcome signal outcome_id 无效。")
+	if not outcome_record["outcome_id"] is String or String(outcome_record["outcome_id"]) != "interaction_outcome_%s" % String(outcome_record["event_id"]):
+		return _error("signal_interaction_outcome_invalid", "InteractionOutcome signal outcome_id 必须由 event_id 确定性派生。")
 	if not outcome_record["actor_id"] is String or not _actor_ids.has(String(outcome_record["actor_id"])):
 		return _error("signal_interaction_outcome_actor_invalid", "InteractionOutcome signal actor_id 不属于当前注册 Actor。")
 	if not outcome_record["disposition"] is String or not INTERACTION_DISPOSITIONS.has(String(outcome_record["disposition"])):
@@ -182,9 +182,14 @@ func commit_interaction_outcome(outcome_record: Dictionary) -> Dictionary:
 	if not outcome_record["metric_deltas"] is Dictionary:
 		return _error("signal_interaction_outcome_metrics_invalid", "InteractionOutcome signal metric_deltas 必须是对象。")
 	var metric_deltas: Dictionary = outcome_record["metric_deltas"] as Dictionary
+	if metric_deltas.size() != 3:
+		return _error("signal_interaction_outcome_metrics_invalid", "InteractionOutcome signal metric_deltas 必须且只能包含 trust/stress/suspicion。")
 	for metric: String in ["trust", "stress", "suspicion"]:
 		if not metric_deltas.has(metric) or (typeof(metric_deltas[metric]) != TYPE_INT and typeof(metric_deltas[metric]) != TYPE_FLOAT):
 			return _error("signal_interaction_outcome_metrics_invalid", "InteractionOutcome signal metric_deltas 必须包含 trust/stress/suspicion 数值。")
+		var delta: float = float(metric_deltas[metric])
+		if is_nan(delta) or is_inf(delta) or delta < -1.0 or delta > 1.0:
+			return _error("signal_interaction_outcome_metrics_invalid", "InteractionOutcome signal metric_deltas.%s 必须限制在 -1..1。" % metric)
 	if typeof(outcome_record["created_at_tick"]) != TYPE_INT or int(outcome_record["created_at_tick"]) < 0:
 		return _error("signal_interaction_outcome_tick_invalid", "InteractionOutcome signal created_at_tick 无效。")
 	var event_id: String = String(outcome_record["event_id"])
@@ -577,6 +582,9 @@ func _validate_observation_snapshot_record(record: Dictionary) -> Dictionary:
 			for metric: String in ["trust", "stress", "suspicion"]:
 				if not metric_deltas.has(metric) or (typeof(metric_deltas[metric]) != TYPE_INT and typeof(metric_deltas[metric]) != TYPE_FLOAT):
 					return _error("signal_snapshot_payload_invalid", "interaction_outcome metric_deltas.%s 必须是数值。" % metric)
+				var delta: float = float(metric_deltas[metric])
+				if is_nan(delta) or is_inf(delta) or delta < -1.0 or delta > 1.0:
+					return _error("signal_snapshot_payload_invalid", "interaction_outcome metric_deltas.%s 必须限制在 -1..1。" % metric)
 			expected_audience = AUDIENCE_SOURCE_ACTOR
 			if recipients != [String(payload["actor_id"])]:
 				return _error("signal_snapshot_recipients_mismatch", "interaction_outcome 必须只反馈给 source Actor。")

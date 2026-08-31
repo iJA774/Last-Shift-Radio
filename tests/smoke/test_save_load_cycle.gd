@@ -88,11 +88,19 @@ func _run() -> void:
 	var save_result: Dictionary = save_manager.save_slot("slot_1", app.get("_content_validation_result") as Dictionary, game_clock, story, agent_runtime, phone, screen)
 	_assert_true(bool(save_result.get("ok", false)), "RINGING 状态必须能够成功写入槽位。")
 	var saved_document: Dictionary = save_result.get("document", {}) as Dictionary
-	_assert_equal(int(saved_document["save_format_version"]), 5, "Autonomous orchestration 与 WorldBook identity 落地后正式槽位格式必须提升为 5。")
+	_assert_equal(int(saved_document["save_format_version"]), 6, "Task/InteractionOutcome/Observation v2 落地后正式槽位格式必须提升为 6。")
 	_assert_equal(String(saved_document.get("worldbook_id", "")), "last_shift_radio_default", "正式槽位必须绑定当前 WorldBook ID。")
 	_assert_equal(int(saved_document.get("worldbook_version", 0)), 1, "正式槽位必须绑定当前 WorldBook version。")
-	var saved_story_signal: Dictionary = ((saved_document["story_state"] as Dictionary)["signal"] as Dictionary)
+	var saved_story: Dictionary = saved_document["story_state"] as Dictionary
+	_assert_equal(int(saved_story["snapshot_version"]), 6, "Task/InteractionOutcome authority 落地后 StoryEngine snapshot 必须为 v6。")
+	var saved_story_signal: Dictionary = saved_story["signal"] as Dictionary
+	var saved_task_snapshot: Dictionary = saved_story["task"] as Dictionary
+	var saved_outcome_snapshot: Dictionary = saved_story["interaction_outcome"] as Dictionary
 	_assert_equal(_count_signal_type(saved_story_signal["records"] as Array, "player_broadcast"), 1, "正式槽位必须随 StoryEngine snapshot 保存 committed player_broadcast SignalRecord。")
+	_assert_equal(_count_signal_type(saved_story_signal["records"] as Array, "phone_terminal"), 3, "两通已接听来电加 01:08 错号漏接必须各自持久化一条 phone_terminal Observation。")
+	_assert_equal(_count_signal_type(saved_story_signal["records"] as Array, "interaction_outcome"), 2, "两个 completed interaction 必须各自持久化一条 interaction_outcome Observation。")
+	_assert_equal((saved_outcome_snapshot["outcomes"] as Array).size(), 2, "正式槽位必须保存两个确定性 InteractionOutcomeRecord。")
+	_assert_true(not (saved_task_snapshot["transitions"] as Array).is_empty(), "正式槽位必须保存 TaskSystem transition authority，而不是只保存旧 UI 决策。")
 	var saved_tick: int = int((saved_document["game_clock_state"] as Dictionary)["current_game_tick"])
 	_assert_true(saved_tick >= 1_380 and saved_tick < 1_440, "保存必须落在 01:23 的响铃窗口。")
 	_assert_equal(String((saved_document["phone_state"] as Dictionary)["state"]), "RINGING", "电话快照必须保存响铃状态。")
@@ -151,7 +159,7 @@ func _run() -> void:
 	var unknown_field_result: Dictionary = save_manager.validate_document(unknown_field_document, "test_night_story", 2)
 	_assert_true(not bool(unknown_field_result.get("ok", false)) and String(unknown_field_result.get("error_code", "")) == "unknown_top_level_field", "未知顶层字段必须被严格拒绝。")
 	var wrong_version_document: Dictionary = saved_document.duplicate(true)
-	wrong_version_document["save_format_version"] = 6
+	wrong_version_document["save_format_version"] = 7
 	var wrong_version_result: Dictionary = save_manager.validate_document(wrong_version_document, "test_night_story", 2)
 	_assert_true(not bool(wrong_version_result.get("ok", false)) and String(wrong_version_result.get("error_code", "")) == "unsupported_save_format_version", "错误存档版本必须被严格拒绝。")
 	var wrong_worldbook_document: Dictionary = saved_document.duplicate(true)
