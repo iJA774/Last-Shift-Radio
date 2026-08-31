@@ -41,9 +41,9 @@ func commit_active_call(
 	})
 	if not bool(commit_result.get("ok", false)):
 		# 测试夹具失败也要释放 StoryEngine 的 active interaction，避免污染后续断言。
-		story.complete_agent_interaction(session_id, event_id, "smoke_commit_rejected")
+		story.complete_agent_interaction(session_id, event_id, "interaction_completed")
 		return commit_result
-	var complete_result: Dictionary = story.complete_agent_interaction(session_id, event_id, "smoke_committed_turn_complete")
+	var complete_result: Dictionary = story.complete_agent_interaction(session_id, event_id, "interaction_completed")
 	if not bool(complete_result.get("ok", false)):
 		return complete_result
 	return {

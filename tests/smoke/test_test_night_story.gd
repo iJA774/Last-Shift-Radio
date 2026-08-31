@@ -290,7 +290,7 @@ func _complete_agent_call(
 		"actor_turn": actor_turn,
 	}) as Dictionary
 	_assert_ok(commit_result, "%s committed ActorTurn 必须能由 StoryEngine 权威提交。" % event_id)
-	_assert_ok(engine.call(&"complete_agent_interaction", session_id, event_id, "smoke_call_complete"), "%s Agent interaction 必须能正式完成。" % event_id)
+	_assert_ok(engine.call(&"complete_agent_interaction", session_id, event_id, "interaction_completed"), "%s Agent interaction 必须能正式完成。" % event_id)
 	_assert_true(bool(phone.call(&"exit_dialogue_choice")), "%s 完成 interaction 后必须回到 Connected。" % event_id)
 	_assert_true(bool(phone.call(&"finish_call", tick)), "%s 必须由 PhoneSystem 正式结束。" % event_id)
 

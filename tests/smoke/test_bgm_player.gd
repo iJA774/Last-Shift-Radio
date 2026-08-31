@@ -6,6 +6,7 @@ const MENU_BGM_PATH: String = "res://音效/BGM/dream_2_ambience_loop_110s.ogg"
 const SHIFT_BGM_PATH: String = "res://音效/BGM/post_apocalyptic_wastelands_loop_180s.ogg"
 const MENU_VOLUME_DB: float = -4.0
 const SILENT_VOLUME_DB: float = -80.0
+const WALL_WATCHDOG_SECONDS: float = 10.0
 
 var _has_failed: bool = false
 
@@ -49,18 +50,18 @@ func _run() -> void:
 
 	_assert_ok(bgm_player.call(&"transition_to_shift_bgm"), "加载页开始时必须能够启动菜单到夜班的过渡。")
 	_assert_true(bool((bgm_player.call(&"transition_to_shift_bgm") as Dictionary).get("already_transitioning", false)), "重复开始请求不得重置两秒淡出。")
-	await create_timer(0.35, true, false, true).timeout
+	_assert_true(await _wait_engine_seconds(bgm_player, 0.35), "菜单淡出阶段必须在墙钟看门狗内推进。")
 	var fading_snapshot: Dictionary = bgm_player.call(&"get_playback_snapshot") as Dictionary
 	_assert_equal(String(fading_snapshot.get("mode", "")), "MENU_TO_SHIFT", "前两秒必须仍处于菜单淡出阶段。")
 	_assert_true(float(fading_snapshot.get("menu_volume_db", MENU_VOLUME_DB)) < MENU_VOLUME_DB, "菜单曲必须从加载开始平滑降低。")
 	if ambience_bus_index >= 0:
 		_assert_true(is_equal_approx(AudioServer.get_bus_volume_db(ambience_bus_index), ambience_before_db), "淡出期间不得修改 Ambience 总线。")
 
-	await create_timer(1.85, true, false, true).timeout
+	_assert_true(await _wait_engine_seconds(bgm_player, 1.85), "菜单两秒淡出必须在墙钟看门狗内完成。")
 	var shift_fade_snapshot: Dictionary = bgm_player.call(&"get_playback_snapshot") as Dictionary
 	_assert_equal(String(shift_fade_snapshot.get("mode", "")), "SHIFT", "菜单曲两秒静音后必须进入夜班曲淡入。")
 	_assert_true(float(shift_fade_snapshot.get("menu_volume_db", 0.0)) <= SILENT_VOLUME_DB + 0.1, "菜单曲达到最低响度后必须停止。")
-	await create_timer(0.85, true, false, true).timeout
+	_assert_true(await _wait_engine_seconds(bgm_player, 0.85), "夜班音乐淡入必须在墙钟看门狗内完成。")
 	var shift_snapshot: Dictionary = bgm_player.call(&"get_playback_snapshot") as Dictionary
 	_assert_equal(String(shift_snapshot.get("mode", "")), "SHIFT", "夜班曲淡入后必须保持夜班状态。")
 	_assert_true(is_equal_approx(float(shift_snapshot.get("shift_volume_db", SILENT_VOLUME_DB)), 0.0), "夜班 BGM 必须平滑恢复自身标准响度。")
@@ -68,7 +69,7 @@ func _run() -> void:
 		_assert_true(is_equal_approx(AudioServer.get_bus_volume_db(ambience_bus_index), ambience_before_db), "夜班曲淡入也不得修改 Ambience 总线。")
 
 	_assert_ok(bgm_player.call(&"play_menu_bgm"), "返回主菜单必须能启动反向平滑切换。")
-	await create_timer(0.70, true, false, true).timeout
+	_assert_true(await _wait_engine_seconds(bgm_player, 0.70), "返回菜单交叉淡化必须在墙钟看门狗内完成。")
 	var returned_menu_snapshot: Dictionary = bgm_player.call(&"get_playback_snapshot") as Dictionary
 	_assert_equal(String(returned_menu_snapshot.get("mode", "")), "MENU", "返回主菜单后必须恢复菜单音乐状态。")
 	_assert_true(is_equal_approx(float(returned_menu_snapshot.get("menu_volume_db", SILENT_VOLUME_DB)), MENU_VOLUME_DB), "反向切换后菜单曲必须恢复独立降低后的响度。")
@@ -82,6 +83,17 @@ func _run() -> void:
 	var released_snapshot: Dictionary = bgm_player.call(&"get_playback_snapshot") as Dictionary
 	_assert_equal(int(released_snapshot.get("player_count", -1)), 0, "专项清理后不得保留 BGM 播放器。")
 	_finish()
+
+
+func _wait_engine_seconds(node: Node, duration_seconds: float) -> bool:
+	var elapsed_seconds: float = 0.0
+	var wall_started_at_msec: int = Time.get_ticks_msec()
+	while elapsed_seconds < duration_seconds:
+		await process_frame
+		elapsed_seconds += node.get_process_delta_time()
+		if float(Time.get_ticks_msec() - wall_started_at_msec) / 1000.0 > WALL_WATCHDOG_SECONDS:
+			return false
+	return true
 
 
 func _assert_ok(result: Variant, message: String) -> void:

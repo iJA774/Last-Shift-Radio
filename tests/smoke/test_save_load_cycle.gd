@@ -67,7 +67,7 @@ func _run() -> void:
 	var wagon_information_ids: Array[String] = ["info_wagon_martha_route"]
 	_assert_true(bool(story.call(&"send_broadcast_task", "task_broadcast_wagon_witness_request", wagon_information_ids).get("ok", false)), "征集目击发布任务必须成功发送。")
 	var signal_state: Dictionary = story.call(&"get_signal_state") as Dictionary
-	_assert_true(bool(signal_state.get("available", false)) and (signal_state.get("records", []) as Array).size() == 1, "广播提交后必须同步产生一条 committed SignalRecord。")
+	_assert_true(bool(signal_state.get("available", false)) and _count_signal_type(signal_state.get("records", []) as Array, "player_broadcast") == 1, "广播提交后必须同步产生一条 player_broadcast SignalRecord。")
 	var martha_signal_snapshot: Dictionary = agent_runtime.call(&"get_actor_snapshot", "martha") as Dictionary
 	_assert_true(bool(martha_signal_snapshot.get("ok", false)), "广播提交后必须仍可读取玛莎 Actor snapshot。")
 	if bool(martha_signal_snapshot.get("ok", false)):
@@ -92,7 +92,7 @@ func _run() -> void:
 	_assert_equal(String(saved_document.get("worldbook_id", "")), "last_shift_radio_default", "正式槽位必须绑定当前 WorldBook ID。")
 	_assert_equal(int(saved_document.get("worldbook_version", 0)), 1, "正式槽位必须绑定当前 WorldBook version。")
 	var saved_story_signal: Dictionary = ((saved_document["story_state"] as Dictionary)["signal"] as Dictionary)
-	_assert_equal((saved_story_signal["records"] as Array).size(), 1, "正式槽位必须随 StoryEngine snapshot 保存 committed SignalRecord。")
+	_assert_equal(_count_signal_type(saved_story_signal["records"] as Array, "player_broadcast"), 1, "正式槽位必须随 StoryEngine snapshot 保存 committed player_broadcast SignalRecord。")
 	var saved_tick: int = int((saved_document["game_clock_state"] as Dictionary)["current_game_tick"])
 	_assert_true(saved_tick >= 1_380 and saved_tick < 1_440, "保存必须落在 01:23 的响铃窗口。")
 	_assert_equal(String((saved_document["phone_state"] as Dictionary)["state"]), "RINGING", "电话快照必须保存响铃状态。")
@@ -229,7 +229,8 @@ func _run() -> void:
 	if voice_player != null:
 		var restored_voice_snapshot: Dictionary = voice_player.call(&"get_playback_snapshot") as Dictionary
 		_assert_true(bool(restored_voice_snapshot.get("manifest_loaded", false)) and bool(restored_voice_snapshot.get("bound", false)), "读取 staging 校验并提交后必须把人物配音绑定到恢复的 StoryEngine。")
-	_assert_equal(int(game_clock.call(&"get_current_game_tick")), saved_tick, "读取后时钟必须精确恢复到保存时刻。")
+	var restored_tick: int = int(game_clock.call(&"get_current_game_tick"))
+	_assert_true(restored_tick >= saved_tick and restored_tick <= saved_tick + 2, "读取提交后时钟必须从保存 tick 继续运行，不能倒退或跳时。实际=%d，保存=%d。" % [restored_tick, saved_tick])
 	_assert_equal(String(restored_phone.call(&"get_state_name")), "RINGING", "读取后电话必须继续原来的响铃状态。")
 	_assert_equal(String(restored_phone.call(&"get_active_event_id")), "call_04_dog_walker", "读取后不得重新触发或替换活动来电。")
 	_assert_equal(restored_screen.get_current_view_id(), GameScreen.VIEW_COMPUTER, "读取后必须回到保存时的固定视图。")
@@ -335,6 +336,14 @@ func _count_event_records(records: Array, event_id: String) -> int:
 	var count: int = 0
 	for raw_record: Variant in records:
 		if raw_record is Dictionary and String((raw_record as Dictionary).get("event_id", "")) == event_id:
+			count += 1
+	return count
+
+
+func _count_signal_type(records: Array, signal_type: String) -> int:
+	var count: int = 0
+	for raw_record: Variant in records:
+		if raw_record is Dictionary and String((raw_record as Dictionary).get("signal_type", "")) == signal_type:
 			count += 1
 	return count
 

@@ -149,12 +149,15 @@ func _run() -> void:
 	if current_tick_before_trucker < trucker_target_tick:
 		_assert_true(clock.advance_ticks_for_verification(trucker_target_tick - current_tick_before_trucker), "时钟必须推进到 01:33 的 B=卡车司机窗口。")
 	_assert_equal(String(phone.call(&"get_active_event_id")), "call_06_trucker", "跨过非必要窗口后必须真实触发 B=卡车司机。")
-	_assert_true(bool(phone.call(&"answer_call", trucker_target_tick)), "卡车司机来电必须能接听。")
+	# 前面的真实 UI Tween/Timer 运行期间 GameClock 不暂停；接听必须使用当前权威 tick，
+	# 不能把窗口起点 01:33 当成实际响铃开始时刻回填。
+	var trucker_answer_tick: int = int(clock.get_current_game_tick())
+	_assert_true(bool(phone.call(&"answer_call", trucker_answer_tick)), "卡车司机来电必须能接听。")
 	_assert_true(bool(phone.call(&"enter_dialogue_choice")), "v2 广播夹具必须进入自由对话线路状态。")
 	_assert_ok(dialogue_driver.call(&"commit_active_call", story_engine, "call_06_trucker", "trucker", ["statement_trucker_bridge_queue"], "北桥东侧严重拥堵，车辆都停在封闭区域前等待。"), "v2 广播夹具必须通过 committed ActorTurn 揭示卡车司机 Statement。")
 	# v2 不再存在卡车司机预制 option。
 	# committed ActorTurn 已完成 StoryEngine interaction。
-	_assert_true(bool(phone.call(&"exit_dialogue_choice")) and bool(phone.call(&"finish_call", trucker_target_tick)), "卡车司机电话必须由 PhoneSystem 正式结束。")
+	_assert_true(bool(phone.call(&"exit_dialogue_choice")) and bool(phone.call(&"finish_call", int(clock.get_current_game_tick()))), "卡车司机电话必须由 PhoneSystem 正式结束。")
 	var selected_bridge_information: Array[String] = ["info_bridge_tanker_fire", "info_bridge_east_queue"]
 	if microphone_panel != null:
 		microphone_panel.emit_signal(&"broadcast_requested", "task_broadcast_bridge_closure", selected_bridge_information)

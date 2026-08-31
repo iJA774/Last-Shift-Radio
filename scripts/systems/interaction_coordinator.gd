@@ -323,16 +323,15 @@ func _finish_actor_requested_call() -> Dictionary:
 	var current_tick_result: Dictionary = _read_current_game_tick()
 	if not bool(current_tick_result.get("ok", false)):
 		return current_tick_result
+	# 先以明确的 actor_requested_end 归档，再结束电话；否则 PhoneSystem 的同步
+	# state_changed 会先把终态压扁成通用 phone_ended，丢失确定性 Outcome 语义。
+	_archive_active_session("actor_requested_end")
 	var exit_value: Variant = _phone_system.call(&"exit_dialogue_choice")
 	if typeof(exit_value) != TYPE_BOOL or not bool(exit_value):
 		return _error("phone_conversation_exit_failed", "Actor 请求结束通话时 PhoneSystem 未能退出等待状态。")
 	var finish_value: Variant = _phone_system.call(&"finish_call", int(current_tick_result["tick"]))
 	if typeof(finish_value) != TYPE_BOOL or not bool(finish_value):
 		return _error("phone_finish_call_failed", "Actor 请求结束通话时 PhoneSystem 未能完成线路。")
-	# PhoneSystem 的同步 state_changed/call_became_idle 会正常归档 session；这里仅补
-	# 防御性检查，避免未来信号契约变化留下活动会话。
-	if _active_session != null:
-		_archive_active_session("actor_requested_end")
 	return {"ok": true}
 
 
@@ -416,7 +415,13 @@ func _archive_active_session(reason: String) -> void:
 	var session_id: String = _active_session.session_id
 	var event_id: String = _active_session.event_id
 	var complete_value: Variant = _story_engine.call(&"complete_agent_interaction", session_id, event_id, reason) if _story_engine != null else null
-	if complete_value is Dictionary and not bool((complete_value as Dictionary).get("ok", false)):
+	if complete_value is Dictionary and bool((complete_value as Dictionary).get("ok", false)):
+		var state_patch_value: Variant = (complete_value as Dictionary).get("actor_state_patch", {})
+		if state_patch_value is Dictionary and not (state_patch_value as Dictionary).is_empty() and _agent_runtime != null:
+			var patch_value: Variant = _agent_runtime.call(&"apply_actor_state_patch", _active_session.actor_id, state_patch_value as Dictionary)
+			if not patch_value is Dictionary or not bool((patch_value as Dictionary).get("ok", false)):
+				interaction_error.emit("interaction_outcome_actor_patch_failed", "InteractionOutcome 已提交，但 AgentRuntime 未能同步 Actor canonical state。")
+	elif complete_value is Dictionary:
 		interaction_error.emit(String((complete_value as Dictionary).get("error_code", "interaction_complete_failed")), String((complete_value as Dictionary).get("message", "StoryEngine 未能完成 Agent interaction。")))
 	_active_session.end_session(reason)
 	var record: Dictionary = _active_session.create_archive_record()

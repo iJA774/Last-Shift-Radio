@@ -58,7 +58,11 @@ func _test_ringing_snapshot_round_trip(content: Dictionary) -> void:
 	_assert_equal(source_story.get_player_broadcast_records().size(), 1, "保存前应有一条真实完成的玩家发布任务记录。")
 	var source_signal_state: Dictionary = source_story.get_signal_state()
 	_assert_true(bool(source_signal_state.get("available", false)), "SignalSystem 落地后保存前必须可观察 committed state。")
-	_assert_equal((source_signal_state.get("records", []) as Array).size(), 1, "一条 committed 玩家广播必须对应一条 SignalRecord。")
+	var player_broadcast_signal_count: int = 0
+	for raw_signal: Variant in source_signal_state.get("records", []) as Array:
+		if raw_signal is Dictionary and String((raw_signal as Dictionary).get("signal_type", "")) == "player_broadcast":
+			player_broadcast_signal_count += 1
+	_assert_equal(player_broadcast_signal_count, 1, "一条 committed 玩家广播必须对应一条 player_broadcast SignalRecord。")
 	var saved_publication: Dictionary = source_story.get_player_broadcast_records()[0]
 	_assert_equal(String(saved_publication.get("task_id", "")), "task_broadcast_wagon_witness_request", "保存前玩家记录必须使用稳定 task_id。")
 	_assert_equal(saved_publication.get("information_item_ids", []), ["info_wagon_martha_route"], "保存前玩家记录必须精确保存所选信息项。")

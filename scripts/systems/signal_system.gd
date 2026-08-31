@@ -13,10 +13,19 @@ const SNAPSHOT_VERSION: int = 1
 const SYSTEM_ID: String = "signal_system"
 const SIGNAL_TYPE_PLAYER_BROADCAST: String = "player_broadcast"
 const SIGNAL_TYPE_DELIVERY_OUTCOME: String = "delivery_outcome"
+const SIGNAL_TYPE_PHONE_TERMINAL: String = "phone_terminal"
+const SIGNAL_TYPE_MESSAGE_READ: String = "message_read"
+const SIGNAL_TYPE_INTERACTION_OUTCOME: String = "interaction_outcome"
+const SIGNAL_TYPE_TASK_TRANSITION: String = "task_transition"
 const AUDIENCE_ALL_REGISTERED_ACTORS: String = "all_registered_actors"
 const AUDIENCE_SOURCE_ACTOR: String = "source_actor"
+const AUDIENCE_EXPLICIT_ACTORS: String = "explicit_actor_ids"
+const AUDIENCE_NONE: String = "none"
 const DELIVERY_STATUSES: PackedStringArray = ["committed", "rejected"]
 const DELIVERY_ACTIONS: PackedStringArray = ["call_station", "send_message"]
+const PHONE_OUTCOMES: PackedStringArray = ["answered", "missed", "hung_up", "forced_end"]
+const INTERACTION_DISPOSITIONS: PackedStringArray = ["completed", "cooperated", "refused", "uncertain", "terminated"]
+const TASK_STATUSES: PackedStringArray = ["pending", "active", "completed", "failed"]
 
 var _is_configured: bool = false
 var _actor_ids: Array[String] = []
@@ -116,6 +125,124 @@ func commit_delivery_outcome(delivery_record: Dictionary, outcome_tick: int) -> 
 		"committed_recipients": [actor_id],
 	}
 	return _commit_record(record, "Delivery feedback")
+
+
+func commit_phone_terminal(event_id: String, outcome: String, actor_id: String, created_at_tick: int) -> Dictionary:
+	if not _is_configured:
+		return _error("signal_system_not_configured", "SignalSystem 尚未配置，不能提交电话终态。")
+	if event_id.strip_edges().is_empty() or not PHONE_OUTCOMES.has(outcome) or created_at_tick < 0:
+		return _error("signal_phone_terminal_invalid", "phone_terminal 需要有效 event_id/outcome/tick。")
+	if actor_id.strip_edges().is_empty() or not _actor_ids.has(actor_id):
+		return _error("signal_phone_actor_invalid", "phone_terminal actor_id 不属于当前注册 Actor。")
+	var record: Dictionary = {
+		"signal_id": "signal_phone_terminal_%s" % event_id,
+		"signal_type": SIGNAL_TYPE_PHONE_TERMINAL,
+		"source_id": event_id,
+		"created_at_tick": created_at_tick,
+		"payload": {"outcome": outcome, "actor_id": actor_id},
+		"audience_rule": AUDIENCE_SOURCE_ACTOR,
+		"committed_recipients": [actor_id],
+	}
+	return _commit_record(record, "电话终态")
+
+
+func commit_message_read(source_id: String, created_at_tick: int) -> Dictionary:
+	if not _is_configured:
+		return _error("signal_system_not_configured", "SignalSystem 尚未配置，不能提交 message_read。")
+	if source_id.strip_edges().is_empty() or created_at_tick < 0:
+		return _error("signal_message_read_invalid", "message_read 需要有效 source_id/tick。")
+	var record: Dictionary = {
+		"signal_id": "signal_message_read_%s" % source_id,
+		"signal_type": SIGNAL_TYPE_MESSAGE_READ,
+		"source_id": source_id,
+		"created_at_tick": created_at_tick,
+		"payload": {"category": "messages"},
+		"audience_rule": AUDIENCE_NONE,
+		"committed_recipients": [],
+	}
+	return _commit_record(record, "短信已读")
+
+
+func commit_interaction_outcome(outcome_record: Dictionary) -> Dictionary:
+	if not _is_configured:
+		return _error("signal_system_not_configured", "SignalSystem 尚未配置，不能提交 interaction_outcome。")
+	for field_name: String in ["outcome_id", "event_id", "actor_id", "disposition", "terminal_reason", "metric_deltas", "created_at_tick"]:
+		if not outcome_record.has(field_name):
+			return _error("signal_interaction_outcome_invalid", "InteractionOutcome signal 缺少字段：%s。" % field_name)
+	if not outcome_record["event_id"] is String or String(outcome_record["event_id"]).strip_edges().is_empty():
+		return _error("signal_interaction_outcome_invalid", "InteractionOutcome signal event_id 无效。")
+	if not outcome_record["outcome_id"] is String or String(outcome_record["outcome_id"]).strip_edges().is_empty():
+		return _error("signal_interaction_outcome_invalid", "InteractionOutcome signal outcome_id 无效。")
+	if not outcome_record["actor_id"] is String or not _actor_ids.has(String(outcome_record["actor_id"])):
+		return _error("signal_interaction_outcome_actor_invalid", "InteractionOutcome signal actor_id 不属于当前注册 Actor。")
+	if not outcome_record["disposition"] is String or not INTERACTION_DISPOSITIONS.has(String(outcome_record["disposition"])):
+		return _error("signal_interaction_outcome_disposition_invalid", "InteractionOutcome signal disposition 不受支持。")
+	if not outcome_record["terminal_reason"] is String or String(outcome_record["terminal_reason"]).strip_edges().is_empty():
+		return _error("signal_interaction_outcome_reason_invalid", "InteractionOutcome signal terminal_reason 无效。")
+	if not outcome_record["metric_deltas"] is Dictionary:
+		return _error("signal_interaction_outcome_metrics_invalid", "InteractionOutcome signal metric_deltas 必须是对象。")
+	var metric_deltas: Dictionary = outcome_record["metric_deltas"] as Dictionary
+	for metric: String in ["trust", "stress", "suspicion"]:
+		if not metric_deltas.has(metric) or (typeof(metric_deltas[metric]) != TYPE_INT and typeof(metric_deltas[metric]) != TYPE_FLOAT):
+			return _error("signal_interaction_outcome_metrics_invalid", "InteractionOutcome signal metric_deltas 必须包含 trust/stress/suspicion 数值。")
+	if typeof(outcome_record["created_at_tick"]) != TYPE_INT or int(outcome_record["created_at_tick"]) < 0:
+		return _error("signal_interaction_outcome_tick_invalid", "InteractionOutcome signal created_at_tick 无效。")
+	var event_id: String = String(outcome_record["event_id"])
+	var actor_id: String = String(outcome_record["actor_id"])
+	var record: Dictionary = {
+		"signal_id": "signal_interaction_outcome_%s" % event_id,
+		"signal_type": SIGNAL_TYPE_INTERACTION_OUTCOME,
+		"source_id": event_id,
+		"created_at_tick": int(outcome_record["created_at_tick"]),
+		"payload": {
+			"outcome_id": String(outcome_record["outcome_id"]),
+			"actor_id": actor_id,
+			"disposition": String(outcome_record["disposition"]),
+			"terminal_reason": String(outcome_record["terminal_reason"]),
+			"metric_deltas": metric_deltas.duplicate(true),
+		},
+		"audience_rule": AUDIENCE_SOURCE_ACTOR,
+		"committed_recipients": [actor_id],
+	}
+	return _commit_record(record, "交互结果")
+
+
+func commit_task_transition(transition_record: Dictionary, recipients: Array) -> Dictionary:
+	if not _is_configured:
+		return _error("signal_system_not_configured", "SignalSystem 尚未配置，不能提交 task_transition。")
+	for field_name: String in ["transition_id", "task_id", "from_status", "to_status", "created_at_tick", "reason"]:
+		if not transition_record.has(field_name):
+			return _error("signal_task_transition_invalid", "Task transition signal 缺少字段：%s。" % field_name)
+	if not transition_record["task_id"] is String or String(transition_record["task_id"]).strip_edges().is_empty():
+		return _error("signal_task_transition_invalid", "Task transition signal task_id 无效。")
+	if not transition_record["transition_id"] is String or String(transition_record["transition_id"]).strip_edges().is_empty():
+		return _error("signal_task_transition_invalid", "Task transition signal transition_id 无效。")
+	if not transition_record["from_status"] is String or not TASK_STATUSES.has(String(transition_record["from_status"])) or not transition_record["to_status"] is String or not TASK_STATUSES.has(String(transition_record["to_status"])):
+		return _error("signal_task_transition_status_invalid", "Task transition signal 状态不受支持。")
+	if typeof(transition_record["created_at_tick"]) != TYPE_INT or int(transition_record["created_at_tick"]) < 0:
+		return _error("signal_task_transition_tick_invalid", "Task transition signal created_at_tick 无效。")
+	if not transition_record["reason"] is String or String(transition_record["reason"]).strip_edges().is_empty():
+		return _error("signal_task_transition_reason_invalid", "Task transition signal reason 无效。")
+	var recipients_result: Dictionary = _normalize_recipients(recipients)
+	if not bool(recipients_result.get("ok", false)):
+		return recipients_result
+	var normalized_recipients: Array[String] = recipients_result["recipients"] as Array[String]
+	var task_id: String = String(transition_record["task_id"])
+	var record: Dictionary = {
+		"signal_id": "signal_task_transition_%s" % String(transition_record["transition_id"]),
+		"signal_type": SIGNAL_TYPE_TASK_TRANSITION,
+		"source_id": task_id,
+		"created_at_tick": int(transition_record["created_at_tick"]),
+		"payload": {
+			"transition_id": String(transition_record["transition_id"]),
+			"from_status": String(transition_record["from_status"]),
+			"to_status": String(transition_record["to_status"]),
+			"reason": String(transition_record["reason"]),
+		},
+		"audience_rule": AUDIENCE_EXPLICIT_ACTORS if not normalized_recipients.is_empty() else AUDIENCE_NONE,
+		"committed_recipients": normalized_recipients,
+	}
+	return _commit_record(record, "Task transition")
 
 
 func get_signal_records() -> Array[Dictionary]:
@@ -303,6 +430,8 @@ func _validate_snapshot_record(value: Variant) -> Dictionary:
 			return _validate_player_broadcast_snapshot_record(record)
 		SIGNAL_TYPE_DELIVERY_OUTCOME:
 			return _validate_delivery_outcome_snapshot_record(record)
+		SIGNAL_TYPE_PHONE_TERMINAL, SIGNAL_TYPE_MESSAGE_READ, SIGNAL_TYPE_INTERACTION_OUTCOME, SIGNAL_TYPE_TASK_TRANSITION:
+			return _validate_observation_snapshot_record(record)
 	return _error("signal_snapshot_type_invalid", "SignalRecord signal_type 不受支持。")
 
 
@@ -385,6 +514,96 @@ func _validate_delivery_outcome_snapshot_record(record: Dictionary) -> Dictionar
 			"created_at_tick": int(tick_result["value"]),
 			"payload": payload.duplicate(true),
 			"audience_rule": AUDIENCE_SOURCE_ACTOR,
+			"committed_recipients": recipients.duplicate(),
+		},
+	}
+
+
+func _validate_observation_snapshot_record(record: Dictionary) -> Dictionary:
+	if not record["source_id"] is String or String(record["source_id"]).strip_edges().is_empty():
+		return _error("signal_snapshot_source_invalid", "Observation SignalRecord source_id 必须是非空字符串。")
+	var tick_result: Dictionary = _read_exact_integer(record["created_at_tick"])
+	if not bool(tick_result.get("ok", false)) or int(tick_result["value"]) < 0:
+		return _error("signal_snapshot_tick_invalid", "Observation SignalRecord created_at_tick 无效。")
+	if not record["payload"] is Dictionary or not record["audience_rule"] is String:
+		return _error("signal_snapshot_payload_invalid", "Observation SignalRecord payload/audience_rule 类型无效。")
+	var signal_type: String = String(record["signal_type"])
+	var source_id: String = String(record["source_id"])
+	var payload: Dictionary = record["payload"] as Dictionary
+	var recipients_result: Dictionary = _normalize_recipients(record["committed_recipients"])
+	if not bool(recipients_result.get("ok", false)):
+		return recipients_result
+	var recipients: Array[String] = recipients_result["recipients"] as Array[String]
+	var expected_signal_id: String = ""
+	var expected_audience: String = ""
+	match signal_type:
+		SIGNAL_TYPE_PHONE_TERMINAL:
+			expected_signal_id = "signal_phone_terminal_%s" % source_id
+			if payload.size() != 2 or not payload.has("outcome") or not payload.has("actor_id"):
+				return _error("signal_snapshot_payload_invalid", "phone_terminal payload 必须且只能包含 outcome/actor_id。")
+			if not payload["outcome"] is String or not PHONE_OUTCOMES.has(String(payload["outcome"])):
+				return _error("signal_snapshot_payload_invalid", "phone_terminal outcome 无效。")
+			if not payload["actor_id"] is String or not _actor_ids.has(String(payload["actor_id"])):
+				return _error("signal_snapshot_payload_invalid", "phone_terminal actor_id 无效。")
+			expected_audience = AUDIENCE_SOURCE_ACTOR
+			if recipients != [String(payload["actor_id"])]:
+				return _error("signal_snapshot_recipients_mismatch", "phone_terminal 必须只反馈给 source Actor。")
+		SIGNAL_TYPE_MESSAGE_READ:
+			expected_signal_id = "signal_message_read_%s" % source_id
+			if payload.size() != 1 or String(payload.get("category", "")) != "messages":
+				return _error("signal_snapshot_payload_invalid", "message_read payload 必须且只能声明 category=messages。")
+			expected_audience = AUDIENCE_NONE
+			if not recipients.is_empty():
+				return _error("signal_snapshot_recipients_mismatch", "message_read 当前不应直接泄露给任何 Actor。")
+		SIGNAL_TYPE_INTERACTION_OUTCOME:
+			expected_signal_id = "signal_interaction_outcome_%s" % source_id
+			var outcome_fields: PackedStringArray = ["outcome_id", "actor_id", "disposition", "terminal_reason", "metric_deltas"]
+			if payload.size() != outcome_fields.size():
+				return _error("signal_snapshot_payload_invalid", "interaction_outcome payload 字段不完整或含未知字段。")
+			for field_name: String in outcome_fields:
+				if not payload.has(field_name):
+					return _error("signal_snapshot_payload_invalid", "interaction_outcome payload 缺少字段：%s。" % field_name)
+			if not payload["outcome_id"] is String or String(payload["outcome_id"]) != "interaction_outcome_%s" % source_id:
+				return _error("signal_snapshot_payload_invalid", "interaction_outcome outcome_id 与 source_id 不一致。")
+			if not payload["actor_id"] is String or not _actor_ids.has(String(payload["actor_id"])):
+				return _error("signal_snapshot_payload_invalid", "interaction_outcome actor_id 无效。")
+			if not payload["disposition"] is String or not INTERACTION_DISPOSITIONS.has(String(payload["disposition"])):
+				return _error("signal_snapshot_payload_invalid", "interaction_outcome disposition 无效。")
+			if not payload["terminal_reason"] is String or String(payload["terminal_reason"]).strip_edges().is_empty() or not payload["metric_deltas"] is Dictionary:
+				return _error("signal_snapshot_payload_invalid", "interaction_outcome terminal_reason/metric_deltas 无效。")
+			var metric_deltas: Dictionary = payload["metric_deltas"] as Dictionary
+			if metric_deltas.size() != 3:
+				return _error("signal_snapshot_payload_invalid", "interaction_outcome metric_deltas 必须且只能包含三个 authority metric。")
+			for metric: String in ["trust", "stress", "suspicion"]:
+				if not metric_deltas.has(metric) or (typeof(metric_deltas[metric]) != TYPE_INT and typeof(metric_deltas[metric]) != TYPE_FLOAT):
+					return _error("signal_snapshot_payload_invalid", "interaction_outcome metric_deltas.%s 必须是数值。" % metric)
+			expected_audience = AUDIENCE_SOURCE_ACTOR
+			if recipients != [String(payload["actor_id"])]:
+				return _error("signal_snapshot_recipients_mismatch", "interaction_outcome 必须只反馈给 source Actor。")
+		SIGNAL_TYPE_TASK_TRANSITION:
+			var transition_fields: PackedStringArray = ["transition_id", "from_status", "to_status", "reason"]
+			if payload.size() != transition_fields.size():
+				return _error("signal_snapshot_payload_invalid", "task_transition payload 字段不完整或含未知字段。")
+			for field_name: String in transition_fields:
+				if not payload.has(field_name) or not payload[field_name] is String:
+					return _error("signal_snapshot_payload_invalid", "task_transition payload.%s 必须是字符串。" % field_name)
+			expected_signal_id = "signal_task_transition_%s" % String(payload["transition_id"])
+			if not TASK_STATUSES.has(String(payload["from_status"])) or not TASK_STATUSES.has(String(payload["to_status"])) or String(payload["reason"]).strip_edges().is_empty():
+				return _error("signal_snapshot_payload_invalid", "task_transition status/reason 无效。")
+			expected_audience = AUDIENCE_EXPLICIT_ACTORS if not recipients.is_empty() else AUDIENCE_NONE
+	if not record["signal_id"] is String or String(record["signal_id"]) != expected_signal_id:
+		return _error("signal_snapshot_id_invalid", "Observation SignalRecord signal_id 与 source/payload 不一致。")
+	if String(record["audience_rule"]) != expected_audience:
+		return _error("signal_snapshot_audience_invalid", "Observation SignalRecord audience_rule 与 recipients 不一致。")
+	return {
+		"ok": true,
+		"record": {
+			"signal_id": expected_signal_id,
+			"signal_type": signal_type,
+			"source_id": source_id,
+			"created_at_tick": int(tick_result["value"]),
+			"payload": payload.duplicate(true),
+			"audience_rule": expected_audience,
 			"committed_recipients": recipients.duplicate(),
 		},
 	}

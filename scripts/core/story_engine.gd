@@ -17,12 +17,14 @@ signal story_error(error_code: String, message: String)
 const TICKS_PER_GAME_MINUTE: int = 60
 const ENDING_TICK: int = 60 * TICKS_PER_GAME_MINUTE
 const ENDING_ONLY_FACT_IDS: PackedStringArray = ["fact_unauthorized_broadcast", "fact_anomaly_cause_unknown"]
-const SNAPSHOT_VERSION: int = 5
+const SNAPSHOT_VERSION: int = 6
 const SNAPSHOT_SYSTEM_ID: String = "story_engine"
 const BROADCAST_SYSTEM_SCRIPT: GDScript = preload("res://scripts/systems/broadcast_system.gd")
 const COMPUTER_SYSTEM_SCRIPT: GDScript = preload("res://scripts/systems/computer_system.gd")
 const SIGNAL_SYSTEM_SCRIPT: GDScript = preload("res://scripts/systems/signal_system.gd")
 const DELIVERY_SYSTEM_SCRIPT: GDScript = preload("res://scripts/systems/delivery_system.gd")
+const TASK_SYSTEM_SCRIPT: GDScript = preload("res://scripts/systems/task_system.gd")
+const INTERACTION_OUTCOME_SYSTEM_SCRIPT: GDScript = preload("res://scripts/systems/interaction_outcome_system.gd")
 const CONTENT_VALIDATOR_SCRIPT: GDScript = preload("res://scripts/core/content_validator.gd")
 
 signal message_unlocked(message: Dictionary)
@@ -35,6 +37,8 @@ signal actor_signal_perceived(actor_id: String, signal_id: String)
 signal world_delivery_committed(record: Dictionary)
 signal world_delivery_queued(record: Dictionary)
 signal world_delivery_rejected(record: Dictionary)
+signal task_state_changed(task_id: String, status: String)
+signal interaction_outcome_committed(record: Dictionary)
 signal dialogue_changed(snapshot: Dictionary)
 signal agent_turn_committed(record: Dictionary)
 signal interaction_state_changed(event_id: String)
@@ -59,6 +63,8 @@ var _broadcast_system: RefCounted = BROADCAST_SYSTEM_SCRIPT.new()
 var _computer_system: RefCounted = COMPUTER_SYSTEM_SCRIPT.new()
 var _signal_system: RefCounted = SIGNAL_SYSTEM_SCRIPT.new()
 var _delivery_system: RefCounted = DELIVERY_SYSTEM_SCRIPT.new()
+var _task_system: RefCounted = TASK_SYSTEM_SCRIPT.new()
+var _interaction_outcome_system: RefCounted = INTERACTION_OUTCOME_SYSTEM_SCRIPT.new()
 var _is_test_story_configured: bool = false
 var _story_event_by_id: Dictionary = {}
 var _message_by_id: Dictionary = {}
@@ -80,6 +86,8 @@ var _committed_agent_turn_keys: Dictionary = {}
 var _active_agent_session_id: String = ""
 var _active_agent_event_id: String = ""
 var _active_agent_actor_id: String = ""
+var _active_agent_last_speech_act: String = ""
+var _active_agent_asserted_claim_ids: Array[String] = []
 ## task_id -> { status, available_information_item_ids }。这是“此刻必须处理/已推迟/已放弃”
 ## 的唯一权威，不由 UI 以通知是否显示来推断。
 var _broadcast_decision_by_task_id: Dictionary = {}
@@ -167,6 +175,14 @@ func set_phone_system(phone_system: RefCounted) -> Dictionary:
 				_disconnect_phone_system()
 				_phone_system = null
 				return _make_error("phone_signal_connect_failed", "无法连接 PhoneSystem 的 state_changed 信号。")
+	if _phone_system.has_signal(&"call_record_created"):
+		var record_callback: Callable = Callable(self, "_on_phone_call_record_created")
+		if not _phone_system.is_connected(&"call_record_created", record_callback):
+			var record_connect_result: Error = _phone_system.connect(&"call_record_created", record_callback)
+			if record_connect_result != OK:
+				_disconnect_phone_system()
+				_phone_system = null
+				return _make_error("phone_signal_connect_failed", "无法连接 PhoneSystem 的 call_record_created 信号。")
 	var computer_phone_result_value: Variant = _computer_system.call(&"set_phone_system", _phone_system)
 	if not computer_phone_result_value is Dictionary or not bool((computer_phone_result_value as Dictionary).get("ok", false)):
 		return _make_error("computer_phone_bind_failed", "ComputerSystem 未能绑定 PhoneSystem 来电记录。")
@@ -297,6 +313,12 @@ func configure_test_night_story(content: Dictionary) -> Dictionary:
 	var signal_config_value: Variant = _signal_system.call(&"configure", [], broadcast_tasks)
 	if not signal_config_value is Dictionary or not bool((signal_config_value as Dictionary).get("ok", false)):
 		return _make_error("signal_content_config_failed", "SignalSystem 未能配置已校验的 v1 广播来源。")
+	var task_config_value: Variant = _task_system.call(&"configure", _build_task_definitions(broadcast_tasks))
+	if not task_config_value is Dictionary or not bool((task_config_value as Dictionary).get("ok", false)):
+		return _make_error("task_content_config_failed", "TaskSystem 未能配置 legacy 发布任务：%s" % _snapshot_message(task_config_value))
+	var outcome_config_value: Variant = _interaction_outcome_system.call(&"configure", [])
+	if not outcome_config_value is Dictionary or not bool((outcome_config_value as Dictionary).get("ok", false)):
+		return _make_error("interaction_outcome_config_failed", "InteractionOutcomeSystem 未能配置 legacy 空 Actor authority。")
 	if not bool(broadcast_result.get("ok", false)):
 		return broadcast_result
 	_story_event_by_id = next_event_by_id
@@ -318,6 +340,9 @@ func configure_test_night_story(content: Dictionary) -> Dictionary:
 	if not initial_computer_advance_value is Dictionary or not bool((initial_computer_advance_value as Dictionary).get("ok", false)):
 		return _make_error("computer_initial_advance_failed", "ComputerSystem 未能解锁开局电脑信息。")
 	_refresh_broadcast_decisions(false)
+	var task_refresh: Dictionary = _refresh_task_system()
+	if not bool(task_refresh.get("ok", false)):
+		return task_refresh
 	return {"ok": true, "event_count": _story_event_by_id.size()}
 
 
@@ -385,6 +410,12 @@ func _configure_agent_story_v2(checked_content: Dictionary) -> Dictionary:
 	var signal_config_value: Variant = _signal_system.call(&"configure", signal_actor_ids, checked_content["broadcast_tasks"] as Array)
 	if not signal_config_value is Dictionary or not bool((signal_config_value as Dictionary).get("ok", false)):
 		return _make_error("signal_content_config_failed", "SignalSystem 未能配置 Agent Dialogue v2 Actor/广播来源。")
+	var task_config_value: Variant = _task_system.call(&"configure", _build_task_definitions(checked_content["broadcast_tasks"] as Array))
+	if not task_config_value is Dictionary or not bool((task_config_value as Dictionary).get("ok", false)):
+		return _make_error("task_content_config_failed", "TaskSystem 未能配置 Agent Dialogue v2 任务 authority：%s" % _snapshot_message(task_config_value))
+	var outcome_config_value: Variant = _interaction_outcome_system.call(&"configure", checked_content["actors"] as Array)
+	if not outcome_config_value is Dictionary or not bool((outcome_config_value as Dictionary).get("ok", false)):
+		return _make_error("interaction_outcome_config_failed", "InteractionOutcomeSystem 未能配置 Actor authority：%s" % _snapshot_message(outcome_config_value))
 
 	_story_event_by_id = next_event_by_id
 	_message_by_id = next_message_by_id
@@ -406,6 +437,8 @@ func _configure_agent_story_v2(checked_content: Dictionary) -> Dictionary:
 	_active_agent_session_id = ""
 	_active_agent_event_id = ""
 	_active_agent_actor_id = ""
+	_active_agent_last_speech_act = ""
+	_active_agent_asserted_claim_ids = []
 	_is_test_story_configured = true
 	for fact_id_variant: Variant in _fact_by_id.keys():
 		var configured_fact: Dictionary = _fact_by_id[fact_id_variant] as Dictionary
@@ -415,6 +448,9 @@ func _configure_agent_story_v2(checked_content: Dictionary) -> Dictionary:
 	if not initial_computer_advance_value is Dictionary or not bool((initial_computer_advance_value as Dictionary).get("ok", false)):
 		return _make_error("computer_initial_advance_failed", "ComputerSystem 未能解锁 Agent Dialogue v2 开局电脑信息。")
 	_refresh_broadcast_decisions(false)
+	var task_refresh: Dictionary = _refresh_task_system()
+	if not bool(task_refresh.get("ok", false)):
+		return task_refresh
 	return {"ok": true, "event_count": _story_event_by_id.size(), "actor_count": _actor_definition_by_id.size(), "agent_dialogue_v2": true}
 
 
@@ -531,6 +567,10 @@ func set_condition_state(condition_id: String, is_met: bool) -> Dictionary:
 	if _is_test_story_configured and not _declared_condition_ids.has(condition_id):
 		return _make_error("unknown_condition_id", "当前内容没有声明该条件 ID。")
 	_condition_state_by_id[condition_id] = is_met
+	if _is_test_story_configured:
+		var task_refresh: Dictionary = _refresh_task_system()
+		if not bool(task_refresh.get("ok", false)):
+			return task_refresh
 	return {"ok": true}
 
 
@@ -648,11 +688,15 @@ func begin_agent_interaction(session_id: String, event_id: String, actor_id: Str
 	_active_agent_session_id = session_id
 	_active_agent_event_id = event_id
 	_active_agent_actor_id = actor_id
+	_active_agent_last_speech_act = ""
+	_active_agent_asserted_claim_ids = []
 	var event_result: Dictionary = _resolve_agent_event_data(event_id)
 	if not bool(event_result.get("ok", false)):
 		_active_agent_session_id = ""
 		_active_agent_event_id = ""
 		_active_agent_actor_id = ""
+		_active_agent_last_speech_act = ""
+		_active_agent_asserted_claim_ids = []
 		return event_result
 	var event_data: Dictionary = event_result["event"] as Dictionary
 	var state_patch: Dictionary = {}
@@ -737,6 +781,8 @@ func commit_agent_turn(request: Dictionary) -> Dictionary:
 		return reveal_result
 	_committed_agent_turn_keys[commit_key] = true
 	_answered_interaction_event_ids[event_id] = true
+	_active_agent_last_speech_act = String(actor_turn.get("speech_act", ""))
+	_active_agent_asserted_claim_ids = asserted_ids.duplicate()
 	var record: Dictionary = {
 		"session_id": session_id,
 		"event_id": event_id,
@@ -750,6 +796,9 @@ func commit_agent_turn(request: Dictionary) -> Dictionary:
 	agent_turn_committed.emit(record.duplicate(true))
 	interaction_state_changed.emit(event_id)
 	_refresh_broadcast_decisions(true)
+	var task_refresh: Dictionary = _refresh_task_system()
+	if not bool(task_refresh.get("ok", false)):
+		return task_refresh
 	return {"ok": true, "record": record, "newly_revealed_statement_ids": reveal_result.get("newly_revealed_statement_ids", [])}
 
 
@@ -758,13 +807,42 @@ func complete_agent_interaction(session_id: String, event_id: String, reason: St
 		return _make_error("agent_interaction_session_mismatch", "结束请求不属于当前 Agent interaction。")
 	if reason.strip_edges().is_empty():
 		return _make_error("agent_interaction_reason_invalid", "结束 Agent interaction 必须提供原因。")
+	var actor_id: String = _active_agent_actor_id
+	var outcome_input: Dictionary = {
+		"event_id": event_id,
+		"session_id": session_id,
+		"actor_id": actor_id,
+		"terminal_reason": reason,
+		"last_speech_act": _active_agent_last_speech_act,
+		"asserted_claim_ids": _active_agent_asserted_claim_ids.duplicate(),
+		"created_at_tick": _current_game_tick,
+	}
+	var outcome_value: Variant = _interaction_outcome_system.call(&"commit_interaction_outcome", outcome_input)
+	if not outcome_value is Dictionary or not bool((outcome_value as Dictionary).get("ok", false)):
+		return _make_error("interaction_outcome_commit_failed", "InteractionOutcomeSystem 未能提交交互终态：%s" % _snapshot_message(outcome_value))
+	var outcome_result: Dictionary = outcome_value as Dictionary
+	var outcome_record: Dictionary = outcome_result["record"] as Dictionary
+	var signal_value: Variant = _signal_system.call(&"commit_interaction_outcome", outcome_record)
+	if not signal_value is Dictionary or not bool((signal_value as Dictionary).get("ok", false)):
+		return _make_error("interaction_outcome_signal_failed", "InteractionOutcome 已提交，但 SignalSystem 未能提交对应 Observation：%s" % _snapshot_message(signal_value))
 	_completed_interaction_event_ids[event_id] = true
 	_active_agent_session_id = ""
 	_active_agent_event_id = ""
 	_active_agent_actor_id = ""
+	_active_agent_last_speech_act = ""
+	_active_agent_asserted_claim_ids = []
+	interaction_outcome_committed.emit(outcome_record.duplicate(true))
 	interaction_state_changed.emit(event_id)
 	_refresh_broadcast_decisions(true)
-	return {"ok": true, "event_id": event_id}
+	var task_refresh: Dictionary = _refresh_task_system()
+	if not bool(task_refresh.get("ok", false)):
+		return task_refresh
+	return {
+		"ok": true,
+		"event_id": event_id,
+		"outcome_record": outcome_record.duplicate(true),
+		"actor_state_patch": (outcome_result.get("actor_state_patch", {}) as Dictionary).duplicate(true),
+	}
 
 
 func get_interaction_state(event_id: String) -> Dictionary:
@@ -879,6 +957,8 @@ func create_snapshot() -> Dictionary:
 		"broadcast": _broadcast_system.call(&"create_snapshot"),
 		"signal": _signal_system.call(&"create_snapshot"),
 		"delivery": _delivery_system.call(&"create_snapshot"),
+		"task": _task_system.call(&"create_snapshot"),
+		"interaction_outcome": _interaction_outcome_system.call(&"create_snapshot"),
 	}
 	snapshot.make_read_only()
 	return snapshot
@@ -956,7 +1036,7 @@ func validate_snapshot(snapshot: Dictionary, context: Dictionary = {}) -> Dictio
 	if not bool(facts_validation.get("ok", false)):
 		return facts_validation
 
-	if not snapshot["scheduler"] is Dictionary or not snapshot["computer"] is Dictionary or not snapshot["broadcast"] is Dictionary or not snapshot["signal"] is Dictionary or not snapshot["delivery"] is Dictionary:
+	if not snapshot["scheduler"] is Dictionary or not snapshot["computer"] is Dictionary or not snapshot["broadcast"] is Dictionary or not snapshot["signal"] is Dictionary or not snapshot["delivery"] is Dictionary or not snapshot["task"] is Dictionary or not snapshot["interaction_outcome"] is Dictionary:
 		return _make_error("invalid_snapshot_subsystem", "剧情存档的 scheduler、computer、broadcast、signal、delivery 必须是对象。")
 	var scheduler_context: Dictionary = {"event_by_id": _story_event_by_id}
 	var scheduler_validation: Dictionary = _scheduler.validate_snapshot(snapshot["scheduler"] as Dictionary, scheduler_context)
@@ -994,9 +1074,43 @@ func validate_snapshot(snapshot: Dictionary, context: Dictionary = {}) -> Dictio
 		return _make_error("delivery_snapshot_invalid", "DeliverySystem 存档校验失败：%s" % _snapshot_message(delivery_validation_value))
 	var delivery_validation: Dictionary = delivery_validation_value as Dictionary
 	var normalized_delivery_requests: Array[Dictionary] = (delivery_validation["normalized"] as Dictionary)["requests"] as Array[Dictionary]
+	var outcome_context: Dictionary = {"current_game_tick": current_tick}
+	var outcome_validation_value: Variant = _interaction_outcome_system.call(&"validate_snapshot", snapshot["interaction_outcome"], outcome_context)
+	if not outcome_validation_value is Dictionary or not bool((outcome_validation_value as Dictionary).get("ok", false)):
+		return _make_error("interaction_outcome_snapshot_invalid", "InteractionOutcomeSystem 存档校验失败：%s" % _snapshot_message(outcome_validation_value))
+	var outcome_validation: Dictionary = outcome_validation_value as Dictionary
+	var normalized_outcomes: Array[Dictionary] = (outcome_validation["normalized"] as Dictionary)["outcomes"] as Array[Dictionary]
+	var outcome_by_event_id: Dictionary = {}
+	for outcome_record: Dictionary in normalized_outcomes:
+		outcome_by_event_id[String(outcome_record["event_id"])] = outcome_record
+	var completed_interaction_ids: Array[String] = completed_interactions_result["ids"] as Array[String]
+	if outcome_by_event_id.size() != completed_interaction_ids.size():
+		return _make_error("snapshot_interaction_outcome_count_mismatch", "每个 completed interaction 必须且只能拥有一条 InteractionOutcome。")
+	for completed_event_id: String in completed_interaction_ids:
+		if not outcome_by_event_id.has(completed_event_id):
+			return _make_error("snapshot_interaction_outcome_missing", "completed interaction 缺少 InteractionOutcome：%s。" % completed_event_id)
+
+	var normalized_broadcast: Dictionary = broadcast_validation["normalized"] as Dictionary
+	var normalized_computer: Dictionary = computer_validation["normalized"] as Dictionary
+	var snapshot_task_world_state: Dictionary = _build_snapshot_task_world_state(
+		statements_result["ids"] as Array[String],
+		facts_result["ids"] as Array[String],
+		conditions_result["states"] as Dictionary,
+		answered_interactions_result["ids"] as Array[String],
+		completed_interaction_ids,
+		completed_result["ids"] as Array[String],
+		normalized_broadcast,
+		normalized_computer,
+		outcome_by_event_id
+	)
+	var task_context: Dictionary = {"current_game_tick": current_tick, "world_state": snapshot_task_world_state}
+	var task_validation_value: Variant = _task_system.call(&"validate_snapshot", snapshot["task"], task_context)
+	if not task_validation_value is Dictionary or not bool((task_validation_value as Dictionary).get("ok", false)):
+		return _make_error("task_snapshot_invalid", "TaskSystem 存档校验失败：%s" % _snapshot_message(task_validation_value))
+	var task_validation: Dictionary = task_validation_value as Dictionary
 	var delivery_computer_relationship: Dictionary = _validate_delivery_computer_relationship(
 		normalized_delivery_requests,
-		computer_validation["normalized"] as Dictionary
+		normalized_computer
 	)
 	if not bool(delivery_computer_relationship.get("ok", false)):
 		return delivery_computer_relationship
@@ -1010,7 +1124,7 @@ func validate_snapshot(snapshot: Dictionary, context: Dictionary = {}) -> Dictio
 	)
 	if not bool(interaction_delivery_relationship.get("ok", false)):
 		return interaction_delivery_relationship
-	var normalized_broadcast_records: Array[Dictionary] = (broadcast_validation["normalized"] as Dictionary)["player_records"] as Array[Dictionary]
+	var normalized_broadcast_records: Array[Dictionary] = normalized_broadcast["player_records"] as Array[Dictionary]
 	var normalized_signal_records: Array[Dictionary] = (signal_validation["normalized"] as Dictionary)["records"] as Array[Dictionary]
 	var broadcast_record_by_task: Dictionary = {}
 	for broadcast_record: Dictionary in normalized_broadcast_records:
@@ -1020,6 +1134,31 @@ func validate_snapshot(snapshot: Dictionary, context: Dictionary = {}) -> Dictio
 	for delivery_request: Dictionary in normalized_delivery_requests:
 		delivery_request_by_id[String(delivery_request["delivery_id"])] = delivery_request
 	var delivery_signal_by_id: Dictionary = {}
+	var phone_terminal_signal_by_event: Dictionary = {}
+	var message_read_signal_by_source: Dictionary = {}
+	var outcome_signal_by_event: Dictionary = {}
+	var task_transition_signal_by_id: Dictionary = {}
+	var task_transition_by_id: Dictionary = {}
+	for raw_transition: Variant in (task_validation["normalized"] as Dictionary)["transitions"] as Array:
+		var transition: Dictionary = raw_transition as Dictionary
+		task_transition_by_id[String(transition["transition_id"])] = transition
+	var read_message_ids: Array[String] = ((normalized_computer["read_source_ids"] as Dictionary)["messages"] as Array[String]).duplicate()
+	var read_message_lookup: Dictionary = _string_array_to_lookup(read_message_ids)
+	var snapshot_phone_system: RefCounted = _phone_system
+	if context.has("phone_system"):
+		snapshot_phone_system = context["phone_system"] as RefCounted
+	var phone_records_value: Variant = snapshot_phone_system.call(&"get_call_records") if snapshot_phone_system != null else null
+	if not phone_records_value is Array:
+		return _make_error("snapshot_phone_context_invalid", "剧情存档校验无法读取 PhoneSystem 来电记录。")
+	var phone_record_by_event: Dictionary = {}
+	for raw_phone_record: Variant in phone_records_value as Array:
+		if not raw_phone_record is Dictionary:
+			return _make_error("snapshot_phone_context_invalid", "PhoneSystem 来电记录必须是对象。")
+		var phone_record: Dictionary = raw_phone_record as Dictionary
+		var phone_event_id: String = String(phone_record.get("event_id", ""))
+		if phone_event_id.is_empty() or phone_record_by_event.has(phone_event_id):
+			return _make_error("snapshot_phone_record_duplicate", "PhoneSystem 来电记录 event_id 无效或重复。")
+		phone_record_by_event[phone_event_id] = phone_record
 	for signal_record: Dictionary in normalized_signal_records:
 		var signal_source_id: String = String(signal_record["source_id"])
 		match String(signal_record["signal_type"]):
@@ -1049,6 +1188,51 @@ func validate_snapshot(snapshot: Dictionary, context: Dictionary = {}) -> Dictio
 				if int(signal_record["created_at_tick"]) < int(source_delivery["created_at_tick"]):
 					return _make_error("snapshot_signal_delivery_tick_mismatch", "Delivery feedback SignalRecord 不能早于 DeliveryRequest 创建时间：%s。" % signal_source_id)
 				delivery_signal_by_id[signal_source_id] = signal_record
+			"phone_terminal":
+				if not phone_record_by_event.has(signal_source_id):
+					return _make_error("snapshot_phone_terminal_without_record", "phone_terminal Signal 缺少真实来电记录：%s。" % signal_source_id)
+				var source_phone_record: Dictionary = phone_record_by_event[signal_source_id] as Dictionary
+				var phone_payload: Dictionary = signal_record["payload"] as Dictionary
+				if String(phone_payload["outcome"]) != String(source_phone_record.get("outcome", "")):
+					return _make_error("snapshot_phone_terminal_outcome_mismatch", "phone_terminal Signal 与来电记录 outcome 不一致：%s。" % signal_source_id)
+				var expected_phone_actor_id: String = ""
+				if delivery_request_by_id.has(signal_source_id):
+					expected_phone_actor_id = String((delivery_request_by_id[signal_source_id] as Dictionary)["actor_id"])
+				elif _story_event_by_id.has(signal_source_id):
+					expected_phone_actor_id = String((_story_event_by_id[signal_source_id] as Dictionary).get("actor_id", ""))
+				if expected_phone_actor_id.is_empty() or String(phone_payload["actor_id"]) != expected_phone_actor_id:
+					return _make_error("snapshot_phone_terminal_actor_mismatch", "phone_terminal Signal Actor 与来电来源不一致：%s。" % signal_source_id)
+				phone_terminal_signal_by_event[signal_source_id] = signal_record
+			"message_read":
+				if not read_message_lookup.has(signal_source_id):
+					return _make_error("snapshot_message_read_signal_mismatch", "message_read Signal 对应的短信并未处于已读状态：%s。" % signal_source_id)
+				message_read_signal_by_source[signal_source_id] = signal_record
+			"interaction_outcome":
+				if not outcome_by_event_id.has(signal_source_id):
+					return _make_error("snapshot_outcome_signal_without_outcome", "interaction_outcome Signal 缺少真实 Outcome：%s。" % signal_source_id)
+				var source_outcome: Dictionary = outcome_by_event_id[signal_source_id] as Dictionary
+				var outcome_payload: Dictionary = signal_record["payload"] as Dictionary
+				if int(signal_record["created_at_tick"]) != int(source_outcome["created_at_tick"]) \
+				or String(outcome_payload["outcome_id"]) != String(source_outcome["outcome_id"]) \
+				or String(outcome_payload["actor_id"]) != String(source_outcome["actor_id"]) \
+				or String(outcome_payload["disposition"]) != String(source_outcome["disposition"]) \
+				or String(outcome_payload["terminal_reason"]) != String(source_outcome["terminal_reason"]) \
+				or (outcome_payload["metric_deltas"] as Dictionary) != (source_outcome["metric_deltas"] as Dictionary):
+					return _make_error("snapshot_outcome_signal_mismatch", "interaction_outcome Signal 与真实 Outcome 不一致：%s。" % signal_source_id)
+				outcome_signal_by_event[signal_source_id] = signal_record
+			"task_transition":
+				var transition_payload: Dictionary = signal_record["payload"] as Dictionary
+				var transition_id: String = String(transition_payload["transition_id"])
+				if not task_transition_by_id.has(transition_id):
+					return _make_error("snapshot_task_signal_without_transition", "task_transition Signal 缺少真实 Task transition：%s。" % transition_id)
+				var source_transition: Dictionary = task_transition_by_id[transition_id] as Dictionary
+				if signal_source_id != String(source_transition["task_id"]) \
+				or int(signal_record["created_at_tick"]) != int(source_transition["created_at_tick"]) \
+				or String(transition_payload["from_status"]) != String(source_transition["from_status"]) \
+				or String(transition_payload["to_status"]) != String(source_transition["to_status"]) \
+				or String(transition_payload["reason"]) != String(source_transition["reason"]):
+					return _make_error("snapshot_task_signal_mismatch", "task_transition Signal 与真实 Task transition 不一致：%s。" % transition_id)
+				task_transition_signal_by_id[transition_id] = signal_record
 			_:
 				return _make_error("snapshot_signal_type_invalid", "剧情存档含 StoryEngine 不支持的 SignalRecord 类型。")
 	if signal_record_by_task.size() != broadcast_record_by_task.size():
@@ -1059,7 +1243,15 @@ func validate_snapshot(snapshot: Dictionary, context: Dictionary = {}) -> Dictio
 		var requires_feedback: bool = ["committed", "rejected"].has(String(delivery_request["status"]))
 		if has_feedback != requires_feedback:
 			return _make_error("snapshot_delivery_signal_presence_mismatch", "每条 committed/rejected DeliveryRequest 都必须且只能对应一条 feedback SignalRecord：%s。" % delivery_id)
-	var sent_task_lookup: Dictionary = _string_array_to_lookup((broadcast_validation["normalized"] as Dictionary)["sent_task_ids"] as Array[String])
+	if is_agent_dialogue_v2() and phone_terminal_signal_by_event.size() != phone_record_by_event.size():
+		return _make_error("snapshot_phone_terminal_signal_count_mismatch", "每条 Agent 电话终态记录必须且只能对应一条 phone_terminal Signal。")
+	if message_read_signal_by_source.size() != read_message_lookup.size():
+		return _make_error("snapshot_message_read_signal_count_mismatch", "每条已读短信必须且只能对应一条 message_read Signal。")
+	if outcome_signal_by_event.size() != outcome_by_event_id.size():
+		return _make_error("snapshot_outcome_signal_count_mismatch", "每条 InteractionOutcome 必须且只能对应一条 interaction_outcome Signal。")
+	if task_transition_signal_by_id.size() != task_transition_by_id.size():
+		return _make_error("snapshot_task_signal_count_mismatch", "每条 Task transition 必须且只能对应一条 task_transition Signal。")
+	var sent_task_lookup: Dictionary = _string_array_to_lookup(normalized_broadcast["sent_task_ids"] as Array[String])
 	var decision_relationship: Dictionary = _validate_broadcast_decision_relationship(
 		decisions_result["states"] as Dictionary,
 		sent_task_lookup,
@@ -1104,6 +1296,8 @@ func validate_snapshot(snapshot: Dictionary, context: Dictionary = {}) -> Dictio
 			"broadcast": {},
 			"signal": {},
 			"delivery": delivery_context,
+			"task": task_context,
+			"interaction_outcome": outcome_context,
 		},
 	}
 
@@ -1119,7 +1313,14 @@ func restore_snapshot(snapshot: Dictionary, context: Dictionary = {}) -> Diction
 	var old_broadcast_snapshot_value: Variant = _broadcast_system.call(&"create_snapshot")
 	var old_signal_snapshot_value: Variant = _signal_system.call(&"create_snapshot")
 	var old_delivery_snapshot_value: Variant = _delivery_system.call(&"create_snapshot")
-	if not old_computer_snapshot_value is Dictionary or not old_broadcast_snapshot_value is Dictionary or not old_signal_snapshot_value is Dictionary or not old_delivery_snapshot_value is Dictionary:
+	var old_task_snapshot_value: Variant = _task_system.call(&"create_snapshot")
+	var old_outcome_snapshot_value: Variant = _interaction_outcome_system.call(&"create_snapshot")
+	if not old_computer_snapshot_value is Dictionary \
+	or not old_broadcast_snapshot_value is Dictionary \
+	or not old_signal_snapshot_value is Dictionary \
+	or not old_delivery_snapshot_value is Dictionary \
+	or not old_task_snapshot_value is Dictionary \
+	or not old_outcome_snapshot_value is Dictionary:
 		return _make_error("snapshot_internal_contract", "剧情子系统无法生成回滚快照。")
 	var subsystem_context: Dictionary = validation["subsystem_context"] as Dictionary
 	var scheduler_restore: Dictionary = _scheduler.restore_snapshot(snapshot["scheduler"] as Dictionary, subsystem_context["scheduler"] as Dictionary)
@@ -1147,6 +1348,23 @@ func restore_snapshot(snapshot: Dictionary, context: Dictionary = {}) -> Diction
 		_computer_system.call(&"restore_snapshot", old_computer_snapshot_value as Dictionary, subsystem_context["computer"])
 		_scheduler.restore_snapshot(old_scheduler_snapshot)
 		return _make_error("delivery_snapshot_restore_failed", "DeliverySystem 恢复失败，已回滚剧情子系统。")
+	var outcome_restore_value: Variant = _interaction_outcome_system.call(&"restore_snapshot", snapshot["interaction_outcome"], subsystem_context["interaction_outcome"])
+	if not outcome_restore_value is Dictionary or not bool((outcome_restore_value as Dictionary).get("ok", false)):
+		_delivery_system.call(&"restore_snapshot", old_delivery_snapshot_value as Dictionary, {})
+		_signal_system.call(&"restore_snapshot", old_signal_snapshot_value as Dictionary, {})
+		_broadcast_system.call(&"restore_snapshot", old_broadcast_snapshot_value as Dictionary, {})
+		_computer_system.call(&"restore_snapshot", old_computer_snapshot_value as Dictionary, {})
+		_scheduler.restore_snapshot(old_scheduler_snapshot)
+		return _make_error("interaction_outcome_snapshot_restore_failed", "InteractionOutcomeSystem 恢复失败，已回滚剧情子系统。")
+	var task_restore_value: Variant = _task_system.call(&"restore_snapshot", snapshot["task"], subsystem_context["task"])
+	if not task_restore_value is Dictionary or not bool((task_restore_value as Dictionary).get("ok", false)):
+		_interaction_outcome_system.call(&"restore_snapshot", old_outcome_snapshot_value as Dictionary, {})
+		_delivery_system.call(&"restore_snapshot", old_delivery_snapshot_value as Dictionary, {})
+		_signal_system.call(&"restore_snapshot", old_signal_snapshot_value as Dictionary, {})
+		_broadcast_system.call(&"restore_snapshot", old_broadcast_snapshot_value as Dictionary, {})
+		_computer_system.call(&"restore_snapshot", old_computer_snapshot_value as Dictionary, {})
+		_scheduler.restore_snapshot(old_scheduler_snapshot)
+		return _make_error("task_snapshot_restore_failed", "TaskSystem 恢复失败，已回滚剧情子系统。")
 	var normalized: Dictionary = validation["normalized"] as Dictionary
 	_current_game_tick = int(normalized["current_game_tick"])
 	_current_minute = int(normalized["current_minute"])
@@ -1182,6 +1400,7 @@ func _validate_snapshot_envelope(snapshot: Dictionary) -> Dictionary:
 		"completed_dialogue_event_ids", "answered_interaction_event_ids",
 		"completed_interaction_event_ids", "active_dialogue", "is_ending_forced",
 		"unauthorized_broadcast_record", "broadcast_decisions", "scheduler", "computer", "broadcast", "signal", "delivery",
+		"task", "interaction_outcome",
 	]
 	if snapshot.size() != expected_fields.size():
 		return _make_error("snapshot_fields_invalid", "剧情存档字段缺失或包含未知字段。")
@@ -1733,6 +1952,12 @@ func abandon_broadcast_task(task_id: String) -> Dictionary:
 		"status": "abandoned",
 		"available_information_item_ids": (state_result["available_information_item_ids"] as Array[String]).duplicate(),
 	}
+	var failure_value: Variant = _task_system.call(&"fail_task", task_id, _current_game_tick, "player_abandoned")
+	if not failure_value is Dictionary or not bool((failure_value as Dictionary).get("ok", false)):
+		return _make_error("task_abandon_commit_failed", "发布任务 UI 已进入 abandoned，但 TaskSystem 未能提交 failed：%s" % _snapshot_message(failure_value))
+	var task_refresh: Dictionary = _refresh_task_system()
+	if not bool(task_refresh.get("ok", false)):
+		return task_refresh
 	print("[剧情][%s] 发布任务已永久放弃；不再显示、通知、触发或发送。" % task_id)
 	broadcast_state_changed.emit()
 	return {"ok": true, "task_id": task_id, "decision": "abandoned", "message": "已放弃本局发布任务；它不会再次出现。"}
@@ -2061,34 +2286,154 @@ func _build_agent_broadcast_task_snapshot(task_id: String, task: Dictionary) -> 
 	return snapshot
 
 
+func _build_task_definitions(broadcast_tasks: Array) -> Array[Dictionary]:
+	var definitions: Array[Dictionary] = []
+	for raw_task: Variant in broadcast_tasks:
+		if not raw_task is Dictionary:
+			continue
+		var task: Dictionary = raw_task as Dictionary
+		var task_id: String = String(task.get("id", ""))
+		if task_id.is_empty():
+			continue
+		var activation_requirements: Array[Dictionary] = []
+		if task.has("requirements") and task["requirements"] is Array:
+			for raw_requirement: Variant in task["requirements"] as Array:
+				if raw_requirement is Dictionary:
+					activation_requirements.append((raw_requirement as Dictionary).duplicate(true))
+		elif task.has("required_dialogue_event_ids") and task["required_dialogue_event_ids"] is Array:
+			for raw_event_id: Variant in task["required_dialogue_event_ids"] as Array:
+				activation_requirements.append({"type": "dialogue_completed", "id": String(raw_event_id)})
+		# 任务只有在至少一个可发布信息项真正进入权威世界后才激活；这把旧 UI 的
+		# “有可用信息”推断纳入 TaskSystem，而不改变现有 broadcast task ID。
+		activation_requirements.append({"type": "information_available", "id": task_id})
+		definitions.append({
+			"id": task_id,
+			"activation": {"mode": "all", "requirements": activation_requirements},
+			"completion": {"type": "broadcast_sent", "id": task_id},
+		})
+	return definitions
+
+
+func _build_task_world_state() -> Dictionary:
+	var sent_task_ids: Array[String] = []
+	var information_available_task_ids: Array[String] = []
+	for task_id: String in _sorted_dictionary_keys(_broadcast_task_by_id):
+		var sent_value: Variant = _broadcast_system.call(&"is_task_sent", task_id)
+		if typeof(sent_value) == TYPE_BOOL and bool(sent_value):
+			sent_task_ids.append(task_id)
+		if not _get_available_information_item_ids(task_id, _revealed_statement_ids).is_empty():
+			information_available_task_ids.append(task_id)
+	var read_message_ids: Array[String] = []
+	var entries_value: Variant = _computer_system.call(&"get_entries", "messages")
+	if entries_value is Array:
+		for raw_entry: Variant in entries_value as Array:
+			if not raw_entry is Dictionary:
+				continue
+			var entry: Dictionary = raw_entry as Dictionary
+			if bool(entry.get("read", false)):
+				var source_id: String = String(entry.get("id", entry.get("source_id", "")))
+				if not source_id.is_empty() and not read_message_ids.has(source_id):
+					read_message_ids.append(source_id)
+	read_message_ids.sort()
+	var outcome_event_ids: Array[String] = []
+	var outcomes_value: Variant = _interaction_outcome_system.call(&"get_outcome_event_ids")
+	if outcomes_value is Array:
+		for raw_event_id: Variant in outcomes_value as Array:
+			if raw_event_id is String:
+				outcome_event_ids.append(String(raw_event_id))
+	outcome_event_ids.sort()
+	return {
+		"statement_revealed_ids": _sorted_dictionary_keys(_revealed_statement_ids),
+		"fact_confirmed_ids": _sorted_dictionary_keys(_confirmed_fact_ids),
+		"condition_state_by_id": _sorted_bool_state(_condition_state_by_id),
+		"interaction_answered_ids": _sorted_dictionary_keys(_answered_interaction_event_ids),
+		"interaction_completed_ids": _sorted_dictionary_keys(_completed_interaction_event_ids),
+		"broadcast_sent_ids": sent_task_ids,
+		"message_read_ids": read_message_ids,
+		"dialogue_completed_ids": _sorted_dictionary_keys(_completed_dialogue_event_ids),
+		"information_available_task_ids": information_available_task_ids,
+		"interaction_outcome_event_ids": outcome_event_ids,
+	}
+
+
+## Snapshot 校验不能读取当前运行时子系统状态；读取槽位时这些系统尚未 restore。
+## 因此只从各子系统已经规范化的候选快照重建 TaskSystem 所需的只读 world_state。
+func _build_snapshot_task_world_state(
+	revealed_statement_ids: Array[String],
+	confirmed_fact_ids: Array[String],
+	condition_states: Dictionary,
+	answered_interaction_ids: Array[String],
+	completed_interaction_ids: Array[String],
+	completed_dialogue_ids: Array[String],
+	normalized_broadcast: Dictionary,
+	normalized_computer: Dictionary,
+	outcome_by_event_id: Dictionary
+) -> Dictionary:
+	var revealed_lookup: Dictionary = _string_array_to_lookup(revealed_statement_ids)
+	var information_available_task_ids: Array[String] = []
+	for task_id: String in _sorted_dictionary_keys(_broadcast_task_by_id):
+		if not _get_available_information_item_ids(task_id, revealed_lookup).is_empty():
+			information_available_task_ids.append(task_id)
+	var outcome_event_ids: Array[String] = _sorted_dictionary_keys(outcome_by_event_id)
+	return {
+		"statement_revealed_ids": revealed_statement_ids.duplicate(),
+		"fact_confirmed_ids": confirmed_fact_ids.duplicate(),
+		"condition_state_by_id": condition_states.duplicate(true),
+		"interaction_answered_ids": answered_interaction_ids.duplicate(),
+		"interaction_completed_ids": completed_interaction_ids.duplicate(),
+		"broadcast_sent_ids": (normalized_broadcast["sent_task_ids"] as Array[String]).duplicate(),
+		"message_read_ids": ((normalized_computer["read_source_ids"] as Dictionary)["messages"] as Array[String]).duplicate(),
+		"dialogue_completed_ids": completed_dialogue_ids.duplicate(),
+		"information_available_task_ids": information_available_task_ids,
+		"interaction_outcome_event_ids": outcome_event_ids,
+	}
+
+
+func _get_task_transition_recipients(task_id: String) -> Array[String]:
+	var recipients: Array[String] = []
+	if not _broadcast_task_by_id.has(task_id):
+		return recipients
+	var task: Dictionary = _broadcast_task_by_id[task_id] as Dictionary
+	var related_ids: Array = task.get("related_event_ids", task.get("related_dialogue_event_ids", [])) as Array
+	for raw_event_id: Variant in related_ids:
+		var event_id: String = String(raw_event_id)
+		if not _story_event_by_id.has(event_id):
+			continue
+		var event_data: Dictionary = _story_event_by_id[event_id] as Dictionary
+		var actor_id: String = String(event_data.get("actor_id", ""))
+		if not actor_id.is_empty() and _actor_definition_by_id.has(actor_id) and not recipients.has(actor_id):
+			recipients.append(actor_id)
+	recipients.sort()
+	return recipients
+
+
+func _refresh_task_system() -> Dictionary:
+	var refresh_value: Variant = _task_system.call(&"refresh", _build_task_world_state(), _current_game_tick)
+	if not refresh_value is Dictionary or not bool((refresh_value as Dictionary).get("ok", false)):
+		return _make_error("task_refresh_failed", "TaskSystem 刷新失败：%s" % _snapshot_message(refresh_value))
+	var refresh_result: Dictionary = refresh_value as Dictionary
+	# 每次都对完整 transition 历史做幂等 Signal reconciliation；这样即使前一次
+	# Observation 提交被内部错误打断，下一次 refresh 仍能补齐而不重放 Task transition。
+	var transition_records_value: Variant = _task_system.call(&"get_transition_records")
+	if not transition_records_value is Array:
+		return _make_error("task_transition_contract_invalid", "TaskSystem.get_transition_records() 必须返回数组。")
+	for raw_record: Variant in transition_records_value as Array:
+		if not raw_record is Dictionary:
+			return _make_error("task_transition_contract_invalid", "TaskSystem transition record 必须是对象。")
+		var record: Dictionary = raw_record as Dictionary
+		var signal_value: Variant = _signal_system.call(&"commit_task_transition", record, _get_task_transition_recipients(String(record["task_id"])))
+		if not signal_value is Dictionary or not bool((signal_value as Dictionary).get("ok", false)):
+			return _make_error("task_transition_signal_failed", "Task transition 已提交，但 SignalSystem reconciliation 失败：%s" % _snapshot_message(signal_value))
+	for raw_transition: Variant in refresh_result.get("transitions", []) as Array:
+		if raw_transition is Dictionary:
+			var transition: Dictionary = raw_transition as Dictionary
+			task_state_changed.emit(String(transition["task_id"]), String(transition["to_status"]))
+	return refresh_result
+
+
 func _is_semantic_requirement_met(requirement: Dictionary) -> bool:
-	var requirement_type: String = String(requirement.get("type", ""))
-	var requirement_id: String = String(requirement.get("id", ""))
-	match requirement_type:
-		"statement_revealed":
-			return _revealed_statement_ids.has(requirement_id)
-		"fact_confirmed":
-			return _confirmed_fact_ids.has(requirement_id)
-		"condition_true":
-			return bool(_condition_state_by_id.get(requirement_id, false))
-		"interaction_answered":
-			return _answered_interaction_event_ids.has(requirement_id)
-		"interaction_completed":
-			return _completed_interaction_event_ids.has(requirement_id)
-		"broadcast_sent":
-			var sent_value: Variant = _broadcast_system.call(&"is_task_sent", requirement_id)
-			return typeof(sent_value) == TYPE_BOOL and bool(sent_value)
-		"message_read":
-			var entries_value: Variant = _computer_system.call(&"get_entries", "messages")
-			if not entries_value is Array:
-				return false
-			for raw_entry: Variant in entries_value as Array:
-				if raw_entry is Dictionary:
-					var entry: Dictionary = raw_entry as Dictionary
-					if String(entry.get("id", entry.get("source_id", ""))) == requirement_id:
-						return bool(entry.get("read", false))
-			return false
-	return false
+	var evaluation_value: Variant = _task_system.call(&"evaluate_requirements", [requirement.duplicate(true)], _build_task_world_state())
+	return evaluation_value is Dictionary and bool((evaluation_value as Dictionary).get("ok", false)) and bool((evaluation_value as Dictionary).get("satisfied", false))
 
 
 func _are_task_requirements_met(task: Dictionary) -> bool:
@@ -2407,6 +2752,29 @@ func _on_phone_state_changed(_previous_state: int, current_state: int, event_id:
 		_clear_active_dialogue()
 
 
+func _on_phone_call_record_created(record: Dictionary) -> void:
+	# Observation v2 只对存在 Actor identity 的 Agent Dialogue 来电发给该 Actor；legacy
+	# 电话记录仍由 PhoneSystem/ComputerSystem 保存，但不会凭空制造 Actor audience。
+	if not is_agent_dialogue_v2():
+		return
+	var event_id: String = String(record.get("event_id", ""))
+	var outcome: String = String(record.get("outcome", ""))
+	if event_id.is_empty() or outcome.is_empty():
+		_make_error("phone_terminal_record_invalid", "PhoneSystem call_record_created 缺少 event_id/outcome。")
+		return
+	var event_result: Dictionary = _resolve_agent_event_data(event_id)
+	if not bool(event_result.get("ok", false)):
+		_make_error("phone_terminal_event_invalid", "电话终态无法解析对应 Agent 事件：%s。" % event_id)
+		return
+	var actor_id: String = String((event_result["event"] as Dictionary).get("actor_id", ""))
+	if actor_id.is_empty():
+		_make_error("phone_terminal_actor_missing", "电话终态事件缺少 Actor ID：%s。" % event_id)
+		return
+	var signal_value: Variant = _signal_system.call(&"commit_phone_terminal", event_id, outcome, actor_id, _current_game_tick)
+	if not signal_value is Dictionary or not bool((signal_value as Dictionary).get("ok", false)):
+		_make_error("phone_terminal_signal_failed", "SignalSystem 未能提交电话终态 Observation：%s" % _snapshot_message(signal_value))
+
+
 func _dispatch_next_queued_event() -> Dictionary:
 	var queue_result: Dictionary = _scheduler.take_next_queued_event()
 	if not bool(queue_result["ok"]):
@@ -2461,6 +2829,9 @@ func _on_player_broadcast_sent(record: Dictionary) -> void:
 		story_error.emit("signal_commit_failed", "玩家广播已提交，但 SignalSystem 无法提交对应感知信号：%s" % message)
 		push_error("[剧情][signal_commit_failed] %s" % message)
 	player_broadcast_sent.emit(record)
+	var task_refresh: Dictionary = _refresh_task_system()
+	if not bool(task_refresh.get("ok", false)):
+		_make_error(String(task_refresh.get("error_code", "task_refresh_failed")), String(task_refresh.get("message", "TaskSystem 刷新失败。")))
 
 
 func _on_world_signal_committed(record: Dictionary) -> void:
@@ -2525,6 +2896,15 @@ func _on_computer_source_read(category: String, source_id: String, statement_ids
 	var reveal_result: Dictionary = _reveal_statement_ids(statement_ids, source_id)
 	if not bool(reveal_result.get("ok", false)):
 		_make_error("computer_statement_reveal_failed", "阅读来源 %s 时无法揭示其关联陈述。" % source_id)
+		return
+	if category == "messages":
+		var signal_value: Variant = _signal_system.call(&"commit_message_read", source_id, _current_game_tick)
+		if not signal_value is Dictionary or not bool((signal_value as Dictionary).get("ok", false)):
+			_make_error("message_read_signal_failed", "短信已读，但 SignalSystem 未能提交 message_read Observation：%s" % _snapshot_message(signal_value))
+			return
+	var task_refresh: Dictionary = _refresh_task_system()
+	if not bool(task_refresh.get("ok", false)):
+		_make_error(String(task_refresh.get("error_code", "task_refresh_failed")), String(task_refresh.get("message", "TaskSystem 刷新失败。")))
 
 
 func _reveal_statement_ids(statement_ids: Array, expected_source_id: String) -> Dictionary:
@@ -2680,6 +3060,9 @@ func _disconnect_phone_system() -> void:
 	var state_callback: Callable = Callable(self, "_on_phone_state_changed")
 	if _phone_system.has_signal(&"state_changed") and _phone_system.is_connected(&"state_changed", state_callback):
 		_phone_system.disconnect(&"state_changed", state_callback)
+	var record_callback: Callable = Callable(self, "_on_phone_call_record_created")
+	if _phone_system.has_signal(&"call_record_created") and _phone_system.is_connected(&"call_record_created", record_callback):
+		_phone_system.disconnect(&"call_record_created", record_callback)
 
 
 func _make_error(error_code: String, message: String) -> Dictionary:
